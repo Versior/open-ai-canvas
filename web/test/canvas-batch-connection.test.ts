@@ -305,16 +305,25 @@ describe("expandBatchSourceNodeIds", () => {
         { id: "in-b", type: CanvasNodeType.Image, title: "B", position: { x: 260, y: 60 }, width: 200, height: 200, parentId: "board" },
         { id: "outside", type: CanvasNodeType.Text, title: "外部", position: { x: 900, y: 0 }, width: 200, height: 120 },
     ];
+    const nodeById = new Map(framed.map((node) => [node.id, node]));
+    const frameChildren = new Map([["board", framed.filter((node) => node.parentId === "board")]]);
 
     it("uses a selected backdrop's child assets as connection sources", () => {
-        expect(expandBatchSourceNodeIds(["board"], framed)).toEqual(["in-a", "in-b"]);
+        expect(expandBatchSourceNodeIds(["board"], nodeById, frameChildren)).toEqual(["in-a", "in-b"]);
     });
 
     it("keeps selection order and removes duplicates when children are also selected", () => {
-        expect(expandBatchSourceNodeIds(["outside", "in-b", "board"], framed)).toEqual(["outside", "in-b", "in-a"]);
+        expect(expandBatchSourceNodeIds(["outside", "in-b", "board"], nodeById, frameChildren)).toEqual(["outside", "in-b", "in-a"]);
     });
 
     it("returns nothing for an empty backdrop", () => {
-        expect(expandBatchSourceNodeIds(["frame"], nodes)).toEqual([]);
+        expect(expandBatchSourceNodeIds(["frame"], new Map(nodes.map((node) => [node.id, node])), frameChildren)).toEqual([]);
+    });
+
+    it("expands a thousand-node selection in selection order, skipping absent IDs and repeated children", () => {
+        const images = Array.from({ length: 1000 }, (_, index) => ({ ...framed[1], id: `image-${index}` }));
+        const byId = new Map([framed[0], ...images].map((node) => [node.id, node]));
+        const reversed = images.map((node) => node.id).reverse();
+        expect(expandBatchSourceNodeIds([...reversed, "absent", "board"], byId, new Map([["board", images]]))).toEqual(reversed);
     });
 });

@@ -126,8 +126,11 @@ test("a thousand shared rows need two edges; offscreen independent cell edges ar
     expect(reconcileBatchCellConnections(nodes, f.edges)).toHaveLength(2);
     const edit = applyBatchReferenceEdits(nodes, f.edges, "table", [{ rowId: "row999", columnId: "a", expectedSourceId: "person", sourceId: "other" }])!;
     const entries = edit.connections.map((connection) => ({ connection, to: edit.nodes[0] }));
-    expect(filterBatchCellConnections(entries, {}, null)).toHaveLength(2);
     const cell = entries.find((e) => e.connection.toHandleId === batchCellHandle("row999", "a"))!;
-    expect(filterBatchCellConnections(entries, {}, cell.connection.id)).toHaveLength(3);
-    expect(filterBatchCellConnections(entries, { table: { top: 999 * 122, left: 0 } }, null)).toHaveLength(3);
+    const visible = entries.filter((entry) => entry !== cell);
+    expect(visible).toHaveLength(2);
+    expect(filterBatchCellConnections(entries, {}, null)).toEqual(visible);
+    expect(filterBatchCellConnections(visible, {}, null)).toBe(visible);
+    expect(filterBatchCellConnections(entries, {}, cell.connection.id)).toBe(entries);
+    expect(filterBatchCellConnections(entries, { table: { top: 999 * 122, left: 0 } }, null)).toBe(entries);
 });

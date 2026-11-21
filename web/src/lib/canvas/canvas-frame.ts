@@ -60,11 +60,7 @@ export function findFrameDropTarget(nodes: CanvasNodeData[], draggedNodeIds: Set
     const dragged = nodes.filter((node) => draggedNodeIds.has(node.id));
     if (!dragged.length) return null;
 
-    return (
-        [...nodes]
-            .reverse()
-            .find((frame) => isValidFrameDropTarget(frame, dragged, draggedNodeIds))?.id || null
-    );
+    return [...nodes].reverse().find((frame) => isValidFrameDropTarget(frame, dragged, draggedNodeIds))?.id || null;
 }
 
 export type CanvasFrameDropIndex = CanvasSpatialIndex<CanvasNodeData>;
@@ -75,15 +71,13 @@ export function buildCanvasFrameDropIndex(nodes: CanvasNodeData[]): CanvasFrameD
 
 /** Finds a drop target using the drag preview offset without rebuilding all node positions. */
 export function findFrameDropTargetFromIndex(index: CanvasFrameDropIndex, draggedNodes: CanvasNodeData[], draggedNodeIds: Set<string>, offset: Position) {
-    if (!draggedNodes.length) return null;
-    const centers = draggedNodes.map((node) => ({ x: node.position.x + offset.x + node.width / 2, y: node.position.y + offset.y + node.height / 2 }));
-    const left = Math.min(...centers.map((center) => center.x)) - 0.01;
-    const top = Math.min(...centers.map((center) => center.y)) - 0.01;
-    const right = Math.max(...centers.map((center) => center.x)) + 0.01;
-    const bottom = Math.max(...centers.map((center) => center.y)) + 0.01;
-    return [...index.query({ left, top, right, bottom })]
-        .reverse()
-        .find((frame) => isValidFrameDropTarget(frame, draggedNodes, draggedNodeIds, offset))?.id || null;
+    const first = draggedNodes[0];
+    if (!first) return null;
+    // 合法目标必须包含第一项中心；先查这个点，只有真正的候选框才检查其余成员。
+    const centerX = first.position.x + offset.x + first.width / 2;
+    const centerY = first.position.y + offset.y + first.height / 2;
+    const frames = index.query({ left: centerX - 0.01, top: centerY - 0.01, right: centerX + 0.01, bottom: centerY + 0.01 });
+    return frames.findLast((frame) => isValidFrameDropTarget(frame, draggedNodes, draggedNodeIds, offset))?.id || null;
 }
 
 function isValidFrameDropTarget(frame: CanvasNodeData, dragged: CanvasNodeData[], draggedNodeIds: Set<string>, offset: Position = { x: 0, y: 0 }) {

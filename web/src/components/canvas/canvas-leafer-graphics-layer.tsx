@@ -7,7 +7,7 @@ import { useCanvasNodeResizeMotion } from "./canvas-node-resize-motion";
 import type { CanvasNodeResizeMotion } from "@/lib/canvas/canvas-node-resize-motion";
 import type { CanvasBatchConnectionPreview } from "@/lib/canvas/canvas-batch-connection";
 import { agentConnectionEntranceDelay, prefersReducedMotion } from "@/lib/canvas/agent-canvas-entrance";
-import { batchCellAnchor, type BatchScroll } from "@/lib/canvas/canvas-batch-references";
+import type { BatchScroll } from "@/lib/canvas/canvas-batch-references";
 import { subscribeCanvasGraphicsViewportPreview, subscribeCanvasNodeDragPreview, subscribeCanvasSelectionPreview, type CanvasNodeDragPreview } from "@/lib/canvas/canvas-live-viewport";
 import { calculateCanvasPreviewTransform, sameCanvasViewport, shouldRebaseCanvasRaster } from "@/lib/canvas/canvas-leafer-viewport";
 import { offsetSelectedNodeBounds } from "@/lib/canvas/canvas-selection";
@@ -40,11 +40,16 @@ type LeaferScene = {
 type UnderlayScene = LeaferScene & {
     resizeMotion: CanvasNodeResizeMotion | null;
     connections: Group;
+    movingConnections: Group;
     connectionEntries: Map<string, ConnectionSceneEntry>;
     connectionIdsByNodeId: Map<string, Set<string>>;
+    scrolls: ConnectionScrolls;
     dragPreview: CanvasNodeDragPreview | null;
-    dragPreviewConnectionIds: Set<string>;
+    dragEdges: Set<ConnectionSceneEntry>;
+    wholeLayerMoving: boolean;
 };
+
+type ConnectionScrolls = Pick<CanvasLeaferGraphicsLayerProps, "scriptScrollTopById" | "batchScrollById">;
 
 type ConnectionSceneEntry = {
     resizeMotion: CanvasNodeResizeMotion | null;
@@ -52,7 +57,8 @@ type ConnectionSceneEntry = {
     connection: CanvasDisplayConnection["connection"];
     from: CanvasNodeData;
     to: CanvasNodeData;
-    signature: string;
+    pathOrigin: Position;
+    resized: boolean;
 };
 
 type OverlayScene = LeaferScene & {
@@ -135,7 +141,7 @@ export function CanvasLeaferGraphicsLayer(props: CanvasLeaferGraphicsLayerProps)
             // 只刷新这个节点的相邻连线，不重建整张图的连接索引。
             for (const connectionId of underlay.connectionIdsByNodeId.get(nodeId) || []) {
                 const entry = underlay.connectionEntries.get(connectionId);
-                if (entry) syncConnectionPath(entry, propsRef.current, underlay.dragPreview);
+                if (entry) syncConnectionPath(entry, propsRef.current, underlay.dragEdges.has(entry) ? underlay.dragPreview : null);
             }
         });
         resize();
@@ -206,9 +212,11 @@ function createUnderlayScene(host: HTMLDivElement, resizeMotion: CanvasNodeResiz
     const leafer = new Leafer({ view: host, width: 1, height: 1, pixelRatio: canvasPixelRatio(), fill: "transparent", hittable: false, smooth: true });
     const world = new Group({ hittable: false });
     const connections = new Group({ hittable: false });
+    const movingConnections = new Group({ hittable: false });
     world.add(connections);
+    world.add(movingConnections);
     leafer.add(world);
-    return { leafer, world, host, resizeMotion, connections, connectionEntries: new Map(), connectionIdsByNodeId: new Map(), dragPreview: null, dragPreviewConnectionIds: new Set() };
+    return { leafer, world, host, resizeMotion, connections, movingConnections, connectionEntries: new Map(), connectionIdsByNodeId: new Map(), scrolls: { scriptScrollTopById: {} }, dragPreview: null, dragEdges: new Set(), wholeLayerMoving: false };
 }
 
 function createOverlayScene(host: HTMLDivElement): OverlayScene {
@@ -241,112 +249,139 @@ function fadeInAgentConnection(path: Path, delay: number) {
 }
 
 function rebuildConnections(scene: UnderlayScene, props: CanvasLeaferGraphicsLayerProps) {
-    const nextIds = new Set(props.displayConnections.map(({ connection }) => connection.id));
-    for (const [connectionId, entry] of scene.connectionEntries) {
-        if (nextIds.has(connectionId)) continue;
-        entry.path.remove();
-        scene.connectionEntries.delete(connectionId);
+    const nextIds = new Set<string>();
+    const moving = scene.dragPreview?.nodeIds;
+    const wholeLayerMoving = Boolean(moving && props.displayConnections.every(({ from, to }) => moving.has(from.id) && moving.has(to.id)));
+    if (wholeLayerMoving !== scene.wholeLayerMoving) {
+        scene.wholeLayerMoving = wholeLayerMoving;
+        syncConnectionGroupOffset(scene);
     }
 
-    scene.connectionIdsByNodeId.clear();
-    const previewIds = scene.dragPreview ? scene.dragPreview.nodeIds : null;
     for (const { connection, from, to } of props.displayConnections) {
-        const signature = connectionSceneSignature(connection, from, to, props);
+        nextIds.add(connection.id);
         let entry = scene.connectionEntries.get(connection.id);
-        let entranceDelay: number | null = null;
         if (!entry) {
-            const path = new Path({ hittable: false });
-            scene.connections.add(path);
-            entry = { path, connection, from, to, resizeMotion: scene.resizeMotion, signature: "" };
+            const path = new Path({ hittable: false, stroke: props.theme.connection.stroke, strokeWidth: CANVAS_CONNECTION_STROKE_WIDTH, strokeScaleFixed: true, strokeCap: "round", opacity: 0.8 });
+            entry = { path, connection, from, to, resizeMotion: scene.resizeMotion, pathOrigin: from.position, resized: false };
             scene.connectionEntries.set(connection.id, entry);
-            entranceDelay = agentConnectionEntranceDelay(connection.id);
+            indexConnection(scene, entry, true);
+            syncConnectionDragMode(scene, entry);
+            syncConnectionPath(entry, props, scene.dragEdges.has(entry) ? scene.dragPreview : null);
+            const entranceDelay = agentConnectionEntranceDelay(connection.id);
+            if (entranceDelay !== null && !prefersReducedMotion()) fadeInAgentConnection(entry.path, entranceDelay);
+            continue;
         }
+        const oldFrom = entry.from;
+        const oldTo = entry.to;
+        const redirected = oldFrom.id !== from.id || oldTo.id !== to.id;
+        const samePorts =
+            !redirected && entry.connection.fromHandleId === connection.fromHandleId && entry.connection.toHandleId === connection.toHandleId && samePortLayout(oldFrom, from, scene.scrolls, props) && samePortLayout(oldTo, to, scene.scrolls, props);
+        if (redirected) indexConnection(scene, entry, false);
         entry.connection = connection;
         entry.from = from;
         entry.to = to;
-        if (entry.signature !== signature || scene.dragPreview) {
-            syncConnectionPath(entry, props, scene.dragPreview, previewIds);
-            entry.signature = signature;
+        if (redirected) indexConnection(scene, entry, true);
+        const boundaryChanged = moving && syncConnectionDragMode(scene, entry);
+        if (entry.path.stroke !== props.theme.connection.stroke) entry.path.stroke = props.theme.connection.stroke;
+        if (samePorts && !boundaryChanged) {
+            const dx = from.position.x - oldFrom.position.x;
+            const dy = from.position.y - oldFrom.position.y;
+            if (dx === to.position.x - oldTo.position.x && dy === to.position.y - oldTo.position.y) {
+                if (!dx && !dy) continue;
+                if (!scene.dragEdges.has(entry) && !entry.resized && !scene.resizeMotion?.getGeometry(from.id) && !scene.resizeMotion?.getGeometry(to.id)) {
+                    entry.path.x = from.position.x - entry.pathOrigin.x;
+                    entry.path.y = from.position.y - entry.pathOrigin.y;
+                    continue;
+                }
+            }
         }
-        if (entranceDelay !== null && !prefersReducedMotion()) fadeInAgentConnection(entry.path, entranceDelay);
-        for (const nodeId of [from.id, to.id]) {
-            const connectionIds = scene.connectionIdsByNodeId.get(nodeId) || new Set<string>();
-            connectionIds.add(connection.id);
-            scene.connectionIdsByNodeId.set(nodeId, connectionIds);
+        syncConnectionPath(entry, props, scene.dragEdges.has(entry) ? scene.dragPreview : null);
+    }
+    for (const [connectionId, entry] of scene.connectionEntries) {
+        if (nextIds.has(connectionId)) continue;
+        entry.path.remove();
+        indexConnection(scene, entry, false);
+        scene.dragEdges.delete(entry);
+        scene.connectionEntries.delete(connectionId);
+    }
+    scene.scrolls = { scriptScrollTopById: props.scriptScrollTopById, batchScrollById: props.batchScrollById };
+}
+
+function samePortLayout(before: CanvasNodeData, after: CanvasNodeData, previous: ConnectionScrolls, next: ConnectionScrolls) {
+    return (
+        (before === after || (before.type === after.type && before.width === after.width && before.height === after.height && before.metadata === after.metadata)) &&
+        previous.scriptScrollTopById[before.id] === next.scriptScrollTopById[after.id] &&
+        previous.batchScrollById?.[before.id] === next.batchScrollById?.[after.id]
+    );
+}
+
+function indexConnection(scene: UnderlayScene, entry: ConnectionSceneEntry, add: boolean) {
+    for (const nodeId of [entry.from.id, entry.to.id]) {
+        let links = scene.connectionIdsByNodeId.get(nodeId);
+        if (add) {
+            if (!links) scene.connectionIdsByNodeId.set(nodeId, (links = new Set()));
+            links.add(entry.connection.id);
+        } else if (links) {
+            links.delete(entry.connection.id);
+            if (!links.size) scene.connectionIdsByNodeId.delete(nodeId);
         }
     }
-
-    scene.dragPreviewConnectionIds = collectPreviewConnectionIds(scene, scene.dragPreview);
 }
 
-function connectionSceneSignature(connection: CanvasDisplayConnection["connection"], from: CanvasNodeData, to: CanvasNodeData, props: CanvasLeaferGraphicsLayerProps) {
-    const fromCell = batchCellAnchor(from, connection.fromHandleId, props.batchScrollById?.[from.id]);
-    const toCell = batchCellAnchor(to, connection.toHandleId, props.batchScrollById?.[to.id]);
-    return [
-        connection.id,
-        connection.fromNodeId,
-        connection.toNodeId,
-        connection.fromHandleId || "",
-        connection.toHandleId || "",
-        from.id,
-        from.position.x,
-        from.position.y,
-        from.width,
-        from.height,
-        to.id,
-        to.position.x,
-        to.position.y,
-        to.width,
-        to.height,
-        props.scriptScrollTopById[from.id] || 0,
-        props.scriptScrollTopById[to.id] || 0,
-        fromCell?.x,
-        fromCell?.y,
-        toCell?.x,
-        toCell?.y,
-        props.theme.connection.stroke,
-    ].join("|");
-}
-
-function syncConnectionPath(entry: ConnectionSceneEntry, props: CanvasLeaferGraphicsLayerProps, preview: CanvasNodeDragPreview | null, previewIds: ReadonlySet<string> | null = preview?.nodeIds || null) {
-    const from = translatePreviewNode(entry.resizeMotion?.resolveNode(entry.from) || entry.from, previewIds, preview);
-    const to = translatePreviewNode(entry.resizeMotion?.resolveNode(entry.to) || entry.to, previewIds, preview);
+function syncConnectionPath(entry: ConnectionSceneEntry, props: CanvasLeaferGraphicsLayerProps, preview: CanvasNodeDragPreview | null) {
+    const resolvedFrom = entry.resizeMotion?.resolveNode(entry.from) || entry.from;
+    const resolvedTo = entry.resizeMotion?.resolveNode(entry.to) || entry.to;
+    entry.resized = resolvedFrom !== entry.from || resolvedTo !== entry.to;
+    const from = translatePreviewNode(resolvedFrom, preview);
+    const to = translatePreviewNode(resolvedTo, preview);
+    entry.pathOrigin = from.position;
     entry.path.set({
+        x: 0,
+        y: 0,
         path: canvasConnectionPath(entry.connection, from, to, props.scriptScrollTopById[entry.from.id] || 0, props.scriptScrollTopById[entry.to.id] || 0, props.batchScrollById?.[entry.from.id], props.batchScrollById?.[entry.to.id]).pathD,
-        stroke: props.theme.connection.stroke,
-        strokeWidth: CANVAS_CONNECTION_STROKE_WIDTH,
-        strokeScaleFixed: true,
-        strokeCap: "round",
-        opacity: 0.8,
-        hittable: false,
     });
 }
 
-function translatePreviewNode(node: CanvasNodeData, previewIds: ReadonlySet<string> | null, preview: CanvasNodeDragPreview | null) {
-    if (!preview || !previewIds?.has(node.id) || (preview.x === 0 && preview.y === 0)) return node;
+function translatePreviewNode(node: CanvasNodeData, preview: CanvasNodeDragPreview | null) {
+    if (!preview?.nodeIds.has(node.id) || (preview.x === 0 && preview.y === 0)) return node;
     return { ...node, position: { x: node.position.x + preview.x, y: node.position.y + preview.y } };
 }
 
-function collectPreviewConnectionIds(scene: UnderlayScene, preview: CanvasNodeDragPreview | null) {
-    const connectionIds = new Set<string>();
-    if (!preview) return connectionIds;
-    for (const nodeId of preview.nodeIds) {
-        scene.connectionIdsByNodeId.get(nodeId)?.forEach((connectionId) => connectionIds.add(connectionId));
-    }
-    return connectionIds;
+function syncConnectionDragMode(scene: UnderlayScene, entry: ConnectionSceneEntry) {
+    const preview = scene.dragPreview;
+    const moveFrom = Boolean(preview?.nodeIds.has(entry.from.id));
+    const moveTo = Boolean(preview?.nodeIds.has(entry.to.id));
+    const isBoundary = moveFrom !== moveTo;
+    const group = moveFrom && moveTo && !scene.wholeLayerMoving ? scene.movingConnections : scene.connections;
+    const wasBoundary = scene.dragEdges.has(entry);
+    if (entry.path.parent !== group) group.add(entry.path);
+    if (isBoundary) scene.dragEdges.add(entry);
+    else scene.dragEdges.delete(entry);
+    return isBoundary !== wasBoundary;
 }
 
 function applyConnectionDragPreview(scene: UnderlayScene, props: CanvasLeaferGraphicsLayerProps, preview: CanvasNodeDragPreview | null) {
-    const affectedConnectionIds = new Set(scene.dragPreviewConnectionIds);
-    const previewIds = preview?.nodeIds || null;
-    collectPreviewConnectionIds(scene, preview).forEach((connectionId) => affectedConnectionIds.add(connectionId));
+    const previous = scene.dragPreview;
     scene.dragPreview = preview;
-    scene.dragPreviewConnectionIds = collectPreviewConnectionIds(scene, preview);
-    for (const connectionId of affectedConnectionIds) {
-        const entry = scene.connectionEntries.get(connectionId);
-        if (!entry) continue;
-        syncConnectionPath(entry, props, preview, previewIds);
+    if (previous?.nodeIds !== preview?.nodeIds) {
+        scene.wholeLayerMoving = Boolean(preview && [...scene.connectionIdsByNodeId.keys()].every((nodeId) => preview.nodeIds.has(nodeId)));
+        for (const entry of scene.connectionEntries.values()) {
+            const changed = syncConnectionDragMode(scene, entry);
+            if (changed && !scene.dragEdges.has(entry) && (previous?.x || previous?.y)) syncConnectionPath(entry, props, null);
+        }
     }
+    syncConnectionGroupOffset(scene);
+    if (preview && ((previous?.x || 0) !== preview.x || (previous?.y || 0) !== preview.y || (previous?.nodeIds !== preview.nodeIds && (preview.x || preview.y || previous?.x || previous?.y)))) {
+        for (const entry of scene.dragEdges) syncConnectionPath(entry, props, preview);
+    }
+}
+
+function syncConnectionGroupOffset(scene: UnderlayScene) {
+    const preview = scene.dragPreview;
+    scene.connections.x = scene.wholeLayerMoving ? preview?.x || 0 : 0;
+    scene.connections.y = scene.wholeLayerMoving ? preview?.y || 0 : 0;
+    scene.movingConnections.x = !scene.wholeLayerMoving ? preview?.x || 0 : 0;
+    scene.movingConnections.y = !scene.wholeLayerMoving ? preview?.y || 0 : 0;
 }
 
 function syncOverlayContent(scene: OverlayScene, props: CanvasLeaferGraphicsLayerProps, viewportScale: number) {

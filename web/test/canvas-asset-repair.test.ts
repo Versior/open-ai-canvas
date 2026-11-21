@@ -8,7 +8,18 @@ import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 import type { TimelineClip } from "@/types/timeline";
 
 test("场景换图后的旧画布保留资产历史图片引用，不创建重复素材", () => {
-    const image: Asset = { id: "scene", kind: "image", category: "environment", title: "阁楼", coverUrl: "", tags: [], createdAt: "", updatedAt: "", metadata: { projectAssetImageHistory: ["resource:old-image"] }, data: { dataUrl: "/api/resources/new-image/file", storageKey: "resource:new-image", width: 800, height: 600, bytes: 100, mimeType: "image/png" } };
+    const image: Asset = {
+        id: "scene",
+        kind: "image",
+        category: "environment",
+        title: "阁楼",
+        coverUrl: "",
+        tags: [],
+        createdAt: "",
+        updatedAt: "",
+        metadata: { projectAssetImageHistory: ["resource:old-image"] },
+        data: { dataUrl: "/api/resources/new-image/file", storageKey: "resource:new-image", width: 800, height: 600, bytes: 100, mimeType: "image/png" },
+    };
     useAssetStore.setState({ assets: [image] });
     const node = { ...videoNode("scene-node", "scene", "resource:old-image"), type: CanvasNodeType.Image };
     useCanvasStore.setState({ projects: [project("canvas", [node])] });
@@ -72,6 +83,27 @@ afterEach(() => {
 });
 
 describe("repairMissingCanvasAssets 增量会话", () => {
+    test("大画布只发布一次素材批次，跨画布的重复资源沿用同一素材", () => {
+        const count = 1000;
+        const nodes = Array.from({ length: count }, (_, index) => videoNode(`node-${index}`, undefined, `resource:video-${index}`));
+        useCanvasStore.setState({ projects: [project("canvas-1", nodes), project("canvas-2", [videoNode("shared", undefined, "resource:video-0")])] });
+        let publications = 0;
+        const unsubscribe = useAssetStore.subscribe((next, previous) => {
+            if (next.assets !== previous.assets) publications += 1;
+        });
+        try {
+            expect(repairMissingCanvasAssets()).toEqual({ createdAssets: count, updatedProjects: 2 });
+            const [first, second] = useCanvasStore.getState().projects;
+            expect(publications).toBe(1);
+            expect(useAssetStore.getState().assets).toHaveLength(count);
+            expect(second.nodes[0].metadata?.assetId).toBe(first.nodes[0].metadata?.assetId);
+            expect(repairMissingCanvasAssets()).toEqual({ createdAssets: 0, updatedProjects: 0 });
+            expect(publications).toBe(1);
+        } finally {
+            unsubscribe();
+        }
+    });
+
     test("节点声明不能掩盖素材库的真实绑定，错误配对会被重绑", () => {
         useAssetStore.setState({ assets: [videoAsset("asset-a", "resource:R1"), videoAsset("asset-c", "resource:R2")] });
         useCanvasStore.setState({ projects: [project("canvas-1", [videoNode("node-1", "asset-a", "resource:R2")])] });
@@ -159,10 +191,16 @@ describe("repairMissingCanvasVideoPreviews", () => {
         const node = { ...videoNode("node-1", "asset-1", "resource:video-1"), metadata: { ...videoNode("node-1", "asset-1", "resource:video-1").metadata, videoPreview: { storageKey: "resource:poster-1" } } };
         useCanvasStore.setState({ projects: [project("canvas-1", [node])] });
 
-        await expect(repairMissingCanvasVideoPreviews(undefined, async () => { throw new Error("offline"); })).rejects.toThrow("offline");
+        await expect(
+            repairMissingCanvasVideoPreviews(undefined, async () => {
+                throw new Error("offline");
+            }),
+        ).rejects.toThrow("offline");
         expect(useCanvasStore.getState().projects[0].nodes[0].metadata?.videoPreview).toBeDefined();
 
-        const result = await repairMissingCanvasVideoPreviews(undefined, async () => { throw new ApiError("missing", { status: 404 }); });
+        const result = await repairMissingCanvasVideoPreviews(undefined, async () => {
+            throw new ApiError("missing", { status: 404 });
+        });
         expect(result).toEqual({ clearedPreviews: 1, updatedProjects: 1 });
         expect(useCanvasStore.getState().projects[0].nodes[0].metadata?.videoPreview).toBeUndefined();
     });
@@ -171,7 +209,13 @@ describe("repairMissingCanvasVideoPreviews", () => {
         const node = { ...videoNode("node-1", "asset-1", "resource:video-1"), metadata: { ...videoNode("node-1", "asset-1", "resource:video-1").metadata, videoPreview: { storageKey: "resource:poster-1" } } };
         useCanvasStore.setState({ projects: [project("canvas-1", [node])] });
         let rejectLookup!: (error: unknown) => void;
-        const repair = repairMissingCanvasVideoPreviews(undefined, () => new Promise((_, reject) => { rejectLookup = reject; }));
+        const repair = repairMissingCanvasVideoPreviews(
+            undefined,
+            () =>
+                new Promise((_, reject) => {
+                    rejectLookup = reject;
+                }),
+        );
         useCanvasStore.getState().updateProject("canvas-1", { title: "user edit" });
         rejectLookup(new ApiError("missing", { status: 404 }));
         await repair;

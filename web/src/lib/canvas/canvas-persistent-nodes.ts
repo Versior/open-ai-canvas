@@ -1,4 +1,5 @@
 import { canonicalize } from "json-canonicalize";
+import { canvasNodeHasDifferentStoredPosition } from "@/lib/canvas/canvas-content";
 import type { CanvasNodeData, CanvasNodeMetadata } from "@/types/canvas";
 
 const pollingFields: (keyof CanvasNodeMetadata)[] = [
@@ -52,7 +53,9 @@ export function canvasPersistentNodes(nodes: CanvasNodeData[], previous: CanvasN
     const next = nodes.map((node) => {
         const projected = persistentNode(node);
         const old = previousById.get(node.id);
-        return old && (old === projected || serialize(old) === serialize(projected)) ? old : projected;
+        if (!old || old === projected) return projected;
+        if (canvasNodeHasDifferentStoredPosition(old, projected)) return projected;
+        return serialize(old) === serialize(projected) ? old : projected;
     });
     return previous.length === next.length && next.every((node, index) => node === previous[index]) ? previous : next;
 }

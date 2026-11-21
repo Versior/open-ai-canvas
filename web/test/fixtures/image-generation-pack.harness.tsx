@@ -32,7 +32,7 @@ for (const [key, value] of Object.entries({
 })) {
     Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
 }
-const { act } = await import("react");
+const { act, StrictMode } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
 const { ImageGenerationPack } = await import("../../src/components/image-pack/image-generation-pack");
@@ -71,6 +71,98 @@ function mount() {
     };
 }
 afterAll(() => dom.happyDOM.abort());
+
+test("提示音跳过静音、拖动和快捷键；正常提交解锁后首个后台任务仍能出声", async () => {
+    const view = mount();
+    const previousUser = useUserStore.getState().user;
+    const preferences = useNotificationPreferencesStore.getState();
+    const activations: string[] = [];
+    const resumes: string[] = [];
+    let inAction = "",
+        played = 0;
+    class DeviceAudio {
+        state = "suspended";
+        currentTime = 0;
+        destination = {};
+        constructor() {
+            activations.push(inAction);
+        }
+        async resume() {
+            resumes.push(inAction);
+            if (inAction !== "Enter") throw new Error("activation not granted");
+            this.state = "running";
+        }
+        createGain() {
+            return { gain: { value: 0, setValueAtTime: noop, exponentialRampToValueAtTime: noop }, connect: noop };
+        }
+        createOscillator() {
+            return { frequency: { value: 0 }, connect: noop, start: () => played++, stop: noop };
+        }
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(window, "AudioContext");
+    Object.defineProperty(window, "AudioContext", { configurable: true, value: DeviceAudio });
+    const panel = document.body.appendChild(document.createElement("div"));
+    panel.innerHTML = '<div data-canvas-viewport><div data-node-id="image"><img></div></div><button>生成</button><textarea></textarea>';
+    const image = panel.querySelector("img")!,
+        submit = panel.querySelector("button")!,
+        editor = panel.querySelector("textarea")!;
+    const dispatch = (target: Element, event: InstanceType<typeof dom.MouseEvent> | InstanceType<typeof dom.KeyboardEvent>, trusted = true) => {
+        Object.defineProperty(event, "isTrusted", { value: trusted });
+        inAction = "key" in event ? event.key : event.type;
+        target.dispatchEvent(event as unknown as Event);
+        inAction = "";
+    };
+    const mouse = (name: string) => new dom.MouseEvent(name, { bubbles: true });
+    const key = (value: string, ctrlKey = false) => new dom.KeyboardEvent("keydown", { bubbles: true, key: value, ctrlKey });
+    const render = () =>
+        view.render(
+            <StrictMode>
+                <GenerationSuccessNotifier />
+            </StrictMode>,
+        );
+    try {
+        useUserStore.getState().setUser({ id: "sound-test", username: "sample", displayName: "测试用户", role: "user", status: "active" });
+        useNotificationPreferencesStore.setState({ generationNotice: true, generationSound: false });
+        await render();
+        dispatch(submit, mouse("pointerdown"));
+        dispatch(submit, mouse("click"));
+        expect(activations).toEqual([]);
+        await act(async () => useNotificationPreferencesStore.setState({ generationNotice: false, generationSound: true }));
+        dispatch(submit, mouse("click"));
+        expect(activations).toEqual([]);
+        await act(async () => useNotificationPreferencesStore.setState({ generationNotice: true }));
+        dispatch(image, mouse("pointerdown"));
+        dispatch(image, mouse("click"));
+        dispatch(editor, key("a", true));
+        dispatch(editor, key(" "));
+        dispatch(submit, mouse("click"), false);
+        expect(activations).toEqual([]);
+        await view.render(null);
+        dispatch(submit, mouse("click"));
+        expect(activations).toEqual([]);
+        await render();
+        await act(async () => dispatch(submit, mouse("click")));
+        expect(activations).toEqual(["click"]);
+        await act(async () => dispatch(editor, key("Enter")));
+        dispatch(submit, mouse("click"));
+        expect(resumes).toEqual(["click", "Enter"]);
+        Object.defineProperty(document, "hidden", { configurable: true, value: true });
+        const task: GenerationTask = { id: "sound-result", type: "canvas_image", status: "running", prompt: "样例", attempts: 1, createdAt: now, updatedAt: now };
+        observeGenerationTaskStatus(task);
+        observeGenerationTaskStatus({ ...task, status: "succeeded" });
+        await act(async () => new Promise((resolve) => setTimeout(resolve, 650)));
+        expect(played).toBe(2);
+    } finally {
+        await view.close();
+        panel.remove();
+        Object.defineProperty(document, "hidden", { configurable: true, value: false });
+        document.dispatchEvent(new dom.Event("visibilitychange"));
+        if (descriptor) Object.defineProperty(window, "AudioContext", descriptor);
+        else Reflect.deleteProperty(window, "AudioContext");
+        useUserStore.getState().setUser(previousUser);
+        useNotificationPreferencesStore.setState({ generationNotice: preferences.generationNotice, generationSound: preferences.generationSound });
+    }
+});
 
 test("各入口共用主页阶段展示，隐藏无依据的进度并保留保存与费用状态", async () => {
     const view = mount();

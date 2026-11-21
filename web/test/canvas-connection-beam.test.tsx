@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { Window } from "happy-dom";
 import { renderToStaticMarkup } from "react-dom/server";
 import { CanvasConnectionBeam, ConnectionPath } from "../src/components/canvas/canvas-connections";
 import { CANVAS_CONNECTION_STROKE_WIDTH, canvasThemes } from "../src/lib/canvas-theme";
@@ -8,8 +9,8 @@ const from = { id: "from", title: "来源", type: CanvasNodeType.Text, position:
 const to = { ...from, id: "to", position: { x: 500, y: 200 } };
 const connection = { id: "edge", fromNodeId: from.id, toNodeId: to.id };
 
-function render(active: boolean, hideVisual = false) {
-    return renderToStaticMarkup(<ConnectionPath connection={connection} from={from} to={to} active={active} hideVisual={hideVisual} visualMode="hover-only" onSelect={() => {}} />);
+function render(active: boolean) {
+    return renderToStaticMarkup(<ConnectionPath connection={connection} from={from} to={to} active={active} visualMode="hover-only" onSelect={() => {}} />);
 }
 
 test("focusing a node displays beams even without hovering the connection", () => {
@@ -17,11 +18,17 @@ test("focusing a node displays beams even without hovering the connection", () =
     expect(render(false)).not.toContain("data-connection-beam");
 });
 
-test("dragging hides static beams while preserving the connection hit target", () => {
-    const markup = render(true, true);
-    expect(markup).not.toContain("data-connection-beam");
-    expect(markup).toContain('data-connection-id="edge"');
-    expect(markup).toContain('stroke-width="16"');
+test("the beam is in the suppressible visual group, not the connection hit target", () => {
+    const window = new Window();
+    try {
+        window.document.body.innerHTML = `<svg>${render(true)}</svg>`;
+        const hit = window.document.querySelector('[data-connection-id="edge"]')!;
+        expect(hit.getAttribute("stroke-width")).toBe("16");
+        expect(hit.closest("[data-canvas-connection-visual]")).toBeNull();
+        expect(hit.parentElement?.querySelector("[data-canvas-connection-visual] [data-connection-beam]")).not.toBeNull();
+    } finally {
+        void window.happyDOM.close();
+    }
 });
 
 test("both themes use neutral gray droplets with zoom-compensated widths", () => {

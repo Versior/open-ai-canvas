@@ -15,7 +15,7 @@ export function CanvasNodeSearchModal({ open, nodes, onClose, onFocus }: { open:
     const [query, setQuery] = useState("");
     const [activeIndex, setActiveIndex] = useState(0);
     const config = useEffectiveConfig();
-    const results = useMemo(() => searchCanvasNodes(nodes, query, 80, config), [config, nodes, query]);
+    const results = useMemo(() => (open ? searchCanvasNodes(nodes, query, 80, config) : []), [config, nodes, open, query]);
 
     useEffect(() => setActiveIndex(0), [query, open]);
     useEffect(() => setActiveIndex((current) => Math.min(current, Math.max(0, results.length - 1))), [results.length]);

@@ -22,8 +22,11 @@ const WATCH_LIMIT = 8;
  */
 export function GenerationSuccessNotifier() {
     const userId = useUserStore((state) => state.user?.id || "");
+    const soundEnabled = useNotificationPreferencesStore((state) => state.generationNotice && state.generationSound);
 
-    useEffect(() => installNotificationAudioUnlock(), []);
+    useEffect(() => {
+        if (userId && soundEnabled) return installNotificationAudioUnlock();
+    }, [userId, soundEnabled]);
 
     useEffect(() => {
         if (!userId) return;

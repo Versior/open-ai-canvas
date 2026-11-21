@@ -82,6 +82,7 @@ type AssetStore = {
     hydrated: boolean;
     assets: Asset[];
     addAsset: (asset: NewAsset) => string;
+    addAssets: (assets: (NewAsset & { id: string })[]) => void;
     addGenerationAsset: (effectKey: string, asset: NewAsset, signal?: AbortSignal) => Promise<string>;
     updateAsset: (id: string, patch: Partial<Omit<Asset, "id" | "createdAt">>) => void;
     removeAsset: (id: string) => Promise<void>;
@@ -338,10 +339,15 @@ export const useAssetStore = create<AssetStore>()(
             hydrated: false,
             assets: [],
             addAsset: (asset) => {
-                const now = new Date().toISOString();
                 const id = nanoid();
-                set((state) => ({ assets: [parseAssetRecord({ ...asset, id, createdAt: now, updatedAt: now }), ...state.assets] }));
+                get().addAssets([{ ...asset, id }]);
                 return id;
+            },
+            addAssets: (assets) => {
+                if (!assets.length) return;
+                const now = new Date().toISOString();
+                const records = assets.map((asset) => parseAssetRecord({ ...asset, createdAt: now, updatedAt: now })).reverse();
+                set((state) => ({ assets: [...records, ...state.assets] }));
             },
             addGenerationAsset: (effectKey, asset, signal) => {
                 const scope = getActiveUserScope();

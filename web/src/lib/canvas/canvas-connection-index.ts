@@ -8,7 +8,6 @@ export type CanvasIndexedConnection = { connection: CanvasConnection; fromId: st
 export function buildCanvasConnectionIndex(nodes: CanvasNodeData[], connections: CanvasConnection[]) {
     const nodeById = new Map(nodes.map((node) => [node.id, node]));
     const entries: CanvasSpatialIndexEntry<CanvasIndexedConnection>[] = [];
-    const connectionIdsByNodeId = new Map<string, Set<string>>();
     const collapsedBatchChild = (node: CanvasNodeData) => {
         const root = node.metadata?.batchRootId ? nodeById.get(node.metadata.batchRootId) : undefined;
         return root && !root.metadata?.imageBatchExpanded;
@@ -35,11 +34,6 @@ export function buildCanvasConnectionIndex(nodes: CanvasNodeData[], connections:
             },
             value,
         });
-        for (const nodeId of new Set([source.id, target.id, from.id, to.id])) {
-            const ids = connectionIdsByNodeId.get(nodeId) || new Set<string>();
-            ids.add(connection.id);
-            connectionIdsByNodeId.set(nodeId, ids);
-        }
     }
-    return { index: buildCanvasSpatialIndex(entries), connectionIdsByNodeId, entriesById: new Map(entries.map((entry) => [entry.id, entry.value])) };
+    return buildCanvasSpatialIndex(entries);
 }

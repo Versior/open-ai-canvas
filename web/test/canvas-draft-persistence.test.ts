@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import localforage from "localforage";
-import { setActiveUserScope } from "@/lib/user-scope";
+import { scopedStorageKey, setActiveUserScope } from "@/lib/user-scope";
 import { apiClient } from "@/services/api/request";
 import { buildCanvasOperations, deleteCanvasProjectsWithRemoteSync, loadCanvasProjectForEditing, prepareCanvasForCloudAction, resetRemoteUserDataSync, syncRemoteUserData } from "@/services/user-data-sync";
-import { canvasDraftNavigationState, flushCanvasStorePersistence, useCanvasStore, withCanvasStorePersistenceSuppressed } from "@/stores/canvas/use-canvas-store";
+import { CANVAS_STORE_KEY, canvasDraftNavigationState, flushCanvasStorePersistence, useCanvasStore, withCanvasStorePersistenceSuppressed } from "@/stores/canvas/use-canvas-store";
 import { flushAssetStorePersistence, useAssetStore } from "@/stores/use-asset-store";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 
@@ -88,6 +88,58 @@ test("opening, panning, zooming and empty assistant sessions never write a draft
     expect(writes).toBe(0);
     expect(requests).toEqual([]);
     expect([...local.keys()].some((key) => key.includes("canvas_store_journal"))).toBe(false);
+});
+
+test("保存千图拖动不为比较坐标反复读取完整媒体，仍与其他标签的内容合并", async () => {
+    const store = useCanvasStore.getState();
+    const id = store.createProject("千图");
+    let reads = 0;
+    const prompt = "x".repeat(480);
+    const initial = Array.from({ length: 1000 }, (_, index) => ({
+        ...node(`image-${index}`, {
+            content: `https://example.invalid/${index}.jpg`,
+            get prompt() {
+                reads++;
+                return prompt;
+            },
+        }),
+        type: CanvasNodeType.Image,
+        position: { x: index, y: 0 },
+    }));
+    store.updateProject(id, { nodes: initial });
+    await flushCanvasStorePersistence();
+    const key = scopedStorageKey(CANVAS_STORE_KEY, scope);
+    const durable = JSON.parse(disk.get(key) as string);
+    durable.state.projects[0].nodes[0].metadata.prompt = "另一个标签的编辑";
+    durable.storageRevision++;
+    disk.set(key, JSON.stringify(durable));
+    reads = 0;
+    const moved = initial.map((item) => ({ ...item, position: { ...item.position, x: item.position.x + 96 } }));
+    store.updateProject(id, { nodes: moved });
+    const publishReads = reads;
+    await flushCanvasStorePersistence();
+    const flushReads = reads - publishReads;
+    const saved = JSON.parse(disk.get(key) as string).state.projects[0];
+    expect(saved.nodes.map((item: CanvasNodeData) => item.position)).toEqual(moved.map((item) => item.position));
+    expect(saved.nodes[0].metadata.prompt).toBe("另一个标签的编辑");
+    expect(publishReads).toBeLessThanOrEqual(initial.length * 2);
+    expect(flushReads).toBe(0);
+});
+
+test.each([
+    ["小画布", "图".repeat(1000), true],
+    ["临界 ASCII", "x".repeat(160000), true],
+    ["临界中文", "图".repeat(160000), false],
+    ["超长 ASCII", "x".repeat(500000), false],
+] as const)("%s 的快速恢复记录仍按实际 UTF-8 字节数选择，完整保存不丢内容", async (_label, prompt, expectedJournal) => {
+    const store = useCanvasStore.getState();
+    const id = store.createProject("日志边界");
+    await flushCanvasStorePersistence();
+    store.updateProject(id, { nodes: [node("image", { prompt })] });
+    expect([...local.keys()].some((key) => key.includes("canvas_store_journal"))).toBe(expectedJournal);
+    await flushCanvasStorePersistence();
+    const saved = JSON.parse(disk.get(scopedStorageKey(CANVAS_STORE_KEY, scope)) as string).state.projects[0];
+    expect(saved.nodes[0].metadata.prompt === prompt).toBe(true);
 });
 
 test("failed, cancelled and still-pending uploads do not materialize an empty canvas", async () => {

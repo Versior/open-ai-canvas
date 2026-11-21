@@ -96,11 +96,18 @@ export function syncBatchColumnReferences(nodes: CanvasNodeData[], connections: 
 
 /** Keep offscreen cell bindings in data, but do not draw their overlapping clipped tails. */
 export function filterBatchCellConnections<T extends { connection: CanvasConnection; to: CanvasNodeData }>(entries: T[], scrolls: Record<string, BatchScroll>, selectedId: string | null) {
-    return entries.filter((entry) => {
+    const visible = (entry: T) => {
         if (entry.connection.id === selectedId || !parseBatchCellHandle(entry.connection.toHandleId)) return true;
         const anchor = batchCellAnchor(entry.to, entry.connection.toHandleId, scrolls[entry.to.id]);
         return Boolean(anchor && !anchor.clipped);
-    });
+    };
+    const firstHidden = entries.findIndex((entry) => !visible(entry));
+    if (firstHidden < 0) return entries;
+    const result = entries.slice(0, firstHidden);
+    for (let index = firstHidden + 1; index < entries.length; index++) {
+        if (visible(entries[index])) result.push(entries[index]);
+    }
+    return result;
 }
 
 /** Row references are the source of truth. Preserve existing edge IDs when the binding is unchanged. */

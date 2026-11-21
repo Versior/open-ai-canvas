@@ -23,6 +23,7 @@ export function Minimap({ nodes, viewport, viewportSize, canvasContainerRef, onV
     const theme = canvasThemes[useActiveTheme()];
     const containerRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const viewportRectRef = useRef<HTMLDivElement>(null);
     const liveViewportRef = useRef(viewport);
     const { t } = useTranslation();
     const [isDragging, setIsDragging] = useState(false);
@@ -56,21 +57,22 @@ export function Minimap({ nodes, viewport, viewportSize, canvasContainerRef, onV
     }, [displayNodes, height, width]);
     const toMinimap = useCallback((worldX: number, worldY: number) => ({ x: (worldX - worldBounds.x) * scale + offset.x, y: (worldY - worldBounds.y) * scale + offset.y }), [offset.x, offset.y, scale, worldBounds.x, worldBounds.y]);
     const toWorld = useCallback((minimapX: number, minimapY: number) => ({ x: (minimapX - offset.x) / scale + worldBounds.x, y: (minimapY - offset.y) / scale + worldBounds.y }), [offset.x, offset.y, scale, worldBounds.x, worldBounds.y]);
-    const viewportRect = useMemo(() => {
-        const vx = -viewport.x / viewport.k;
-        const vy = -viewport.y / viewport.k;
-        const p1 = toMinimap(vx, vy);
-        const p2 = toMinimap(vx + viewportSize.width / viewport.k, vy + viewportSize.height / viewport.k);
-        return { x: p1.x, y: p1.y, w: Math.max(p2.x - p1.x, 4), h: Math.max(p2.y - p1.y, 4) };
-    }, [toMinimap, viewport.k, viewport.x, viewport.y, viewportSize.height, viewportSize.width]);
-    const updateViewportRect = useCallback((nextViewport: ViewportTransform) => {
-        liveViewportRef.current = nextViewport;
-        drawMinimap(canvasRef.current, displayNodes, toMinimap, nextViewport, viewportSize, theme);
-    }, [displayNodes, theme, toMinimap, viewportSize]);
+    const updateViewportRect = useCallback(
+        (nextViewport: ViewportTransform) => {
+            liveViewportRef.current = nextViewport;
+            const rect = viewportRectRef.current;
+            if (!rect) return;
+            const pos = toMinimap(-nextViewport.x / nextViewport.k, -nextViewport.y / nextViewport.k);
+            rect.style.transform = `translate(${pos.x}px, ${pos.y}px)`;
+            rect.style.width = `${Math.max((viewportSize.width * scale) / nextViewport.k, 4)}px`;
+            rect.style.height = `${Math.max((viewportSize.height * scale) / nextViewport.k, 4)}px`;
+        },
+        [scale, toMinimap, viewportSize],
+    );
 
     useEffect(() => {
-        drawMinimap(canvasRef.current, displayNodes, toMinimap, viewport, viewportSize, theme);
-    }, [displayNodes, theme, toMinimap, viewport, viewportSize]);
+        drawMinimap(canvasRef.current, displayNodes, toMinimap, theme);
+    }, [displayNodes, theme, toMinimap]);
     useEffect(() => updateViewportRect(viewport), [updateViewportRect, viewport]);
     useEffect(() => {
         const canvasContainer = canvasContainerRef?.current;
@@ -89,7 +91,10 @@ export function Minimap({ nodes, viewport, viewportSize, canvasContainerRef, onV
     };
 
     return (
-        <div className="absolute bottom-[calc(var(--canvas-inset-y)+var(--space-16)+var(--space-10))] left-6 z-[var(--z-panel)] overflow-hidden rounded-lg shadow-2xl backdrop-blur-sm lg:bottom-[calc(var(--canvas-inset-y)+var(--space-12))]" style={{ width, height, background: theme.toolbar.panel }}>
+        <div
+            className="absolute bottom-[calc(var(--canvas-inset-y)+var(--space-16)+var(--space-10))] left-6 z-[var(--z-panel)] overflow-hidden rounded-lg shadow-2xl backdrop-blur-sm lg:bottom-[calc(var(--canvas-inset-y)+var(--space-12))]"
+            style={{ width, height, background: theme.toolbar.panel }}
+        >
             <div
                 ref={containerRef}
                 className="relative h-full w-full cursor-crosshair"
@@ -112,13 +117,13 @@ export function Minimap({ nodes, viewport, viewportSize, canvasContainerRef, onV
                 }}
             >
                 <canvas ref={canvasRef} width={width} height={height} className="pointer-events-none block size-full" aria-label={t("canvasB.miniMap.label")} />
-                <div className="pointer-events-none absolute rounded-[var(--r-xs)]" style={{ left: viewportRect.x, top: viewportRect.y, width: viewportRect.w, height: viewportRect.h, background: `${theme.node.activeStroke}12`, boxShadow: `inset 0 0 0 1px ${theme.node.activeStroke}66` }} />
+                <div ref={viewportRectRef} className="pointer-events-none absolute left-0 top-0 rounded-[var(--r-xs)]" style={{ background: `${theme.node.activeStroke}12`, boxShadow: `inset 0 0 0 1px ${theme.node.activeStroke}66` }} />
             </div>
         </div>
     );
 }
 
-function drawMinimap(canvas: HTMLCanvasElement | null, nodes: CanvasNodeData[], toMinimap: (x: number, y: number) => { x: number; y: number }, viewport: ViewportTransform, viewportSize: { width: number; height: number }, theme: (typeof canvasThemes)[keyof typeof canvasThemes]) {
+function drawMinimap(canvas: HTMLCanvasElement | null, nodes: CanvasNodeData[], toMinimap: (x: number, y: number) => { x: number; y: number }, theme: (typeof canvasThemes)[keyof typeof canvasThemes]) {
     if (!canvas) return;
     const context = canvas.getContext("2d");
     if (!context) return;
@@ -126,7 +131,20 @@ function drawMinimap(canvas: HTMLCanvasElement | null, nodes: CanvasNodeData[], 
     for (const node of nodes) {
         const pos = toMinimap(node.position.x, node.position.y);
         const frame = isFrameNode(node);
-        const color = node.type === CanvasNodeType.Image ? "#10b981" : node.type === CanvasNodeType.Video ? "#f97316" : node.type === CanvasNodeType.Audio ? "#a855f7" : node.type === CanvasNodeType.Config ? "#60a5fa" : node.type === CanvasNodeType.Skill ? "#818cf8" : frame ? theme.frame.stroke : theme.node.muted;
+        const color =
+            node.type === CanvasNodeType.Image
+                ? "#10b981"
+                : node.type === CanvasNodeType.Video
+                  ? "#f97316"
+                  : node.type === CanvasNodeType.Audio
+                    ? "#a855f7"
+                    : node.type === CanvasNodeType.Config
+                      ? "#60a5fa"
+                      : node.type === CanvasNodeType.Skill
+                        ? "#818cf8"
+                        : frame
+                          ? theme.frame.stroke
+                          : theme.node.muted;
         const p2 = toMinimap(node.position.x + node.width, node.position.y + node.height);
         const rectWidth = Math.max(p2.x - pos.x, 2);
         const rectHeight = Math.max(p2.y - pos.y, 2);
@@ -137,11 +155,4 @@ function drawMinimap(canvas: HTMLCanvasElement | null, nodes: CanvasNodeData[], 
         if (context.fillStyle !== "transparent") context.fillRect(pos.x, pos.y, rectWidth, rectHeight);
         if (frame) context.strokeRect(pos.x, pos.y, rectWidth, rectHeight);
     }
-    const vx = -viewport.x / viewport.k;
-    const vy = -viewport.y / viewport.k;
-    const p1 = toMinimap(vx, vy);
-    const p2 = toMinimap(vx + viewportSize.width / viewport.k, vy + viewportSize.height / viewport.k);
-    context.globalAlpha = 1;
-    context.strokeStyle = theme.node.activeStroke;
-    context.strokeRect(p1.x, p1.y, Math.max(p2.x - p1.x, 4), Math.max(p2.y - p1.y, 4));
 }

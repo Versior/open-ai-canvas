@@ -47,15 +47,14 @@ export function createCanvasSelectionSpatialIndexCache(): CanvasSelectionSpatial
         get(nodes) {
             if (source === nodes) return index;
             const nodeById = new Map(nodes.map((node) => [node.id, node]));
-            const hiddenBatchChildIds = new Set(
-                nodes.flatMap((node) => {
-                    const rootId = node.metadata?.batchRootId;
-                    const root = rootId ? nodeById.get(rootId) : undefined;
-                    return root && !root.metadata?.imageBatchExpanded ? [node.id] : [];
-                }),
-            );
             index = buildCanvasSpatialIndex(
-                nodes.filter((node) => !hiddenBatchChildIds.has(node.id) && !(node.parentId && nodeById.get(node.parentId)?.metadata?.frame?.collapsed)).map((node) => ({ id: node.id, bounds: canvasNodeBounds(node), value: node })),
+                nodes
+                    .filter((node) => {
+                        const rootId = node.metadata?.batchRootId;
+                        const root = rootId ? nodeById.get(rootId) : undefined;
+                        return !(root && !root.metadata?.imageBatchExpanded) && !(node.parentId && nodeById.get(node.parentId)?.metadata?.frame?.collapsed);
+                    })
+                    .map((node) => ({ id: node.id, bounds: canvasNodeBounds(node), value: node })),
             );
             source = nodes;
             return index;
@@ -91,11 +90,10 @@ export function canvasSelectionHitsBounds(selectionBounds: CanvasSpatialBounds, 
 }
 
 export function applyCanvasSelectionStrategy(initialSelection: Iterable<string>, hitNodeIds: Iterable<string>, strategy: CanvasSelectionStrategy): Set<string> {
-    const hits = Array.from(hitNodeIds);
-    if (strategy === "replace") return new Set(hits);
+    if (strategy === "replace") return new Set(hitNodeIds);
 
     const nextSelection = new Set(initialSelection);
-    for (const nodeId of hits) {
+    for (const nodeId of hitNodeIds) {
         if (strategy === "add") nextSelection.add(nodeId);
         else if (strategy === "subtract") nextSelection.delete(nodeId);
         else if (nextSelection.has(nodeId)) nextSelection.delete(nodeId);

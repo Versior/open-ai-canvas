@@ -181,7 +181,7 @@ import { useCanvasNodeOperations } from "./use-canvas-node-operations";
 import { useCanvasProjectLifecycle } from "./use-canvas-project-lifecycle";
 import { applyCanvasImport } from "./canvas-import-save";
 import { waitForCanvasSync } from "@/lib/canvas/sync-recovery";
-import { useCanvasRenderModel } from "./use-canvas-render-model";
+import { useCanvasRenderModel, useCanvasSemanticNodes } from "./use-canvas-render-model";
 import { useCanvasSelectionController } from "./use-canvas-selection-controller";
 import { useCanvasShortDrama } from "./use-canvas-short-drama";
 import { useCanvasDrama, type UseCanvasDramaInput } from "./use-canvas-drama";
@@ -351,7 +351,8 @@ function CanvasViewportPage() {
     const [shortcutRequestNonce, setShortcutRequestNonce] = useState(0);
     const [cinematicAgentEntry, setCinematicAgentEntry] = useState(false);
     const { closeAgent, openAgent: openAssistant } = useCanvasAssistantVisibility();
-    const agentMentionReferences = useMemo(() => buildCanvasAgentMentionReferences(nodes), [nodes]);
+    const semanticNodes = useCanvasSemanticNodes(nodes);
+    const agentMentionReferences = useMemo(() => buildCanvasAgentMentionReferences(semanticNodes), [semanticNodes]);
 
     const savedProject = useCanvasStore((state) => state.projects.some((project) => project.id === projectId));
     const { tasks: activeTasks } = useCanvasActiveTasks(projectId, projectLoaded && savedProject);
@@ -405,6 +406,7 @@ function CanvasViewportPage() {
             const normalized = normalizeCanvasAppearance(next, fallback);
             setCanvasAppearance(normalized);
             setTheme(canvasAppearanceBaseTheme(normalized, fallback));
+            return normalized;
         },
         [colorTheme, setTheme],
     );
@@ -416,6 +418,13 @@ function CanvasViewportPage() {
         [backgroundMode, message],
     );
 
+    const restoreHistoryNodes = useCallback(
+        (snapshot: CanvasNodeData[]) => {
+            setNodes(snapshot);
+            return nodesRef.current;
+        },
+        [setNodes],
+    );
     const { getHistoryCleanupContext, historyPausedRef, historyState, redoCanvas, resetHistory, undoCanvas } = useCanvasHistory({
         projectLoaded,
         nodes,
@@ -425,11 +434,11 @@ function CanvasViewportPage() {
         canvasAppearance,
         backgroundMode,
         showImageInfo,
-        setNodes,
+        restoreHistoryNodes,
         setConnections,
         setChatSessions,
         setActiveChatId,
-        applyCanvasAppearance,
+        restoreHistoryAppearance: applyCanvasAppearance,
         setBackgroundMode,
         setShowImageInfo,
         setSelectedNodeIds,
@@ -578,19 +587,19 @@ function CanvasViewportPage() {
     }, [linkedProjectQuery.data, projectLoaded, setNodes]);
     const canvasCharacterIds = useMemo(() => {
         const ids = new Set<string>();
-        for (const node of nodes) {
+        for (const node of semanticNodes) {
             const assetId = node.metadata?.workflowKind === "character" ? node.metadata.characterAssetId?.trim() : "";
             if (assetId) ids.add(assetId);
         }
         return [...ids].sort();
-    }, [nodes]);
+    }, [semanticNodes]);
     const characterCardsQuery = useQuery({ queryKey: ["characters", "canvas-refresh", canvasCharacterIds], queryFn: () => listCharacters({ ids: canvasCharacterIds }), enabled: projectLoaded && canvasCharacterIds.length > 0 });
     useEffect(() => {
         if (!projectLoaded || !characterCardsQuery.data) return;
         const assets = characterCardsQuery.data.characters.map((item) => ({ ...item.asset, character: item.character })) as ProjectAsset[];
         setNodes((current) => refreshCanvasCharacterReferenceNodes(current, assets));
     }, [characterCardsQuery.data, projectLoaded, setNodes]);
-    const canvasContext = useMemo(() => summarizeCanvasContext(nodes, selectedNodeIds, linkedProjectQuery.data?.units), [linkedProjectQuery.data?.units, nodes, selectedNodeIds]);
+    const canvasContext = useMemo(() => summarizeCanvasContext(semanticNodes, selectedNodeIds, linkedProjectQuery.data?.units), [linkedProjectQuery.data?.units, semanticNodes, selectedNodeIds]);
     // 扩展节点（对比/图表/调色）要读自己的上游才能渲染，经 Context 下发；
     // 取上游复用 canvas-resource-references 的实现，别在这里另写一份。必须 memo——
     // 每帧新对象会让所有节点跟着重渲染，错题本里多条崩溃都出在画布高频更新。
@@ -880,8 +889,8 @@ function CanvasViewportPage() {
         setPoseLibraryRequest({ position });
         setContextMenu(null);
     }, []);
-    const selectedCharacterImage = nodes.find((node) => selectedNodeIds.has(node.id) && node.type === CanvasNodeType.Image && resourceIdFromStorageKey(node.metadata?.storageKey));
-    const selectedCharacterAudio = nodes.find((node) => selectedNodeIds.has(node.id) && node.type === CanvasNodeType.Audio && resourceIdFromStorageKey(node.metadata?.storageKey));
+    const selectedCharacterImage = characterLibraryOpen ? nodes.find((node) => selectedNodeIds.has(node.id) && node.type === CanvasNodeType.Image && resourceIdFromStorageKey(node.metadata?.storageKey)) : undefined;
+    const selectedCharacterAudio = characterLibraryOpen ? nodes.find((node) => selectedNodeIds.has(node.id) && node.type === CanvasNodeType.Audio && resourceIdFromStorageKey(node.metadata?.storageKey)) : undefined;
 
     useEffect(() => {
         if (!projectLoaded || searchParams.get("mode") !== "handoff") return;
@@ -1223,11 +1232,6 @@ function CanvasViewportPage() {
         onReplaceReference: handleReplaceNodeReference,
     });
 
-    // 选中背板等同于选中其内部素材：单独点中背板也能直接拖出连线。
-    const batchSourceNodeIds = useMemo(() => expandBatchSourceNodeIds(selectedNodeIds, nodes), [nodes, selectedNodeIds]);
-    const batchSourceNodeIdsRef = useRef(batchSourceNodeIds);
-    batchSourceNodeIdsRef.current = batchSourceNodeIds;
-
     const handleCanvasSelectionStart = useCallback(() => {
         setContextMenu(null);
     }, []);
@@ -1284,6 +1288,10 @@ function CanvasViewportPage() {
 
     const handleNodeDragEnd = useCallback(
         (nodeId: string) => {
+            if (selectedNodeIdsRef.current.size !== 1) {
+                setDialogNodeId(null);
+                return;
+            }
             const node = nodesRef.current.find((item) => item.id === nodeId);
             if (
                 !node ||
@@ -1539,13 +1547,12 @@ function CanvasViewportPage() {
         renderViewBounds,
     } = useCanvasRenderModel({
         nodes,
+        semanticNodes,
         connections,
         assets,
         viewport,
         viewportSize: size,
         selectedNodeIds,
-        hoveredNodeId,
-        dragPreview,
         collapsingBatchIds,
         addedSkills,
         previsScenes: currentProject?.previsScenes,
@@ -1566,6 +1573,9 @@ function CanvasViewportPage() {
         scriptEditorNodeId,
         dialogNodeId,
     });
+    const batchSourceNodeIds = useMemo(() => expandBatchSourceNodeIds(selectedNodeIds, nodeById, frameChildrenById), [selectedNodeIds, nodeById, frameChildrenById]);
+    const batchSourceNodeIdsRef = useRef(batchSourceNodeIds);
+    batchSourceNodeIdsRef.current = batchSourceNodeIds;
     // 单独选中背板时没有多选包围框，用背板自身的范围承载批量连线手柄。
     const singleSelectedFrame = selectedNodeIds.size === 1 ? nodeById.get([...selectedNodeIds][0]) : undefined;
     const batchConnectionBounds = useMemo(() => {
@@ -1612,10 +1622,10 @@ function CanvasViewportPage() {
     // Treat either signal as moving so floating editors disappear before the
     // first preview transform is painted and never affect drag layout.
     const isCanvasNodeMoving = isNodeDragging || Boolean(dragPreview?.nodeIds.size);
-    const deferDragOverlays = useDeferredValue(isCanvasNodeMoving);
+    const deferDragOverlays = useDeferredValue(isCanvasNodeMoving && (selectedNodeIds.size === 1 || dialogNode !== null));
     const dramaAdoptNode = drama.adoptNodeId ? nodeById.get(drama.adoptNodeId) || null : null;
     const comparedImages = comparedImageIds?.map((id) => nodeById.get(id)).filter((node): node is CanvasNodeData => Boolean(node)) || [];
-    const selectionImages = nodes.filter((node) => selectedNodeIds.has(node.id) && node.type === CanvasNodeType.Image && Boolean(node.metadata?.content || node.metadata?.storageKey));
+    const selectionImages = selectedNodeIds.size === 2 ? nodes.filter((node) => selectedNodeIds.has(node.id) && node.type === CanvasNodeType.Image && Boolean(node.metadata?.content || node.metadata?.storageKey)) : [];
     const mediaVersionNode = mediaVersionNodeId ? nodeById.get(mediaVersionNodeId) || null : null;
     const frameNode = frameDialogNodeId ? nodeById.get(frameDialogNodeId) || null : null;
     const segmentNode = segmentDialogNodeId ? nodeById.get(segmentDialogNodeId) || null : null;
@@ -3353,11 +3363,13 @@ function CanvasViewportPage() {
                                 </div>
                             ) : null}
 
-                            {selectedNodeBounds && !selectionBox && !isCanvasNodeMoving ? (
+                            {selectedNodeBounds ? (
                                 <CanvasProjectSelectionToolbar
-                                    anchorRef={selectionBoundsElementRef}
+                                    selection={selectedNodeBounds}
+                                    suppressed={Boolean(selectionBox) || isCanvasNodeMoving}
+                                    viewport={viewport}
+                                    viewportSize={size}
                                     containerRef={containerRef}
-                                    count={selectedNodeBounds.count}
                                     selectedVideoCount={selectedVideoNodes.length}
                                     mergingVideos={false}
                                     onAlign={alignSelectedNodes}

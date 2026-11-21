@@ -21,7 +21,7 @@ describe("canvas node drag overlays", () => {
         expect(overlayCondition).toContain("!isCanvasNodeMoving");
         expect(projectSource).not.toContain("angleNode?.metadata?.content && !isCanvasNodeMoving");
         expect(projectSource).toContain("emotionNode?.metadata?.content && !isCanvasNodeMoving");
-        expect(projectSource).toContain("selectedNodeBounds && !selectionBox && !isCanvasNodeMoving");
+        expect(projectSource).toContain("suppressed={Boolean(selectionBox) || isCanvasNodeMoving}");
         expect(overlayCondition).toContain("!deferDragOverlays");
         expect(projectSource).toContain("node={isCanvasNodeMoving || deferDragOverlays || nodeImageSettingsOpen || emotionNodeId || angleNodeId ? null : toolbarNode}");
         expect(projectSource).toContain("onNodeDragEnd: handleNodeDragEnd");

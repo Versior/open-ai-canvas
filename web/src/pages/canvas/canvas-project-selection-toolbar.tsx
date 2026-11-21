@@ -5,14 +5,19 @@ import { CanvasSelectionToolbar } from "@/components/canvas/canvas-workspace-ove
 import { FloatingDock } from "@/components/ui/aceternity/floating-dock";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { canvasDockStyle } from "@/lib/canvas/canvas-aceternity-style";
+import type { CanvasSelectionRect } from "@/lib/canvas/canvas-overlay-layout";
+import type { CanvasViewportSize } from "@/lib/canvas/canvas-viewport";
+import type { ViewportTransform } from "@/types/canvas";
 import { defaultToolbarPrefs, readToolbarPrefs, resolveToolbarEntries, type ToolContext, type ToolbarHandlers } from "@/lib/canvas/tool-registry";
 import type { CanvasAlignmentMode } from "@/lib/canvas/canvas-layout";
 import { useCanvasThemeStore } from "@/stores/canvas/use-canvas-theme-store";
 
 type CanvasProjectSelectionToolbarProps = {
-    anchorRef: RefObject<HTMLDivElement | null>;
+    selection: CanvasSelectionRect & { count: number };
+    suppressed: boolean;
+    viewport: ViewportTransform;
+    viewportSize: CanvasViewportSize;
     containerRef: RefObject<HTMLDivElement | null>;
-    count: number;
     selectedVideoCount: number;
     mergingVideos: boolean;
     onAlign: (mode: CanvasAlignmentMode) => void;
@@ -26,9 +31,11 @@ type CanvasProjectSelectionToolbarProps = {
 };
 
 export function CanvasProjectSelectionToolbar({
-    anchorRef,
+    selection,
+    suppressed,
+    viewport,
+    viewportSize,
     containerRef,
-    count,
     selectedVideoCount,
     mergingVideos,
     onAlign,
@@ -55,7 +62,7 @@ export function CanvasProjectSelectionToolbar({
     } as Partial<ToolbarHandlers> as ToolbarHandlers;
 
     const ctx: ToolContext = {
-        selectedCount: count,
+        selectedCount: selection.count,
         selectedNodeTypes: new Set(),
         selectedVideoCount,
         canvasTool: "move",
@@ -77,7 +84,7 @@ export function CanvasProjectSelectionToolbar({
     const items = resolveToolbarEntries("selection", ctx, prefs);
 
     return (
-        <CanvasSelectionToolbar anchorRef={anchorRef} containerRef={containerRef} count={count}>
+        <CanvasSelectionToolbar selection={selection} suppressed={suppressed} viewport={viewport} viewportSize={viewportSize} containerRef={containerRef}>
             <FloatingDock items={items} size="compact" className="canvas-floating-dock" style={canvasDockStyle(theme)} ariaLabel={t("canvasPage.selectionToolbar.ariaLabel")} />
         </CanvasSelectionToolbar>
     );

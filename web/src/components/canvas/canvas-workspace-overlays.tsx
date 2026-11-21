@@ -5,7 +5,8 @@ import { Clapperboard, Image as ImageIcon, List, Music2, Pencil, Table2, Video, 
 import { useCanvasOverlayLayer } from "@/components/canvas/canvas-overlay-layer";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { aceternityMotion } from "@/lib/aceternity-motion";
-import { canvasOverlayBounds, observeCanvasOverlayBounds, placeCanvasNodePanel, updateCanvasNodePanelBounds } from "@/lib/canvas/canvas-overlay-layout";
+import { canvasOverlayBounds, observeCanvasOverlayBounds, placeCanvasNodePanel, placeCanvasSelectionToolbar, updateCanvasNodePanelBounds, type CanvasSelectionRect } from "@/lib/canvas/canvas-overlay-layout";
+import type { CanvasViewportSize } from "@/lib/canvas/canvas-viewport";
 import { subscribeCanvasGraphicsViewportPreview, subscribeCanvasNodeDragPreview, subscribeCanvasViewportPreview } from "@/lib/canvas/canvas-live-viewport";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
 import { CanvasNodeType, type CanvasCreatableNodeType, type CanvasNodeData, type ConnectionHandle, type Position, type ViewportTransform } from "@/types/canvas";
@@ -18,83 +19,72 @@ export type PendingConnectionCreate = {
     batchSourceNodeIds?: string[];
 };
 
-export function CanvasSelectionToolbar({ anchorRef, containerRef, count, children }: { anchorRef: RefObject<HTMLDivElement | null>; containerRef: RefObject<HTMLDivElement | null>; count: number; children: ReactNode }) {
+export function CanvasSelectionToolbar({
+    selection,
+    suppressed,
+    viewport,
+    viewportSize,
+    containerRef,
+    children,
+}: {
+    selection: CanvasSelectionRect & { count: number };
+    suppressed: boolean;
+    viewport: ViewportTransform;
+    viewportSize: CanvasViewportSize;
+    containerRef: RefObject<HTMLDivElement | null>;
+    children: ReactNode;
+}) {
     const theme = canvasThemes[useActiveTheme()];
-    const reducedMotion = useReducedMotion();
     const toolbarRef = useRef<HTMLDivElement>(null);
-    const [anchor, setAnchor] = useState<{ left: number; top: number; placement: "above" | "below" } | null>(null);
+    const toolbarSize = useRef({ width: 320, height: 38 });
 
     useLayoutEffect(() => {
-        const element = anchorRef.current;
+        const toolbar = toolbarRef.current;
         const container = containerRef.current;
-        if (!element || !container) {
-            setAnchor(null);
-            return;
-        }
-
+        if (!toolbar || !container) return;
+        let liveViewport = viewport;
         const update = () => {
-            const bounds = element.getBoundingClientRect();
-            const containerBounds = container.getBoundingClientRect();
-            const toolbarWidth = toolbarRef.current?.offsetWidth || 320;
-            const toolbarHeight = toolbarRef.current?.offsetHeight || 38;
-            const halfWidth = Math.min(toolbarWidth / 2, Math.max(0, containerBounds.width / 2 - 12));
-            const center = bounds.left - containerBounds.left + bounds.width / 2;
-            const left = Math.min(Math.max(center, 12 + halfWidth), Math.max(12 + halfWidth, containerBounds.width - 12 - halfWidth));
-            const boundsTop = bounds.top - containerBounds.top;
-            const boundsBottom = bounds.bottom - containerBounds.top;
-            const placement = boundsTop - toolbarHeight - 8 >= 68 ? "above" : "below";
-            const top = placement === "above" ? boundsTop - 8 : Math.min(boundsBottom + 8, containerBounds.height - toolbarHeight - 12);
-            if (toolbarRef.current) {
-                toolbarRef.current.style.left = `${left}px`;
-                toolbarRef.current.style.top = `${top}px`;
-                toolbarRef.current.classList.toggle("-translate-y-full", placement === "above");
-                return;
-            }
-            setAnchor((current) => (current?.left === left && current.top === top && current.placement === placement ? current : { left, top, placement }));
+            const { left, top, above } = placeCanvasSelectionToolbar(selection, liveViewport, viewportSize, toolbarSize.current, viewport.k);
+            toolbar.style.left = `${left}px`;
+            toolbar.style.top = `${top}px`;
+            toolbar.classList.toggle("-translate-y-full", above);
         };
-
         update();
-        const resizeObserver = new ResizeObserver(update);
-        resizeObserver.observe(element);
-        resizeObserver.observe(container);
-        if (toolbarRef.current) resizeObserver.observe(toolbarRef.current);
-        const viewportLayer = element.parentElement;
-        const mutationObserver = new MutationObserver(update);
-        if (viewportLayer) mutationObserver.observe(viewportLayer, { attributes: true, attributeFilter: ["style"] });
-        const unsubscribeViewport = subscribeCanvasViewportPreview(container, update);
-        window.addEventListener("resize", update);
+        const resizeObserver = new ResizeObserver(([entry]) => {
+            toolbarSize.current = { width: entry.contentRect.width, height: entry.contentRect.height };
+            update();
+        });
+        resizeObserver.observe(toolbar);
+        const unsubscribeViewport = subscribeCanvasGraphicsViewportPreview(container, (next) => {
+            liveViewport = next;
+            update();
+        });
         return () => {
             resizeObserver.disconnect();
-            mutationObserver.disconnect();
             unsubscribeViewport();
-            window.removeEventListener("resize", update);
         };
-    }, [anchorRef, containerRef, count]);
+    }, [selection, viewport, viewportSize, containerRef]);
 
-    if (!anchor) return null;
     return (
         <div
             ref={toolbarRef}
             data-canvas-no-zoom
-            className={`absolute z-[var(--z-panel-floating)] max-w-[calc(100%_-_24px)] -translate-x-1/2 ${anchor.placement === "above" ? "-translate-y-full" : ""}`}
-            style={{ left: anchor.left, top: anchor.top, color: theme.node.text, transformOrigin: anchor.placement === "above" ? "bottom center" : "top center" }}
+            data-canvas-selection-toolbar
+            inert={suppressed}
+            className="absolute z-[var(--z-panel-floating)] max-w-[calc(100%_-_24px)] -translate-x-1/2"
+            style={{ color: theme.node.text, visibility: suppressed ? "hidden" : undefined }}
             onMouseDown={(event) => event.stopPropagation()}
             onPointerDown={(event) => event.stopPropagation()}
         >
-            <motion.div
-                initial={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.9, y: anchor.placement === "above" ? 8 : -8 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                transition={aceternityMotion.spring.panel}
-                className="flex items-center gap-2"
-            >
+            <div className="flex items-center gap-2">
                 <span
                     className="aceternity-floating-panel shrink-0 rounded-full border px-2 py-2 text-[var(--fs-tiny)] font-semibold tabular-nums backdrop-blur-2xl"
                     style={{ background: theme.spatial.elevated, borderColor: theme.toolbar.border, color: theme.accent.primary }}
                 >
-                    已选 {count}
+                    已选 {selection.count}
                 </span>
                 <div className="max-w-[min(560px,calc(100vw-90px))]">{children}</div>
-            </motion.div>
+            </div>
         </div>
     );
 }

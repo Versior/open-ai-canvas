@@ -1,5 +1,5 @@
 import { animate } from "motion";
-import { createContext, useCallback, useContext, useLayoutEffect, useMemo, useState, useSyncExternalStore, type ReactNode, type RefObject } from "react";
+import { createContext, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from "react";
 
 import { createCanvasNodeResizeMotion, type CanvasNodeResizeMotion } from "@/lib/canvas/canvas-node-resize-motion";
 import { canvasNodeStateScale } from "@/lib/canvas/canvas-text-scale";
@@ -52,20 +52,22 @@ export function useCanvasNodeResizeMotion() {
 /** 节点只更新 DOM 几何，不逐帧重渲染媒体、编辑器或整张画布。 */
 export function useCanvasNodeResizeStyle(ref: RefObject<HTMLDivElement | null>, node: CanvasNodeData, dragOffset?: Position) {
     const motion = useCanvasNodeResizeMotion();
+    const latest = useRef({ node, dragOffset });
+    const update = useCallback(() => {
+        const element = ref.current;
+        if (!element || !motion) return;
+        const { node, dragOffset } = latest.current;
+        const visual = motion.getGeometry(node.id) || node;
+        element.style.transform = `translate(${visual.position.x + (dragOffset?.x || 0)}px, ${visual.position.y + (dragOffset?.y || 0)}px)`;
+        element.style.width = `${visual.width}px`;
+        element.style.height = `${visual.height}px`;
+        element.style.setProperty("--canvas-node-state-scale", String(canvasNodeStateScale(visual.width, visual.height)));
+    }, [motion, ref]);
     useLayoutEffect(() => {
-        if (!motion) return;
-        const update = () => {
-            const element = ref.current;
-            if (!element) return;
-            const visual = motion.resolveNode(node);
-            element.style.transform = `translate(${visual.position.x + (dragOffset?.x || 0)}px, ${visual.position.y + (dragOffset?.y || 0)}px)`;
-            element.style.width = `${visual.width}px`;
-            element.style.height = `${visual.height}px`;
-            element.style.setProperty("--canvas-node-state-scale", String(canvasNodeStateScale(visual.width, visual.height)));
-        };
-        update();
-        return motion.subscribeNode(node.id, update);
-    }, [motion, node, ref, dragOffset]);
+        latest.current = { node, dragOffset };
+        if (motion?.getGeometry(node.id)) update();
+    }, [motion, node, dragOffset, update]);
+    useLayoutEffect(() => motion?.subscribeNode(node.id, update), [motion, node.id, update]);
     return motion;
 }
 

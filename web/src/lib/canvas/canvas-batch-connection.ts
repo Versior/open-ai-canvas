@@ -168,7 +168,7 @@ export function batchConnectionRejectReason({
  * 把当前选择展开成批量连接源：选中的背板用其内部素材代替，背板本身不能作连接源。
  * 保持选择顺序，背板子节点按画布顺序紧随其后，重复的节点只保留一次。
  */
-export function expandBatchSourceNodeIds(selectedNodeIds: Iterable<string>, nodes: CanvasNodeData[]) {
+export function expandBatchSourceNodeIds(selectedNodeIds: Iterable<string>, nodeById: ReadonlyMap<string, CanvasNodeData>, childrenByFrame: ReadonlyMap<string, readonly CanvasNodeData[]>) {
     const result: string[] = [];
     const seen = new Set<string>();
     const push = (node: CanvasNodeData | undefined) => {
@@ -177,8 +177,8 @@ export function expandBatchSourceNodeIds(selectedNodeIds: Iterable<string>, node
         result.push(node.id);
     };
     for (const id of selectedNodeIds) {
-        const node = nodes.find((item) => item.id === id);
-        if (node?.type === CanvasNodeType.Frame) nodes.filter((item) => item.parentId === node.id).forEach(push);
+        const node = nodeById.get(id);
+        if (node?.type === CanvasNodeType.Frame) childrenByFrame.get(id)?.forEach(push);
         else push(node);
     }
     return result;

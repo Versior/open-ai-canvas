@@ -14,6 +14,7 @@ import { batchCellAnchor, BATCH_COLUMN_HEADER_HEIGHT, BATCH_TABLE_HEADER_HEIGHT,
 import { sortCanvasNodesByStackOrder, type CanvasNodeStackOrder } from "@/lib/canvas/canvas-node-stack-order";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { isFrameNode } from "@/lib/canvas/canvas-frame";
+import { prepareCanvasNodeLayer } from "@/lib/canvas/canvas-live-viewport";
 import type { CanvasNodeRenderLOD } from "@/lib/canvas/canvas-node-lod";
 import type { CanvasSpatialBounds } from "@/lib/canvas/canvas-spatial-index";
 import { useCanvasProgressiveNodeMount } from "./use-canvas-progressive-node-mount";
@@ -106,6 +107,7 @@ export const CanvasProjectWorldLayers = memo(function CanvasProjectWorldLayers(p
         const mountedIds = new Set(mountedNodes.map((node) => node.id));
         return [...mountedNodes, ...props.gestureNodes.filter((node) => !mountedIds.has(node.id))];
     }, [mountedNodes, props.gestureNodes]);
+    const groupSelected = useMemo(() => props.selectedNodeIds.size > 1 && visibleNodes.some((node) => !props.selectedNodeIds.has(node.id)), [props.selectedNodeIds, visibleNodes]);
     const orderedVisibleNodes = useMemo(
         () => [
             ...visibleNodes.filter(isFrameNode),
@@ -147,6 +149,7 @@ export const CanvasProjectWorldLayers = memo(function CanvasProjectWorldLayers(p
         <>
             <svg
                 className="absolute overflow-visible"
+                data-canvas-connections-dragging={props.isNodeDragging || undefined}
                 viewBox={`${props.connectionLayerBounds.left} ${props.connectionLayerBounds.top} ${props.connectionLayerBounds.width} ${props.connectionLayerBounds.height}`}
                 style={{ left: props.connectionLayerBounds.left, top: props.connectionLayerBounds.top, width: props.connectionLayerBounds.width, height: props.connectionLayerBounds.height, pointerEvents: "none", zIndex: 0 }}
             >
@@ -162,84 +165,84 @@ export const CanvasProjectWorldLayers = memo(function CanvasProjectWorldLayers(p
                         toBatchScroll={props.batchScrollById?.[to.id]}
                         active={props.selectedConnectionId === connection.id || props.relatedConnectionIds.has(connection.id)}
                         visualMode="hover-only"
-                        // 拖动预览由 Leafer 图形层逐帧同步；隐藏这层静态 SVG 描边，避免两套位置叠出残影。
-                        hideVisual={props.isNodeDragging}
                         onSelect={() => props.onConnectionSelect(connection.id)}
                         onContextMenu={(event) => props.onConnectionContextMenu(event, connection.id)}
                     />
                 ))}
             </svg>
 
-            {orderedVisibleNodes.map((node) =>
-                isFrameNode(node) ? (
-                    <CanvasFrameNode
-                        key={node.id}
-                        data={node}
-                        renderLOD={gestureIds.has(node.id) ? "preview" : props.nodeRenderLODById.get(node.id) || "full"}
-                        dragOffset={props.dragPreview?.nodeIds.has(node.id) ? props.dragPreview : undefined}
-                        childNodes={framePreviewNodes(node)}
-                        scale={viewportScale}
-                        isSelected={props.selectedNodeIds.has(node.id)}
-                        isDropTarget={props.frameDropTargetId === node.id}
-                        onMouseDown={props.onNodeMouseDown}
-                        onResize={props.onNodeResize}
-                        onToggleCollapsed={props.onToggleFrame}
-                        onFolderStyleChange={props.onFolderStyleChange}
-                        onFolderThemeChange={props.onFolderThemeChange}
-                        onTitleChange={props.onNodeTitleChange}
-                        onContextMenu={props.onNodeContextMenu}
-                    />
-                ) : (
-                    <CanvasNode
-                        key={node.id}
-                        data={node}
-                        renderLOD={gestureIds.has(node.id) ? "preview" : props.nodeRenderLODById.get(node.id) || "full"}
-                        dragOffset={props.dragPreview?.nodeIds.has(node.id) ? props.dragPreview : undefined}
-                        scale={viewportScale}
-                        isSelected={props.selectedNodeIds.has(node.id)}
-                        mediaActive={activeMediaNodeId === node.id}
-                        onMediaPlayRequest={setActiveMediaNodeId}
-                        isRelated={props.relatedNodeIds.has(node.id)}
-                        isFocusRelated={props.activeNodeId === node.id}
-                        isConnectionTarget={props.connectionTargetNodeId === node.id || props.batchConnectionPreview?.targetNodeId === node.id}
-                        isConnecting={props.isConnecting}
-                        connectionApproach={props.connectionApproach?.nodeId === node.id ? props.connectionApproach.point : undefined}
-                        forceInputMounted={Boolean(props.batchConnectionPreview)}
-                        batchCount={props.batchChildCountById.get(node.id) || 0}
-                        batchExpanded={Boolean(node.metadata?.imageBatchExpanded)}
-                        batchPreviewNodes={batchPreviews.get(node.id)}
-                        batchClosing={Boolean(node.metadata?.batchRootId && props.collapsingBatchIds.has(node.metadata.batchRootId))}
-                        batchOpening={props.openingBatchIds.has(node.metadata?.batchRootId || node.id)}
-                        batchRecovering={props.collapsingBatchIds.has(node.id)}
-                        batchPrimary={Boolean(node.metadata?.batchRootId && props.nodeById.get(node.metadata.batchRootId)?.metadata?.primaryImageId === node.id)}
-                        batchMotion={props.batchMotionById.get(node.id)}
-                        showImageInfo={props.showImageInfo}
-                        disableMediaEffects={props.mediaEffectsDisabledNodeId === node.id}
-                        resourceLabel={props.resourceReferenceByNodeId.get(node.id)}
-                        mentionReferences={props.mentionReferencesByNodeId.get(node.id) || EMPTY_RESOURCE_REFERENCES}
-                        renderNodeContent={props.renderCanvasNodeContent}
-                        drawingProjectId={props.projectId}
-                        onMouseDown={props.onNodeMouseDown}
-                        onHoverStart={props.onNodeHoverStart}
-                        onHoverEnd={props.onNodeHoverEnd}
-                        onConnectStart={props.onConnectStart}
-                        onResize={props.onNodeResize}
-                        onTitleChange={props.onNodeTitleChange}
-                        onContentChange={props.onNodeContentChange}
-                        onToggleBatch={props.onToggleBatch}
-                        onSetBatchPrimary={props.onSetBatchPrimary}
-                        onRetry={props.onRetry}
-                        onReloadResource={props.onReloadResource}
-                        onOpenTaskDetails={props.onOpenTaskDetails}
-                        onViewImage={props.onViewImage}
-                        onReplaceMedia={props.onReplaceMedia}
-                        onOpenTextEditor={props.onOpenTextEditor}
-                        onOpenPrevis={props.onOpenPrevis}
-                        onOpenDrawing={props.onOpenDrawing}
-                        onContextMenu={props.onNodeContextMenu}
-                    />
-                ),
-            )}
+            <div ref={prepareCanvasNodeLayer} data-canvas-node-layer className="absolute left-0 top-0">
+                {orderedVisibleNodes.map((node) =>
+                    isFrameNode(node) ? (
+                        <CanvasFrameNode
+                            key={node.id}
+                            data={node}
+                            renderLOD={gestureIds.has(node.id) ? "preview" : props.nodeRenderLODById.get(node.id) || "full"}
+                            dragOffset={props.dragPreview?.nodeIds.has(node.id) ? props.dragPreview : undefined}
+                            childNodes={framePreviewNodes(node)}
+                            scale={viewportScale}
+                            isSelected={props.selectedNodeIds.has(node.id)}
+                            isDropTarget={props.frameDropTargetId === node.id}
+                            onMouseDown={props.onNodeMouseDown}
+                            onResize={props.onNodeResize}
+                            onToggleCollapsed={props.onToggleFrame}
+                            onFolderStyleChange={props.onFolderStyleChange}
+                            onFolderThemeChange={props.onFolderThemeChange}
+                            onTitleChange={props.onNodeTitleChange}
+                            onContextMenu={props.onNodeContextMenu}
+                        />
+                    ) : (
+                        <CanvasNode
+                            key={node.id}
+                            data={node}
+                            renderLOD={gestureIds.has(node.id) ? "preview" : props.nodeRenderLODById.get(node.id) || "full"}
+                            scale={viewportScale}
+                            isSelected={props.selectedNodeIds.has(node.id)}
+                            mediaActive={activeMediaNodeId === node.id}
+                            useActiveSlot={groupSelected && (props.selectedNodeIds.has(node.id) || props.activeNodeId === node.id || props.connectionTargetNodeId === node.id || props.batchConnectionPreview?.targetNodeId === node.id)}
+                            onMediaPlayRequest={setActiveMediaNodeId}
+                            isRelated={props.relatedNodeIds.has(node.id)}
+                            isFocusRelated={props.activeNodeId === node.id}
+                            isConnectionTarget={props.connectionTargetNodeId === node.id || props.batchConnectionPreview?.targetNodeId === node.id}
+                            isConnecting={props.isConnecting}
+                            connectionApproach={props.connectionApproach?.nodeId === node.id ? props.connectionApproach.point : undefined}
+                            forceInputMounted={Boolean(props.batchConnectionPreview)}
+                            batchCount={props.batchChildCountById.get(node.id) || 0}
+                            batchExpanded={Boolean(node.metadata?.imageBatchExpanded)}
+                            batchPreviewNodes={batchPreviews.get(node.id)}
+                            batchClosing={Boolean(node.metadata?.batchRootId && props.collapsingBatchIds.has(node.metadata.batchRootId))}
+                            batchOpening={props.openingBatchIds.has(node.metadata?.batchRootId || node.id)}
+                            batchRecovering={props.collapsingBatchIds.has(node.id)}
+                            batchPrimary={Boolean(node.metadata?.batchRootId && props.nodeById.get(node.metadata.batchRootId)?.metadata?.primaryImageId === node.id)}
+                            batchMotion={props.batchMotionById.get(node.id)}
+                            showImageInfo={props.showImageInfo}
+                            disableMediaEffects={props.mediaEffectsDisabledNodeId === node.id}
+                            resourceLabel={props.resourceReferenceByNodeId.get(node.id)}
+                            mentionReferences={props.mentionReferencesByNodeId.get(node.id) || EMPTY_RESOURCE_REFERENCES}
+                            renderNodeContent={props.renderCanvasNodeContent}
+                            drawingProjectId={props.projectId}
+                            onMouseDown={props.onNodeMouseDown}
+                            onHoverStart={props.onNodeHoverStart}
+                            onHoverEnd={props.onNodeHoverEnd}
+                            onConnectStart={props.onConnectStart}
+                            onResize={props.onNodeResize}
+                            onTitleChange={props.onNodeTitleChange}
+                            onContentChange={props.onNodeContentChange}
+                            onToggleBatch={props.onToggleBatch}
+                            onSetBatchPrimary={props.onSetBatchPrimary}
+                            onRetry={props.onRetry}
+                            onReloadResource={props.onReloadResource}
+                            onOpenTaskDetails={props.onOpenTaskDetails}
+                            onViewImage={props.onViewImage}
+                            onReplaceMedia={props.onReplaceMedia}
+                            onOpenTextEditor={props.onOpenTextEditor}
+                            onOpenPrevis={props.onOpenPrevis}
+                            onOpenDrawing={props.onOpenDrawing}
+                            onContextMenu={props.onNodeContextMenu}
+                        />
+                    ),
+                )}
+            </div>
 
             {!props.isNodeDragging ? <BatchConnectionTails {...props} /> : null}
 

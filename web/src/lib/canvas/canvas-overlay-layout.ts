@@ -2,6 +2,19 @@ import type { CanvasNodeData, Position, ViewportTransform } from "@/types/canvas
 
 export type CanvasOverlayBounds = { left: number; top: number; right: number; bottom: number };
 type Size = { width: number; height: number };
+export type CanvasSelectionRect = Size & { left: number; top: number };
+
+export function placeCanvasSelectionToolbar(selection: CanvasSelectionRect, viewport: ViewportTransform, viewportSize: Size, toolbar: Size, committedScale: number) {
+    const halfWidth = Math.min(toolbar.width / 2, Math.max(0, viewportSize.width / 2 - 12));
+    const center = viewport.x + (selection.left + selection.width / 2) * viewport.k;
+    const left = Math.min(Math.max(center, 12 + halfWidth), Math.max(12 + halfWidth, viewportSize.width - 12 - halfWidth));
+    const gap = 8 + (12 * viewport.k) / committedScale;
+    const above = viewport.y + selection.top * viewport.k - gap;
+    const below = viewport.y + (selection.top + selection.height) * viewport.k + gap;
+    const fitsAbove = above - toolbar.height >= 68;
+    return { left, top: fitsAbove ? above : Math.min(below, viewportSize.height - toolbar.height - 12), above: fitsAbove };
+}
+
 const NODE_PANEL_LAYOUT_EVENT = "canvas:node-panel-layout";
 const nodePanelLayouts = new WeakMap<HTMLElement, Map<HTMLElement, CanvasOverlayBounds>>();
 

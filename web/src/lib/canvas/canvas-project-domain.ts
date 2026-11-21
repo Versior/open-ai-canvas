@@ -498,29 +498,32 @@ export type NodeAlignmentContext = {
     targets: Array<{ x: number[]; y: number[] }>;
 };
 
-export function createNodeAlignmentContext(nodes: CanvasNodeData[], initialPositions: Array<{ id: string; x: number; y: number }>): NodeAlignmentContext | null {
-    const movingIds = new Set(initialPositions.map((item) => item.id));
-    const initialById = new Map(initialPositions.map((item) => [item.id, item]));
-    const movingNodes = nodes.filter((node) => movingIds.has(node.id));
-    if (!movingNodes.length) return null;
+export function createNodeAlignmentContext(nodes: CanvasNodeData[], initialPositions: ReadonlyMap<string, Position>): NodeAlignmentContext | null {
+    if (!initialPositions.size || initialPositions.size === nodes.length) return null;
     const nodeById = new Map(nodes.map((node) => [node.id, node]));
-    const left = Math.min(...movingNodes.map((node) => initialById.get(node.id)?.x ?? node.position.x));
-    const top = Math.min(...movingNodes.map((node) => initialById.get(node.id)?.y ?? node.position.y));
-    const right = Math.max(...movingNodes.map((node) => (initialById.get(node.id)?.x ?? node.position.x) + node.width));
-    const bottom = Math.max(...movingNodes.map((node) => (initialById.get(node.id)?.y ?? node.position.y) + node.height));
-    const targets = nodes.flatMap((node) => {
-        if (movingIds.has(node.id)) return [];
+    let left = Infinity,
+        top = Infinity,
+        right = -Infinity,
+        bottom = -Infinity;
+    const targets: NodeAlignmentContext["targets"] = [];
+    for (const node of nodes) {
+        const initial = initialPositions.get(node.id);
+        if (initial) {
+            left = Math.min(left, initial.x);
+            top = Math.min(top, initial.y);
+            right = Math.max(right, initial.x + node.width);
+            bottom = Math.max(bottom, initial.y + node.height);
+            continue;
+        }
         const batchRoot = node.metadata?.batchRootId ? nodeById.get(node.metadata.batchRootId) : null;
-        if (batchRoot && !batchRoot.metadata?.imageBatchExpanded) return [];
+        if (batchRoot && !batchRoot.metadata?.imageBatchExpanded) continue;
         const parent = node.parentId ? nodeById.get(node.parentId) : null;
-        if (parent && isFrameNode(parent) && parent.metadata?.frame?.collapsed) return [];
-        return [
-            {
-                x: [node.position.x, node.position.x + node.width / 2, node.position.x + node.width],
-                y: [node.position.y, node.position.y + node.height / 2, node.position.y + node.height],
-            },
-        ];
-    });
+        if (parent && isFrameNode(parent) && parent.metadata?.frame?.collapsed) continue;
+        targets.push({
+            x: [node.position.x, node.position.x + node.width / 2, node.position.x + node.width],
+            y: [node.position.y, node.position.y + node.height / 2, node.position.y + node.height],
+        });
+    }
     return { movingBounds: { left, top, right, bottom }, targets };
 }
 

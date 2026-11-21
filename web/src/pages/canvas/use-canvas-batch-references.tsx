@@ -187,7 +187,7 @@ export function useCanvasBatchReferences({ nodesRef, connectionsRef, setNodes, s
         setConnections(edges);
     };
     const pickerState = picker && cellState(picker);
-    const images = nodesRef.current.filter((node) => node.type === "image" && (node.metadata?.content || node.metadata?.storageKey) && (node.title || translate("canvasPage.common.image")).includes(search));
+    const images = pickerState ? nodesRef.current.filter((node) => node.type === "image" && (node.metadata?.content || node.metadata?.storageKey) && (node.title || translate("canvasPage.common.image")).includes(search)) : [];
     const handlers = {
         connectCell: (tableId: string, rowId: string, columnId: string, sourceId: string) => {
             void propose({ tableId, rowId, columnId }, sourceId);

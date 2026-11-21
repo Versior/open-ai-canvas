@@ -1,7 +1,6 @@
 type AudioContextConstructor = typeof AudioContext;
 
 let audioContext: AudioContext | null = null;
-let unlockInstalled = false;
 
 function audioContextConstructor(): AudioContextConstructor | undefined {
     if (typeof window === "undefined") return undefined;
@@ -20,26 +19,31 @@ function ensureAudioContext() {
     return audioContext;
 }
 
-/**
- * 浏览器要求用户手势后才能出声。首次点击或按键时预先解锁音频，之后标签页在后台也能播放提示音。
- */
 export function installNotificationAudioUnlock() {
-    if (unlockInstalled || typeof window === "undefined") return;
-    unlockInstalled = true;
-    const unlock = () => {
+    if (audioContext?.state === "running" || !audioContextConstructor()) return;
+    const unlock = (event: MouseEvent | KeyboardEvent) => {
+        if (!event.isTrusted || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+        if ("key" in event && (event.key !== "Enter" || event.repeat || event.isComposing)) return;
+        if ("button" in event && event.button !== 0) return;
+        const target = event.target;
+        if (!(target instanceof Element) || !target.closest('button,a[href],input,textarea,select,[role="button"],[role="textbox"],[contenteditable="true"]')) return;
+        if (target.closest("[data-canvas-viewport]") && !target.closest("[data-canvas-node-panel]")) return;
         const context = ensureAudioContext();
         if (!context) return;
         void context
             .resume()
             .then(() => {
-                if (context.state !== "running") return;
-                window.removeEventListener("pointerdown", unlock, true);
-                window.removeEventListener("keydown", unlock, true);
+                if (context.state === "running") cleanup();
             })
             .catch(() => undefined);
     };
-    window.addEventListener("pointerdown", unlock, true);
+    const cleanup = () => {
+        window.removeEventListener("click", unlock, true);
+        window.removeEventListener("keydown", unlock, true);
+    };
+    window.addEventListener("click", unlock, true);
     window.addEventListener("keydown", unlock, true);
+    return cleanup;
 }
 
 /** 生成完成提示音：两个上行的柔和正弦音，约 0.5 秒，音量较低，不使用音频文件。 */

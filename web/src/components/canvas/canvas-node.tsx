@@ -42,6 +42,7 @@ import { currentMediaVersion, hasMediaVersionHistory } from "@/lib/canvas/canvas
 import { resourceStorageLabel, resourceStorageLocation, resourceStorageTitle } from "@/lib/canvas/resource-storage-status";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
 import { CanvasNodeType, type CanvasNodeData, type CanvasNodeTypeId, type Position } from "@/types/canvas";
+import { CANVAS_ACTIVE_NODE_SLOT } from "@/lib/canvas/canvas-live-viewport";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { ART_CRITIQUE_NODE_TYPE } from "@/lib/art-critique/contracts";
 import { getNodeDefinition } from "@/lib/canvas/node-registry";
@@ -63,6 +64,7 @@ type CanvasNodeProps = {
     dragOffset?: Position;
     scale: number;
     isSelected: boolean;
+    useActiveSlot?: boolean;
     mediaActive?: boolean;
     isRelated: boolean;
     isFocusRelated: boolean;
@@ -112,6 +114,7 @@ export const CanvasNode = React.memo(function CanvasNode({
     dragOffset,
     scale,
     isSelected,
+    useActiveSlot = false,
     mediaActive = false,
     isRelated,
     isFocusRelated,
@@ -186,6 +189,7 @@ export const CanvasNode = React.memo(function CanvasNode({
     const nodeRef = useRef<HTMLDivElement>(null);
     const shellRef = useRef<HTMLDivElement>(null);
     const resizeMotion = useCanvasNodeResizeStyle(nodeRef, data, dragOffset);
+    const toggleBatch = useCallback(() => onToggleBatch?.(data.id), [data.id, onToggleBatch]);
     const handleResizePointerDown = useCanvasNodeResize(data, scale, scriptMinHeight, onResize, readOnly);
     const generationStatus = data.metadata?.status;
     const generationRevealing = useGenerationReveal(generationStatus, disableMediaEffects);
@@ -247,6 +251,7 @@ export const CanvasNode = React.memo(function CanvasNode({
         <div
             ref={nodeRef}
             data-node-id={data.id}
+            slot={useActiveSlot && isActive && !(isSelected && data.type === CanvasNodeType.Video) ? CANVAS_ACTIVE_NODE_SLOT : undefined}
             data-popover-anchor-container
             data-node-lod={effectiveRenderLOD}
             data-agent-enter={entranceDelay === null ? undefined : "true"}
@@ -383,7 +388,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                         onRetry={onRetry}
                         onReloadResource={onReloadResource}
                         onOpenTaskDetails={onOpenTaskDetails}
-                        onToggleBatch={() => onToggleBatch?.(data.id)}
+                        onToggleBatch={toggleBatch}
                         disableMediaEffects={disableMediaEffects}
                         mediaActive={mediaActive}
                         onMediaPlayRequest={onMediaPlayRequest}
@@ -493,6 +498,7 @@ function areCanvasNodePropsEqual(previous: CanvasNodeProps, next: CanvasNodeProp
         previous.dragOffset?.y === next.dragOffset?.y &&
         previous.scale === next.scale &&
         previous.isSelected === next.isSelected &&
+        previous.useActiveSlot === next.useActiveSlot &&
         previous.mediaActive === next.mediaActive &&
         previous.isRelated === next.isRelated &&
         previous.isFocusRelated === next.isFocusRelated &&

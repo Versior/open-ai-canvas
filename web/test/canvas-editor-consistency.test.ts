@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { createCanvasStateWriter } from "@/lib/canvas/canvas-editor-state";
 import { commitCanvasGenerationResult } from "@/lib/canvas/canvas-generation-result";
 import { selectCanvasVisibleNodes } from "@/lib/canvas/canvas-node-visibility";
+import { buildCanvasConnectionIndex } from "@/lib/canvas/canvas-connection-index";
+import { queryDraggedCanvasContent } from "@/lib/canvas/canvas-drag-window";
 import { buildCanvasSpatialIndex, canvasNodeBounds } from "@/lib/canvas/canvas-spatial-index";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 import { markCanvasTaskRecoveryUnconfirmed, resetGenerationTaskMetadata } from "@/lib/canvas/canvas-task-state";
@@ -14,8 +16,14 @@ describe("canvas synchronous editor state", () => {
         const snapshots: string[][] = [];
         const write = createCanvasStateWriter(ref, (value) => snapshots.push(value));
         let calls = 0;
-        write((current) => { calls++; return [...current, "first"]; });
-        write((current) => { calls++; return [...current, "second"]; });
+        write((current) => {
+            calls++;
+            return [...current, "first"];
+        });
+        write((current) => {
+            calls++;
+            return [...current, "second"];
+        });
         expect(calls).toBe(2);
         expect(ref.current).toEqual(["first", "second"]);
         expect(snapshots).toEqual([["first"], ["first", "second"]]);
@@ -45,11 +53,13 @@ describe("canvas generation node commits", () => {
         const before = Array.from({ length: 5 }, (_, i) => image(String(i)));
         const ref = { current: [...before, image("new")] };
         const write = createCanvasStateWriter(ref, () => {});
-        await Promise.all(before.map(async (node, i) => {
-            await Promise.resolve();
-            const result: CanvasNodeData = { ...node, metadata: { ...node.metadata, status: i < 2 ? "success" : "error", storageKey: i < 2 ? `resource:${i}` : undefined } };
-            write((current) => commitCanvasGenerationResult(current, node, result, `task-${i}`));
-        }));
+        await Promise.all(
+            before.map(async (node, i) => {
+                await Promise.resolve();
+                const result: CanvasNodeData = { ...node, metadata: { ...node.metadata, status: i < 2 ? "success" : "error", storageKey: i < 2 ? `resource:${i}` : undefined } };
+                write((current) => commitCanvasGenerationResult(current, node, result, `task-${i}`));
+            }),
+        );
         expect(ref.current.filter((node) => node.metadata?.status === "success")).toHaveLength(2);
         expect(ref.current.filter((node) => node.metadata?.status === "error")).toHaveLength(3);
         expect(ref.current.at(-1)?.id).toBe("new");
@@ -73,13 +83,45 @@ describe("canvas generation node commits", () => {
 });
 
 describe("canvas viewport selection", () => {
+    test("a long group drag discovers arriving nodes and crossing edges, not hidden or stationary neighbors", () => {
+        const nodes = [image("moved", 500), image("inside", 540), image("hidden", 510), image("static", 580), image("across", 700), image("fixed", 200)];
+        const byId = new Map(nodes.map((node) => [node.id, node]));
+        const index = buildCanvasSpatialIndex(nodes.map((node) => ({ id: node.id, value: node.id, bounds: canvasNodeBounds(node) })));
+        const connections = [
+            ["rigid", "moved", "inside"],
+            ["mixed", "moved", "static"],
+            ["off", "across", "fixed"],
+            ["drawn", "inside", "fixed"],
+        ].map(([id, fromNodeId, toNodeId]) => ({ id, fromNodeId, toNodeId }));
+        const edges = buildCanvasConnectionIndex(nodes, connections);
+        const view = { left: 0, top: 0, right: 100, bottom: 80 };
+        const drag = { x: -500, y: 30, nodeIds: new Set(["moved", "inside", "hidden", "across"]) };
+        const find = (budget: number) => queryDraggedCanvasContent(view, drag, index, edges, byId, new Set(["hidden"]), new Set(["drawn"]), budget);
+        expect(find(10).nodes).toEqual(nodes.slice(0, 2));
+        expect(find(10).connections.map(({ connection, from }) => [connection.id, from.position.x])).toEqual([
+            ["rigid", 500],
+            ["mixed", 500],
+        ]);
+        expect(find(1).connections).toHaveLength(1);
+        expect(find(0).connections).toHaveLength(0);
+    });
     test("hidden and overscan nodes cannot consume the viewport budget", () => {
         const nodes = [...Array.from({ length: 400 }, (_, i) => image(`hidden-${i}`)), ...Array.from({ length: 400 }, (_, i) => image(`buffer-${i}`, -100)), ...Array.from({ length: 1000 }, (_, i) => image(`visible-${i}`)), image("forced", 2000)];
         const index = buildCanvasSpatialIndex(nodes.map((node) => ({ id: node.id, value: node.id, bounds: canvasNodeBounds(node) })));
         const nodeById = new Map(nodes.map((node) => [node.id, node]));
         const view = { left: 0, top: 0, right: 100, bottom: 100 };
         const retain = { ...view, left: -200, right: 200 };
-        const selected = selectCanvasVisibleNodes({ index, nodeById, view, enter: retain, retain, hiddenIds: new Set(nodes.filter((node) => node.id.startsWith("hidden")).map((node) => node.id)), retainedIds: new Set(), forcedIds: new Set(["forced"]), budget: 280 });
+        const selected = selectCanvasVisibleNodes({
+            index,
+            nodeById,
+            view,
+            enter: retain,
+            retain,
+            hiddenIds: new Set(nodes.filter((node) => node.id.startsWith("hidden")).map((node) => node.id)),
+            retainedIds: new Set(),
+            forcedIds: new Set(["forced"]),
+            budget: 280,
+        });
         expect(selected).toHaveLength(1001);
         expect(selected.filter((node) => node.id.startsWith("visible"))).toHaveLength(1000);
         expect(selected.at(-1)?.id).toBe("forced");

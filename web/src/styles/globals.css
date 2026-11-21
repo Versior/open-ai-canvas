@@ -11709,6 +11709,10 @@
         pointer-events: none;
     }
 
+    .node-element[data-canvas-drag-cursor]:hover {
+        cursor: grabbing;
+    }
+
     .canvas-node-shell {
         box-shadow: none;
         transform-origin: center;
@@ -14263,6 +14267,10 @@
 
     [data-canvas-viewport-interacting="true"] :where(.canvas-connection-comet, .canvas-connection-draft) {
         animation: none !important;
+    }
+
+    [data-canvas-connections-dragging="true"] [data-canvas-connection-visual] {
+        display: none;
     }
 
     [data-canvas-viewport-interacting="true"] :where(.canvas-node-toolbar, [data-canvas-node-panel]) {

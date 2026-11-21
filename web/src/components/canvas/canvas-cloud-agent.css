@@ -767,7 +767,7 @@
     contain-intrinsic-size: auto 160px;
 }
 
-.agent-conversation-messages > * + * {
+.agent-conversation-messages > :where(:not(:first-child)) {
     margin-top: var(--space-3);
 }
 
@@ -1010,9 +1010,9 @@
     margin-block: 0;
 }
 
-.agent-answer-prose > * + *,
+.agent-answer-prose > :where(:not(:first-child)),
 .agent-answer-prose > [dir] + [dir] > :first-child,
-.agent-answer-prose > [dir] > * + * {
+.agent-answer-prose > [dir] > :where(:not(:first-child)) {
     margin-block-start: var(--space-3);
 }
 

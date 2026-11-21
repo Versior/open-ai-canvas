@@ -1,4 +1,5 @@
 import { getActiveUserScope } from "@/lib/user-scope";
+import { observeCanvasGestureActive } from "@/lib/canvas/canvas-live-viewport";
 
 const MAX_ACTIVE_IMAGE_PREPARATIONS = 4;
 const IMAGE_PREPARATION_TIMEOUT_MS = 60_000;
@@ -6,14 +7,15 @@ const MAX_CACHED_IMAGES = 48;
 const MAX_CACHED_PIXELS = 16_000_000;
 const IMAGE_CACHE_TTL_MS = 60_000;
 
-type SharedPreparation = { controller: AbortController; promise: Promise<HTMLImageElement>; consumers: number };
+export type CanvasImagePriority = "visible" | "background";
+type SharedPreparation = { controller: AbortController; work: ImagePreparationJob; promise: Promise<HTMLImageElement>; consumers: number; visibleConsumers: number };
 const preparations = new Map<string, SharedPreparation>();
 const preparedImages = new Map<string, { image: HTMLImageElement; pixels: number; expiresAt: number }>();
 let preparedPixels = 0;
 let preparationScope = "";
 
 /** Share work across nodes and LOD remounts without letting one consumer cancel the others. */
-export function prepareCanvasImage(src: string, signal: AbortSignal, timeoutMs = IMAGE_PREPARATION_TIMEOUT_MS): Promise<HTMLImageElement> {
+export function prepareCanvasImage(src: string, signal: AbortSignal, timeoutMs = IMAGE_PREPARATION_TIMEOUT_MS, priority: CanvasImagePriority = "visible"): Promise<HTMLImageElement> {
     if (signal.aborted) return Promise.reject(abortError());
     const scope = getActiveUserScope();
     if (scope !== preparationScope) {
@@ -38,7 +40,8 @@ export function prepareCanvasImage(src: string, signal: AbortSignal, timeoutMs =
     let pending = preparations.get(src);
     if (!pending) {
         const controller = new AbortController();
-        const entry: SharedPreparation = { controller, consumers: 0, promise: enqueueCanvasImage(src, controller.signal, timeoutMs) };
+        const { work, promise } = enqueueCanvasImage(src, controller.signal, timeoutMs, priority);
+        const entry: SharedPreparation = { controller, work, consumers: 0, visibleConsumers: 0, promise };
         entry.promise = entry.promise
             .then((image) => {
                 if (controller.signal.aborted || scope !== getActiveUserScope() || preparations.get(src) !== entry) throw abortError();
@@ -63,6 +66,7 @@ export function prepareCanvasImage(src: string, signal: AbortSignal, timeoutMs =
     }
     const shared = pending;
     shared.consumers += 1;
+    if (priority === "visible" && ++shared.visibleConsumers === 1) setQueuedPriority(shared.work, "visible");
     return new Promise((resolve, reject) => {
         let settled = false;
         const finish = (image?: HTMLImageElement, error?: unknown) => {
@@ -70,6 +74,7 @@ export function prepareCanvasImage(src: string, signal: AbortSignal, timeoutMs =
             settled = true;
             signal.removeEventListener("abort", onAbort);
             shared.consumers -= 1;
+            if (priority === "visible" && --shared.visibleConsumers === 0 && shared.consumers) setQueuedPriority(shared.work, "background");
             if (error !== undefined) reject(error);
             else resolve(image!);
         };
@@ -102,43 +107,66 @@ type ImagePreparationJob = {
     image?: HTMLImageElement;
     timeout?: ReturnType<typeof setTimeout>;
     timeoutMs: number;
+    priority: CanvasImagePriority;
     onAbort: () => void;
 };
 
-const queue: ImagePreparationJob[] = [];
+const queues = { visible: new Set<ImagePreparationJob>(), background: new Set<ImagePreparationJob>() };
 let activePreparations = 0;
+let pumpScheduled = false;
+let gestureActive = false;
+let observingGestures = false;
 
 // 正在真正下载/解码的图片地址（受并发上限约束，最多 MAX_ACTIVE_IMAGE_PREPARATIONS 个）。
 // 加载骨架只给这些节点播放微光：排队中的上百个节点若同时播放整块尺寸的动画图层，平移缩放会明显掉帧。
 const activeSources = new Map<string, number>();
-const activeListeners = new Set<() => void>();
+const activeListeners = new Map<string, Set<() => void>>();
 
 function markActiveSource(src: string, delta: 1 | -1) {
-    const next = (activeSources.get(src) || 0) + delta;
+    const previous = activeSources.get(src) || 0;
+    const next = previous + delta;
     if (next > 0) activeSources.set(src, next);
     else activeSources.delete(src);
-    activeListeners.forEach((listener) => listener());
+    if (Boolean(previous) !== Boolean(next)) activeListeners.get(src)?.forEach((listener) => listener());
 }
 
-export function subscribeCanvasImageActivity(listener: () => void) {
-    activeListeners.add(listener);
-    return () => activeListeners.delete(listener);
+export function subscribeCanvasImageActivity(src: string, listener: () => void) {
+    if (!src) return () => {};
+    const listeners = activeListeners.get(src) ?? new Set<() => void>();
+    listeners.add(listener);
+    activeListeners.set(src, listeners);
+    return () => {
+        listeners.delete(listener);
+        if (!listeners.size) activeListeners.delete(src);
+    };
 }
 
 export function isCanvasImageActive(src: string) {
     return Boolean(src && activeSources.has(src));
 }
 
-/** Load and decode one image under a shared concurrency budget. Queued work is cancellable. */
-function enqueueCanvasImage(src: string, signal: AbortSignal, timeoutMs: number): Promise<HTMLImageElement> {
-    if (signal.aborted) return Promise.reject(abortError());
-    return new Promise((resolve, reject) => {
-        const job: ImagePreparationJob = { src, signal, resolve, reject, started: false, settled: false, timeoutMs, onAbort: () => {} };
+function setQueuedPriority(job: ImagePreparationJob, priority: CanvasImagePriority) {
+    if (job.priority === priority || job.started || job.settled) return;
+    queues[job.priority].delete(job);
+    job.priority = priority;
+    queues[priority].add(job);
+}
+
+function enqueueCanvasImage(src: string, signal: AbortSignal, timeoutMs: number, priority: CanvasImagePriority) {
+    if (!observingGestures && typeof document !== "undefined") {
+        observingGestures = true;
+        observeCanvasGestureActive(document, (active) => {
+            gestureActive = active;
+            if (!active) schedulePump();
+        });
+    }
+    let job!: ImagePreparationJob;
+    const promise = new Promise<HTMLImageElement>((resolve, reject) => {
+        job = { src, signal, resolve, reject, started: false, settled: false, priority, timeoutMs, onAbort: () => {} };
         job.onAbort = () => {
             if (job.settled) return;
             if (!job.started) {
-                const index = queue.indexOf(job);
-                if (index >= 0) queue.splice(index, 1);
+                queues[job.priority].delete(job);
                 settle(job, undefined, abortError());
                 return;
             }
@@ -146,18 +174,30 @@ function enqueueCanvasImage(src: string, signal: AbortSignal, timeoutMs: number)
             settle(job, undefined, abortError());
         };
         signal.addEventListener("abort", job.onAbort, { once: true });
-        queue.push(job);
-        pump();
+        queues[priority].add(job);
+        schedulePump();
     });
+    return { work: job, promise };
 }
 
 export function canvasImagePreparationStats() {
-    return { active: activePreparations, queued: queue.length, limit: MAX_ACTIVE_IMAGE_PREPARATIONS };
+    return { active: activePreparations, queued: queues.visible.size + queues.background.size, limit: MAX_ACTIVE_IMAGE_PREPARATIONS };
+}
+
+function schedulePump() {
+    if (pumpScheduled) return;
+    pumpScheduled = true;
+    queueMicrotask(pump);
 }
 
 function pump() {
-    while (activePreparations < MAX_ACTIVE_IMAGE_PREPARATIONS && queue.length) {
-        const job = queue.shift()!;
+    pumpScheduled = false;
+    const limit = gestureActive ? 1 : MAX_ACTIVE_IMAGE_PREPARATIONS;
+    while (activePreparations < limit) {
+        const queue = queues.visible.size ? queues.visible : queues.background;
+        const job = queue.values().next().value;
+        if (!job) break;
+        queue.delete(job);
         if (job.settled || job.signal.aborted) {
             settle(job, undefined, abortError());
             continue;
@@ -170,20 +210,24 @@ function pump() {
             settle(job, undefined, new Error("图片加载或解码超时"));
         }, job.timeoutMs);
 
-        const image = new Image();
-        job.image = image;
-        image.decoding = "async";
-        image.onload = () => {
-            if (job.settled || job.signal.aborted) return;
-            image.onload = null;
-            void image.decode().then(
-                () => settle(job, image),
-                (error) => settle(job, undefined, error),
-            );
-        };
-        image.onerror = () => settle(job, undefined, new Error("图片加载失败"));
-        image.src = job.src;
-        if (image.complete && image.naturalWidth > 0) image.onload?.call(image, new Event("load"));
+        try {
+            const image = new Image();
+            job.image = image;
+            image.decoding = "async";
+            image.onload = () => {
+                if (job.settled || job.signal.aborted) return;
+                image.onload = null;
+                void image.decode().then(
+                    () => settle(job, image),
+                    (error) => settle(job, undefined, error),
+                );
+            };
+            image.onerror = () => settle(job, undefined, new Error("图片加载失败"));
+            image.src = job.src;
+            if (image.complete && image.naturalWidth > 0) image.onload?.call(image, new Event("load"));
+        } catch (error) {
+            settle(job, undefined, error);
+        }
     }
 }
 
@@ -199,7 +243,7 @@ function settle(job: ImagePreparationJob, image?: HTMLImageElement, error?: unkn
     if (job.started) {
         activePreparations = Math.max(0, activePreparations - 1);
         markActiveSource(job.src, -1);
-        pump();
+        schedulePump();
     }
     if (error !== undefined) job.reject(error);
     else if (image) job.resolve(image);

@@ -1,3 +1,4 @@
+import { nanoid } from "nanoid";
 import { canvasNodeToAsset } from "@/lib/canvas/canvas-node-asset";
 import { refreshResource, resourceIdFromStorageKey } from "@/services/api/resources";
 import { ApiError } from "@/services/api/request";
@@ -36,8 +37,8 @@ export function repairMissingCanvasAssets(projectIds?: Set<string>, partialAsset
         }
     }
 
-    let createdAssets = 0;
-    let updatedProjects = 0;
+    const newAssets: (NewAsset & { id: string })[] = [];
+    const repairs = new Map<string, Pick<CanvasProject, "nodes" | "timeline">>();
     for (const project of canvasStore.projects) {
         if (projectIds && !projectIds.has(project.id)) continue;
         if (partialAssets) {
@@ -61,21 +62,21 @@ export function repairMissingCanvasAssets(projectIds?: Set<string>, partialAsset
             if (node.metadata?.taskId && node.metadata.storageKey?.startsWith("resource:")) return undefined;
             const input = canvasNodeToAsset(node, { canvasId: project.id, source: "canvas-upload" });
             if (!input) return undefined;
-            const assetId = useAssetStore.getState().addAsset(input);
+            const assetId = nanoid();
+            newAssets.push({ ...input, id: assetId });
             knownAssetIds.add(assetId);
             const storageKey = node.metadata?.storageKey;
             if (storageKey) {
                 assetIdByStorageKey.set(storageKey, assetId);
                 storageKeyByAssetId.set(assetId, storageKey);
             }
-            createdAssets += 1;
             return assetId;
         });
-        if (!repaired) continue;
-        canvasStore.updateProject(project.id, repaired);
-        updatedProjects += 1;
+        if (repaired) repairs.set(project.id, repaired);
     }
-    return { createdAssets, updatedProjects };
+    assetStore.addAssets(newAssets);
+    for (const [projectId, repair] of repairs) canvasStore.updateProject(projectId, repair);
+    return { createdAssets: newAssets.length, updatedProjects: repairs.size };
 }
 
 function repairProject(
@@ -165,15 +166,17 @@ export async function repairMissingCanvasVideoPreviews(projectIds?: Set<string>,
     const invalidIds = new Set<string>();
     const ids = [...previewResourceIds];
     for (let offset = 0; offset < ids.length; offset += 8) {
-        await Promise.all(ids.slice(offset, offset + 8).map(async (id) => {
-            try {
-                const resource = await lookup(id);
-                if (resource.status !== "ready") invalidIds.add(id);
-            } catch (error) {
-                if (error instanceof ApiError && error.status === 404) invalidIds.add(id);
-                else throw error;
-            }
-        }));
+        await Promise.all(
+            ids.slice(offset, offset + 8).map(async (id) => {
+                try {
+                    const resource = await lookup(id);
+                    if (resource.status !== "ready") invalidIds.add(id);
+                } catch (error) {
+                    if (error instanceof ApiError && error.status === 404) invalidIds.add(id);
+                    else throw error;
+                }
+            }),
+        );
     }
     if (getActiveUserScope() !== scope) throw new Error("账号已切换，已停止修复视频封面");
     if (!invalidIds.size) return { clearedPreviews: 0, updatedProjects: 0 };

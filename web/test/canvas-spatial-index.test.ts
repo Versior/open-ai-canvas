@@ -8,11 +8,14 @@ import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 
 describe("canvas spatial index", () => {
     test("queries intersecting entries across buckets in source order", () => {
-        const index = buildCanvasSpatialIndex([
-            { id: "far", bounds: { left: 2048, top: 0, right: 2200, bottom: 120 }, value: "far" },
-            { id: "near", bounds: { left: 900, top: 40, right: 1100, bottom: 160 }, value: "near" },
-            { id: "cross", bounds: { left: 1000, top: -40, right: 2100, bottom: 40 }, value: "cross" },
-        ], 1024);
+        const index = buildCanvasSpatialIndex(
+            [
+                { id: "far", bounds: { left: 2048, top: 0, right: 2200, bottom: 120 }, value: "far" },
+                { id: "near", bounds: { left: 900, top: 40, right: 1100, bottom: 160 }, value: "near" },
+                { id: "cross", bounds: { left: 1000, top: -40, right: 2100, bottom: 40 }, value: "cross" },
+            ],
+            1024,
+        );
 
         expect(index.query({ left: 950, top: 0, right: 1150, bottom: 100 })).toEqual(["near", "cross"]);
         expect(index.query({ left: 2100, top: 0, right: 2200, bottom: 100 })).toEqual(["far"]);
@@ -33,21 +36,26 @@ describe("canvas spatial index", () => {
     });
 
     test("keeps very large entries out of the bucket build loop", () => {
-        const index = buildCanvasSpatialIndex([
-            { id: "large", bounds: { left: -100_000, top: -100_000, right: 100_000, bottom: 100_000 }, value: "large" },
-            { id: "small", bounds: { left: 20_000, top: 20_000, right: 20_100, bottom: 20_100 }, value: "small" },
-        ], 100);
+        const index = buildCanvasSpatialIndex(
+            [
+                { id: "large", bounds: { left: -100_000, top: -100_000, right: 100_000, bottom: 100_000 }, value: "large" },
+                { id: "small", bounds: { left: 20_000, top: 20_000, right: 20_100, bottom: 20_100 }, value: "small" },
+            ],
+            100,
+        );
 
         expect(index.query({ left: 0, top: 0, right: 10, bottom: 10 })).toEqual(["large"]);
         expect(index.query({ left: 20_000, top: 20_000, right: 20_050, bottom: 20_050 })).toEqual(["large", "small"]);
     });
 
     test("supports a bounded query for dense buckets", () => {
-        const index = buildCanvasSpatialIndex(Array.from({ length: 10 }, (_, index) => ({
-            id: `node-${index}`,
-            bounds: { left: index * 2, top: 0, right: index * 2 + 1, bottom: 1 },
-            value: index,
-        })));
+        const index = buildCanvasSpatialIndex(
+            Array.from({ length: 10 }, (_, index) => ({
+                id: `node-${index}`,
+                bounds: { left: index * 2, top: 0, right: index * 2 + 1, bottom: 1 },
+                value: index,
+            })),
+        );
 
         expect(index.query({ left: 0, top: 0, right: 100, bottom: 100 }, 3)).toEqual([0, 1, 2]);
     });
@@ -72,8 +80,7 @@ describe("canvas spatial index", () => {
         const from: CanvasNodeData = { id: "from", type: CanvasNodeType.Text, title: "起点", position: { x: 0, y: 0 }, width: 100, height: 80, metadata: {} };
         const to: CanvasNodeData = { id: "to", type: CanvasNodeType.Text, title: "终点", position: { x: 300, y: 0 }, width: 100, height: 80, metadata: {} };
         const index = buildCanvasConnectionIndex([from, to], [{ id: "edge", fromNodeId: from.id, toNodeId: to.id }]);
-        expect(index.index.query({ left: -1, top: -1, right: 500, bottom: 100 }).map((item) => item.connection.id)).toEqual(["edge"]);
-        expect(index.entriesById.get("edge")).toMatchObject({ fromId: "from", toId: "to" });
+        expect(index.query({ left: -1, top: -1, right: 500, bottom: 100 })).toEqual([{ connection: { id: "edge", fromNodeId: from.id, toNodeId: to.id }, fromId: from.id, toId: to.id }]);
     });
 
     test("keeps the target 50k canvas mix query-bounded", () => {

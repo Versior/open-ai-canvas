@@ -6,7 +6,7 @@
 import { Image as ImageIcon, ImageOff, LoaderCircle, Music2, Play, RotateCw, Video } from "lucide-react";
 import "./canvas-image-state.css";
 import "./canvas-video-preview-play.css";
-import { type CSSProperties, type ReactNode, type RefObject, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { memo, type CSSProperties, type ReactNode, type RefObject, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useCanvasNodeActions } from "./canvas-node-action-context";
 import { canvasNodeVideoPreviewReference } from "@/lib/canvas/canvas-media-preview";
 import { createDefaultSubtitleStyle } from "@/types/timeline";
@@ -22,12 +22,15 @@ import { hydrateCanvasVideoPreview } from "@/services/canvas-video-preview";
 import { type CanvasTheme } from "@/lib/canvas-theme";
 import { fitImageMaterialNodeSize, fitImageNodeSize, fitVideoNodeToSource } from "@/lib/canvas/canvas-node-size";
 import { getActiveUserScope } from "@/lib/user-scope";
-import { isCanvasImageActive, prepareCanvasImage, subscribeCanvasImageActivity } from "@/services/canvas-image-loader";
+import { isCanvasImageActive, prepareCanvasImage, subscribeCanvasImageActivity, type CanvasImagePriority } from "@/services/canvas-image-loader";
 import { useCachedResourceUrl } from "@/hooks/use-cached-resource-url";
 import { getResourceAccess, refreshResource, resourceIdFromStorageKey, resolveResourceAccessURL } from "@/services/api/resources";
 import type { CanvasNodeContentProps } from "./canvas-node-content";
 import { ErrorContent, LoadingContent } from "./canvas-node-status-content";
 import { ImageGenerationPack } from "@/components/image-pack/image-generation-pack";
+
+type DisplayImageNode = Pick<CanvasNodeData, "id" | "type" | "title" | "metadata">;
+const CanvasImagePack = memo(ImageGenerationPack);
 
 export function ImageNodeContent(props: CanvasNodeContentProps) {
     const hasImage = Boolean(props.node.metadata?.content || props.node.metadata?.storageKey);
@@ -37,6 +40,13 @@ export function ImageNodeContent(props: CanvasNodeContentProps) {
         if (props.node.metadata?.status === "loading") setRevealed(false);
     }, [props.node.metadata?.status]);
     const completeReveal = useCallback(() => setRevealed(true), []);
+    const { id, type, title, metadata } = props.node;
+    const { renderLOD, batchPreviewNodes, theme, isBatchRoot, batchCount, batchExpanded, batchOpening, batchRecovering, onToggleBatch } = props;
+    const deferFit = !revealed && !packDisabled;
+    const image = useMemo(
+        () => hasImage && <ImageContent node={{ id, type, title, metadata }} {...{ deferFit, renderLOD, batchPreviewNodes, theme, isBatchRoot, batchCount, batchExpanded, batchOpening, batchRecovering, onToggleBatch }} />,
+        [hasImage, id, type, title, metadata, deferFit, renderLOD, batchPreviewNodes, theme, isBatchRoot, batchCount, batchExpanded, batchOpening, batchRecovering, onToggleBatch],
+    );
     const content = !hasImage ? (
         props.node.metadata?.status === "loading" ? (
             packDisabled ? (
@@ -48,27 +58,15 @@ export function ImageNodeContent(props: CanvasNodeContentProps) {
             <EmptyImageContent {...props} isBatchRoot={false} />
         )
     ) : (
-        <ImageContent
-            deferFit={!revealed && !packDisabled}
-            renderLOD={props.renderLOD}
-            batchPreviewNodes={props.batchPreviewNodes}
-            node={props.node}
-            theme={props.theme}
-            isBatchRoot={props.isBatchRoot}
-            batchCount={props.batchCount}
-            batchExpanded={props.batchExpanded}
-            batchOpening={props.batchOpening}
-            batchRecovering={props.batchRecovering}
-            onToggleBatch={props.onToggleBatch}
-        />
+        image
     );
     return (
-        <ImageGenerationPack
+        <CanvasImagePack
             pending={props.node.metadata?.status === "loading"}
             succeeded={props.node.metadata?.status === "success"}
             disabled={packDisabled}
             onComplete={completeReveal}
-            label={<LoadingContent node={props.node} theme={props.theme} onOpenTaskDetails={props.onOpenTaskDetails} />}
+            label={props.node.metadata?.status === "loading" ? <LoadingContent node={props.node} theme={props.theme} onOpenTaskDetails={props.onOpenTaskDetails} /> : undefined}
         >
             {!hasImage && props.isBatchRoot ? (
                 <BatchFrame
@@ -85,7 +83,7 @@ export function ImageNodeContent(props: CanvasNodeContentProps) {
             ) : (
                 content
             )}
-        </ImageGenerationPack>
+        </CanvasImagePack>
     );
 }
 
@@ -537,10 +535,10 @@ export function ImageContent({
     batchOpening,
     batchRecovering,
     onToggleBatch,
-}: Pick<CanvasNodeContentProps, "renderLOD" | "node" | "theme" | "isBatchRoot" | "batchCount" | "batchPreviewNodes" | "batchExpanded" | "batchOpening" | "batchRecovering" | "onToggleBatch"> & { deferFit?: boolean }) {
-    const imageContainerRef = useRef<HTMLDivElement>(null);
-    const nearViewport = useNearViewport(imageContainerRef, renderLOD !== "shell");
+}: Pick<CanvasNodeContentProps, "renderLOD" | "theme" | "isBatchRoot" | "batchCount" | "batchPreviewNodes" | "batchExpanded" | "batchOpening" | "batchRecovering" | "onToggleBatch"> & { node: DisplayImageNode; deferFit?: boolean }) {
     const resourceVariant = node.metadata?.mimeType === "image/gif" || (renderLOD === "full" && (node.metadata?.imageLayer || node.metadata?.imageLayerGroup)) ? "original" : "thumbnail";
+    const identity = canvasImageIdentity(node);
+    const { ref: imageContainerRef, nearViewport, finishObservation } = usePendingImageViewport(`${resourceVariant}:${identity}`, renderLOD !== "shell");
     const { url, loading, failed: accessFailed, originalWidth, originalHeight } = useNodeResourceUrl(node, nearViewport, resourceVariant);
     const importedFromLibTV = node.metadata?.importSource?.provider === "libtv";
     const { updateMediaNode } = useCanvasNodeActions();
@@ -596,26 +594,28 @@ export function ImageContent({
 
     return (
         <BatchFrame
+            compact={renderLOD !== "full"}
             batchPreviewNodes={renderLOD === "full" ? batchPreviewNodes : undefined}
-            batchCount={isBatchRoot && renderLOD === "full" ? batchCount : 0}
+            batchCount={isBatchRoot ? batchCount : 0}
             batchExpanded={batchExpanded}
             batchOpening={batchOpening}
             batchRecovering={batchRecovering}
             theme={theme}
             onToggleBatch={onToggleBatch}
         >
-            <div ref={imageContainerRef} className="relative h-full w-full overflow-hidden rounded-[var(--node-radius)]">
+            <div ref={imageContainerRef} className="relative h-full w-full overflow-hidden rounded-[var(--node-radius)]" style={renderLOD !== "full" ? { background: theme.node.fill } : undefined}>
                 <RetainedCanvasImage
-                    identity={`${getActiveUserScope()}:${node.id}:${node.metadata?.storageKey || node.metadata?.content || "empty"}`}
+                    identity={identity}
                     src={url}
                     storageKey={node.metadata?.storageKey}
-                    fallbackSrc={node.metadata?.content || ""}
                     originalSize={{ width: originalWidth, height: originalHeight }}
                     alt={node.title}
                     fitToImage={fitToImage}
+                    onPrepared={finishObservation}
                     className={`pointer-events-none block h-full w-full select-none ${node.metadata?.freeResize ? "object-fill" : "object-contain"}`}
                     loading={loading}
                     accessFailed={accessFailed}
+                    compact={renderLOD !== "full"}
                     theme={theme}
                 />
                 {node.metadata?.imageLayerGroup?.incomplete ? (
@@ -634,32 +634,37 @@ export function ImageContent({
 }
 
 const IMAGE_SLOW_HINT_MS = 8000;
+const inactiveCanvasImage = () => false;
 
 /** A stable visible img is updated only after a queued candidate has loaded and decoded. */
 export function RetainedCanvasImage({
     identity,
     src,
     storageKey,
-    fallbackSrc,
     originalSize,
     alt,
     fitToImage,
     className,
     loading,
     accessFailed = false,
+    compact = false,
+    priority = "visible",
+    onPrepared,
     theme,
 }: {
     identity: string;
     src: string;
     storageKey?: string;
-    fallbackSrc: string;
-    originalSize: { width?: number; height?: number };
+    originalSize?: { width?: number; height?: number };
     alt?: string;
-    fitToImage: (image: HTMLImageElement, size?: { width?: number; height?: number }) => void;
+    fitToImage?: (image: HTMLImageElement, size?: { width?: number; height?: number }) => void;
     className: string;
     loading: boolean;
     /** 访问地址换取失败且没有回退地址。 */
     accessFailed?: boolean;
+    compact?: boolean;
+    priority?: CanvasImagePriority;
+    onPrepared?: () => void;
     theme: CanvasTheme;
 }) {
     const [displayed, setDisplayed] = useState<{ identity: string; src: string } | null>(null);
@@ -670,15 +675,22 @@ export function RetainedCanvasImage({
     // 当前这次加载实际请求的地址；只有它占用了下载并发位时骨架才播放微光。
     const [attemptSrc, setAttemptSrc] = useState("");
     const activeSnapshot = useCallback(() => isCanvasImageActive(attemptSrc), [attemptSrc]);
-    const downloading = useSyncExternalStore(subscribeCanvasImageActivity, activeSnapshot, () => false);
+    const subscribe = useCallback((listener: () => void) => subscribeCanvasImageActivity(compact ? "" : attemptSrc, listener), [attemptSrc, compact]);
+    const downloading = useSyncExternalStore(subscribe, compact ? inactiveCanvasImage : activeSnapshot, inactiveCanvasImage);
     const displayedRef = useRef(displayed);
     displayedRef.current = displayed;
-    const originalWidth = originalSize.width;
-    const originalHeight = originalSize.height;
-    const currentRef = useRef({ identity, src, storageKey, fallbackSrc, originalSize, fitToImage });
-    currentRef.current = { identity, src, storageKey, fallbackSrc, originalSize, fitToImage };
+    const originalWidth = originalSize?.width;
+    const originalHeight = originalSize?.height;
+    const currentRef = useRef({ identity, src, storageKey, originalSize, fitToImage, onPrepared });
+    currentRef.current = { identity, src, storageKey, originalSize, fitToImage, onPrepared };
     const currentDisplayedSrc = displayed?.identity === identity ? displayed.src : "";
     const retryCount = retry.identity === identity ? retry.count : 0;
+
+    useEffect(() => {
+        if (compact || !preparing) return;
+        const slowTimer = window.setTimeout(() => setSlowIdentity(identity), IMAGE_SLOW_HINT_MS);
+        return () => window.clearTimeout(slowTimer);
+    }, [compact, preparing, identity]);
 
     useEffect(() => {
         const controller = new AbortController();
@@ -687,22 +699,23 @@ export function RetainedCanvasImage({
         const alreadyShown = displayedRef.current?.identity === identity && displayedRef.current.src === target.src;
         // 手动重试时即使没有地址也要重新换取访问地址；其他情况下没有地址就等待上游给出。
         if (alreadyShown || (!target.src && !(retryCount > 0 && resourceKey))) {
+            if (alreadyShown) target.onPrepared?.();
             setPreparing(false);
+            setSlowIdentity((current) => (current === identity ? "" : current));
             return () => controller.abort();
         }
         setPreparing(true);
         setFailedIdentity((current) => (current === identity ? "" : current));
-        // 大图在慢网络下可能要几十秒，超过阈值后在骨架上提示仍在加载，避免像是卡死。
-        const slowTimer = window.setTimeout(() => setSlowIdentity(identity), IMAGE_SLOW_HINT_MS);
         const isCurrent = () => !controller.signal.aborted && currentRef.current.identity === identity && currentRef.current.src === target.src;
         const isAbort = (error: unknown) => controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError");
-        const show = (image: HTMLImageElement, url: string, size: { width?: number; height?: number }) => {
-            currentRef.current.fitToImage(image, size);
+        const show = (image: HTMLImageElement, url: string, size?: { width?: number; height?: number }) => {
+            currentRef.current.fitToImage?.(image, size);
+            currentRef.current.onPrepared?.();
             setDisplayed({ identity, src: url });
         };
         const attempt = (url: string) => {
             if (!controller.signal.aborted) setAttemptSrc(url);
-            return prepareCanvasImage(url, controller.signal);
+            return prepareCanvasImage(url, controller.signal, undefined, priority);
         };
         const prepare = async () => {
             try {
@@ -733,7 +746,6 @@ export function RetainedCanvasImage({
                 // 已显示过同一资源时保留旧画面；首次加载失败才进入可重试的失败态。
                 if (displayedRef.current?.identity !== identity) setFailedIdentity(identity);
             } finally {
-                window.clearTimeout(slowTimer);
                 if (isCurrent()) {
                     setPreparing(false);
                     setSlowIdentity((current) => (current === identity ? "" : current));
@@ -741,11 +753,8 @@ export function RetainedCanvasImage({
             }
         };
         void prepare();
-        return () => {
-            window.clearTimeout(slowTimer);
-            controller.abort();
-        };
-    }, [identity, originalHeight, originalWidth, retryCount, src, storageKey]);
+        return () => controller.abort();
+    }, [identity, originalHeight, originalWidth, priority, retryCount, src, storageKey]);
 
     const failed = !currentDisplayedSrc && !preparing && (failedIdentity === identity || (accessFailed && !loading));
     const surfaceStyle = { "--canvas-gen-ink": theme.node.text, "--canvas-gen-surface": theme.node.fill, "--canvas-image-muted": theme.node.muted } as CSSProperties;
@@ -757,7 +766,7 @@ export function RetainedCanvasImage({
     return (
         <>
             <img
-                data-image-pack-result
+                data-image-pack-result={priority === "visible" || undefined}
                 src={currentDisplayedSrc || undefined}
                 alt={alt || ""}
                 // 世界层每次缩放提交都会按新倍率重新栅格化；async 解码会让 Chromium 先画出
@@ -771,8 +780,14 @@ export function RetainedCanvasImage({
                 style={{ visibility: currentDisplayedSrc ? "visible" : "hidden" }}
             />
             {currentDisplayedSrc ? (
-                <span className="canvas-image-reveal-sweep" aria-hidden="true" style={{ "--canvas-gen-surface": theme.node.fill } as CSSProperties} />
-            ) : loading || preparing ? (
+                compact ? null : (
+                    <span className="canvas-image-reveal-sweep" aria-hidden="true" style={{ "--canvas-gen-surface": theme.node.fill } as CSSProperties} />
+                )
+            ) : failed && compact ? (
+                <span role="img" aria-label="图片暂时无法显示" className="pointer-events-none absolute inset-0 grid place-items-center" style={{ color: theme.node.muted }}>
+                    <ImageOff className="size-5" aria-hidden="true" />
+                </span>
+            ) : compact ? null : loading || preparing ? (
                 <span className="canvas-node-state canvas-image-skeleton" data-active={downloading ? "true" : undefined} role="status" aria-label="正在载入图片" style={surfaceStyle}>
                     {slowIdentity === identity ? <span className="canvas-image-state-hint">图片较大，仍在加载</span> : null}
                 </span>
@@ -805,7 +820,7 @@ export function RetainedCanvasImage({
     );
 }
 
-export function useNodeResourceUrl(node: CanvasNodeData, eager: boolean, variant: "original" | "thumbnail" = "original") {
+export function useNodeResourceUrl(node: DisplayImageNode, eager: boolean, variant: "original" | "thumbnail" = "original") {
     const storageKey = node.metadata?.storageKey || "";
     const rawContent = node.metadata?.content || "";
     const content = node.type === CanvasNodeType.Video && node.metadata?.importSource?.provider === "libtv" ? buildLibTVVideoSourceUrl(rawContent) : rawContent;
@@ -821,47 +836,101 @@ export function useNodeResourceUrl(node: CanvasNodeData, eager: boolean, variant
     // still expensive. Images must wait for the same viewport gate as remote
     // resources; otherwise DOM virtualization does not reduce image work.
     const isLazyVisual = node.type === CanvasNodeType.Image;
-    const isHttpUrl = Boolean(fallback && !fallback.startsWith("data:"));
     // 上传后的有界缓存可直接借用；节点卸载再释放租约，不会被磁盘/LRU 淘汰撤销正在显示的地址。
     // 只用于图片：音视频播放仍走播放副本合同。
     const sessionBlobUrl = useCachedResourceUrl(isRemoteResource && isLazyVisual ? storageKey : undefined, eager);
-    const initialUrl = sessionBlobUrl || (eager && !isRemoteResource && isLazyVisual && isHttpUrl ? fallback : isRemoteResource || isLazyVisual ? "" : fallback);
     const scope = getActiveUserScope();
     const identity = `${scope}:${node.id}:${storageKey || fallback}`;
-    const [resolved, setResolved] = useState<{ identity: string; url: string; loading: boolean; failed?: boolean; originalWidth?: number; originalHeight?: number }>(() => ({ identity, url: initialUrl, loading: !initialUrl && isRemoteResource && eager }));
-    const current = resolved.identity === identity ? resolved : { identity, url: initialUrl, loading: !initialUrl && isRemoteResource && eager };
+    const [resolved, setResolved] = useState<{ identity: string; variant: typeof variant; url: string; failed?: boolean; originalWidth?: number; originalHeight?: number }>();
 
     useEffect(() => {
-        if (!isRemoteResource) {
-            setResolved({ identity, url: isLazyVisual && !eager ? "" : fallback, loading: false });
-            return;
-        }
-        if (!eager) {
-            setResolved({ identity, url: "", loading: false });
-            return;
-        }
-        const localUrl = sessionBlobUrl;
-        if (localUrl) {
-            setResolved({ identity, url: localUrl, loading: false });
-            return;
-        }
+        if (!isRemoteResource || !eager || sessionBlobUrl) return;
         let cancelled = false;
-        setResolved({ identity, url: "", loading: true });
         void getResourceAccess(storageKey, "display", variant)
             .then((access) => {
-                if (!cancelled) setResolved({ identity, url: resolveResourceAccessURL(access.url), loading: false, originalWidth: access.originalWidth, originalHeight: access.originalHeight });
+                if (!cancelled) setResolved({ identity, variant, url: resolveResourceAccessURL(access.url), originalWidth: access.originalWidth, originalHeight: access.originalHeight });
             })
             .catch(() => {
                 // 没有可用的回退地址时标记失败，节点显示「加载失败 + 重新加载」，而不是一块无提示的空白。
-                if (!cancelled) setResolved({ identity, url: fallback, loading: false, failed: !fallback });
+                if (!cancelled) setResolved({ identity, variant, url: fallback, failed: !fallback });
             });
         return () => {
             cancelled = true;
         };
-    }, [eager, fallback, identity, isLazyVisual, isRemoteResource, storageKey, variant, sessionBlobUrl]);
+    }, [eager, fallback, identity, isRemoteResource, storageKey, variant, sessionBlobUrl]);
 
+    if (!isRemoteResource) return { url: isLazyVisual && !eager ? "" : fallback, loading: false, failed: false, originalWidth: undefined, originalHeight: undefined };
+    if (!eager || sessionBlobUrl) return { url: eager ? sessionBlobUrl : "", loading: false, failed: false, originalWidth: undefined, originalHeight: undefined };
+    const current = resolved?.identity === identity && resolved.variant === variant ? resolved : undefined;
     const isThumbnail = variant === "thumbnail";
-    return { url: current.url, loading: current.loading, failed: Boolean(current.failed), originalWidth: isThumbnail ? current.originalWidth : undefined, originalHeight: isThumbnail ? current.originalHeight : undefined };
+    return { url: current?.url || "", loading: !current, failed: Boolean(current?.failed), originalWidth: isThumbnail ? current?.originalWidth : undefined, originalHeight: isThumbnail ? current?.originalHeight : undefined };
+}
+
+function createNearViewportObserver(rootMargin: string) {
+    const listeners = new Map<Element, Set<(visible: boolean) => void>>();
+    const observer = new IntersectionObserver(
+        (entries) => {
+            for (const entry of entries) {
+                listeners.get(entry.target)?.forEach((callback) => callback(entry.isIntersecting));
+            }
+        },
+        { rootMargin },
+    );
+    return (element: Element, callback: (visible: boolean) => void) => {
+        const callbacks = listeners.get(element) ?? new Set<(visible: boolean) => void>();
+        callbacks.add(callback);
+        listeners.set(element, callbacks);
+        observer.observe(element);
+        return () => {
+            callbacks.delete(callback);
+            if (listeners.get(element) === callbacks && !callbacks.size) {
+                listeners.delete(element);
+                observer.unobserve(element);
+            }
+        };
+    };
+}
+
+const nearViewportObservers = new WeakMap<Document, ReturnType<typeof createNearViewportObserver>>();
+const pendingImageObservers = new WeakMap<Document, ReturnType<typeof createNearViewportObserver>>();
+
+function canvasImageIdentity(node: DisplayImageNode) {
+    return `${getActiveUserScope()}:${node.id}:${node.metadata?.storageKey || node.metadata?.content || "empty"}`;
+}
+
+function usePendingImageViewport(key: string, enabled: boolean) {
+    const ref = useRef<HTMLDivElement>(null);
+    const preparedKey = useRef("");
+    const stop = useRef<(() => void) | undefined>(undefined);
+    const [visibleKey, setVisibleKey] = useState("");
+    useEffect(() => {
+        const element = ref.current;
+        if (!enabled || !element) {
+            setVisibleKey("");
+            return;
+        }
+        if (preparedKey.current === key || typeof IntersectionObserver === "undefined") {
+            setVisibleKey(key);
+            return;
+        }
+        let observe = pendingImageObservers.get(element.ownerDocument);
+        if (!observe) {
+            observe = createNearViewportObserver("0px");
+            pendingImageObservers.set(element.ownerDocument, observe);
+        }
+        const unsubscribe = observe(element, (visible) => setVisibleKey(visible ? key : ""));
+        stop.current = unsubscribe;
+        return () => {
+            unsubscribe();
+            stop.current = undefined;
+        };
+    }, [enabled, key]);
+    const finishObservation = useCallback(() => {
+        preparedKey.current = key;
+        stop.current?.();
+        stop.current = undefined;
+    }, [key]);
+    return { ref, nearViewport: enabled && visibleKey === key, finishObservation };
 }
 
 export function useNearViewport(ref: RefObject<Element | null>, enabled = true) {
@@ -873,33 +942,43 @@ export function useNearViewport(ref: RefObject<Element | null>, enabled = true) 
             setNearViewport(true);
             return;
         }
-        const observer = new IntersectionObserver(
-            (entries) => {
-                if (entries.some((entry) => entry.isIntersecting)) {
-                    setNearViewport(true);
-                    observer.disconnect();
-                }
-            },
-            { rootMargin: "600px" },
-        );
-        observer.observe(element);
-        return () => observer.disconnect();
+        let observe = nearViewportObservers.get(element.ownerDocument);
+        if (!observe) {
+            observe = createNearViewportObserver("600px");
+            nearViewportObservers.set(element.ownerDocument, observe);
+        }
+        return observe(element, (visible) => {
+            if (visible) setNearViewport(true);
+        });
     }, [enabled, nearViewport, ref]);
     return nearViewport;
 }
 
-export function BatchPreviewImage({ node }: { node: CanvasNodeData }) {
-    const ref = useRef<HTMLDivElement>(null);
-    const nearViewport = useNearViewport(ref);
-    const { url } = useNodeResourceUrl(node, nearViewport);
+export function BatchPreviewImage({ node, theme }: { node: CanvasNodeData; theme: CanvasTheme }) {
+    const identity = canvasImageIdentity(node);
+    const { ref, nearViewport, finishObservation } = usePendingImageViewport(identity, true);
+    const { url, loading, failed } = useNodeResourceUrl(node, nearViewport, "thumbnail");
     return (
-        <div ref={ref} className="h-full w-full overflow-hidden rounded-[inherit]">
-            {url ? <img src={url} alt={`子图预览：${node.title}`} className="h-full w-full object-contain" draggable={false} /> : null}
+        <div ref={ref} className="relative h-full w-full overflow-hidden rounded-[inherit]">
+            <RetainedCanvasImage
+                identity={identity}
+                src={url}
+                storageKey={node.metadata?.storageKey}
+                alt={`子图预览：${node.title}`}
+                className="h-full w-full object-contain"
+                loading={loading}
+                accessFailed={failed}
+                compact
+                priority="background"
+                onPrepared={finishObservation}
+                theme={theme}
+            />
         </div>
     );
 }
 
 export function BatchFrame({
+    compact = false,
     batchCount,
     batchPreviewNodes,
     batchExpanded,
@@ -909,6 +988,7 @@ export function BatchFrame({
     onToggleBatch,
     children,
 }: {
+    compact?: boolean;
     batchCount: number;
     batchPreviewNodes?: CanvasNodeData[];
     batchExpanded: boolean;
@@ -918,12 +998,12 @@ export function BatchFrame({
     onToggleBatch?: () => void;
     children: ReactNode;
 }) {
-    const isBatchRoot = batchCount > 1;
+    if (batchCount <= 1) return children;
     return (
         <div
             className="group/batch relative h-full w-full overflow-visible"
             onDoubleClick={
-                isBatchRoot
+                !compact
                     ? (event) => {
                           event.stopPropagation();
                           onToggleBatch?.();
@@ -931,7 +1011,7 @@ export function BatchFrame({
                     : undefined
             }
         >
-            {isBatchRoot ? (
+            {!compact ? (
                 <div className="pointer-events-none absolute inset-0 overflow-visible">
                     {Array.from({ length: Math.min(batchCount - 1, 5) }).map((_, index) => (
                         <div
@@ -947,7 +1027,7 @@ export function BatchFrame({
                                 zIndex: -index - 1,
                             }}
                         >
-                            {batchPreviewNodes?.[index] ? <BatchPreviewImage node={batchPreviewNodes[index]} /> : null}
+                            {batchPreviewNodes?.[index] ? <BatchPreviewImage node={batchPreviewNodes[index]} theme={theme} /> : null}
                         </div>
                     ))}
                 </div>

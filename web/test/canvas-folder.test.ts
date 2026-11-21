@@ -76,6 +76,27 @@ describe("canvas folders", () => {
         expect(findFrameDropTargetFromIndex(index, [dragged], new Set([dragged.id]), { x: 400, y: 400 })).toBeNull();
     });
 
+    test("整组必须全部进入同一个目标；没有候选框时不扫描另外 999 个节点", () => {
+        const broad = folder("back");
+        const narrow = { ...folder("front"), width: 160 };
+        const first = image("first");
+        const second = { ...image("second"), position: { x: 260, y: 150 } };
+        const dragged = new Set([first.id, second.id]);
+        const frames = buildCanvasFrameDropIndex([broad, narrow]);
+        expect(findFrameDropTargetFromIndex(frames, [first], new Set([first.id]), { x: 0, y: 0 })).toBe("front");
+        expect(findFrameDropTargetFromIndex(frames, [first, second], dragged, { x: 0, y: 0 })).toBe("back");
+        let positionReads = 0;
+        const rest = Array.from({ length: 999 }, (_, index) => ({
+            ...image(String(index)),
+            get position() {
+                positionReads++;
+                return second.position;
+            },
+        }));
+        expect(findFrameDropTargetFromIndex(frames, [first, ...rest], new Set([first.id, ...rest.map((node) => node.id)]), { x: 1200, y: 400 })).toBeNull();
+        expect(positionReads).toBe(0);
+    });
+
     test("素材库链接文件夹只接收可归档的真实内容节点", () => {
         const target = folder("linked", true);
         const ready = image("ready");

@@ -28,9 +28,9 @@ export function ImageGenerationPack({
 }) {
     const [observed, setObserved] = useState({ pending, succeeded });
     const [armed, setArmed] = useState(pending && !disabled);
-    const [images, setImages] = useState<PackImage[]>([]);
+    const [reveal, setReveal] = useState<{ images: PackImage[]; results: HTMLDivElement } | null>(null);
     const [anchor, setAnchor] = useState<HTMLSpanElement | null>(null);
-    const [results, setResults] = useState<HTMLDivElement | null>(null);
+    const resultsRef = useRef<HTMLDivElement>(null);
     const stage = useRef<HTMLDivElement>(null);
     const waitingSize = useRef<{ width: number; height: number }>(undefined);
     useLayoutEffect(() => {
@@ -40,7 +40,7 @@ export function ImageGenerationPack({
         setObserved({ pending, succeeded });
         if (pending) {
             setArmed(!disabled);
-            setImages([]);
+            setReveal(null);
         }
         if (!pending && !succeeded) setArmed(false);
     }
@@ -53,13 +53,14 @@ export function ImageGenerationPack({
     }, [disabled, complete]);
     const active = !disabled && (pending || (armed && succeeded));
     const prepare = useCallback(() => {
+        const results = resultsRef.current;
         if (!armed || pending || !succeeded || disabled || !results) return;
         const elements = Array.from(results.querySelectorAll<HTMLImageElement>("[data-image-pack-result] img, img[data-image-pack-result]"));
         if (elements.length > 8) return complete();
         if (!elements.length || elements.some((image) => !image.complete || !image.naturalWidth)) return;
         const next = elements.map((image, index) => ({ url: image.currentSrc || image.src, label: image.alt || `作品 ${index + 1}` }));
-        setImages((current) => (current.length === next.length && current.every((image, index) => image.url === next[index].url) ? current : next));
-    }, [armed, pending, succeeded, disabled, results, complete]);
+        setReveal((current) => (current?.results === results && current.images.length === next.length && current.images.every((image, index) => image.url === next[index].url) ? current : { images: next, results }));
+    }, [armed, pending, succeeded, disabled, complete]);
     useEffect(() => {
         if (!active) return;
         if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
@@ -77,7 +78,7 @@ export function ImageGenerationPack({
     }, [active, pending, children, prepare, complete]);
     return (
         <div ref={stage} className={`image-pack-slot ${className}`} style={style} data-active={active || undefined}>
-            <div ref={setResults} className="image-pack-slot-body" inert={active || undefined} onLoadCapture={prepare} onErrorCapture={complete}>
+            <div ref={resultsRef} className="image-pack-slot-body" inert={active || undefined} onLoadCapture={active ? prepare : undefined} onErrorCapture={active ? complete : undefined}>
                 {children}
             </div>
             {active ? (
@@ -95,9 +96,9 @@ export function ImageGenerationPack({
                             {pendingActions}
                         </div>
                     ) : null}
-                    {!pending && images.length > 0 && anchor && results ? (
+                    {!pending && reveal && anchor ? (
                         <Suspense fallback={null}>
-                            <ImagePackReveal images={images} anchor={anchor} results={results} onComplete={complete} />
+                            <ImagePackReveal images={reveal.images} anchor={anchor} results={reveal.results} onComplete={complete} />
                         </Suspense>
                     ) : null}
                 </>

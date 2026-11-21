@@ -1,4 +1,4 @@
-import { afterAll, expect, mock, test } from "bun:test";
+import { afterAll, expect, mock, spyOn, test } from "bun:test";
 import { Window } from "happy-dom";
 import type { CanvasNodeData } from "../../src/types/canvas";
 
@@ -60,7 +60,7 @@ const { act, Profiler } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { CanvasNode } = await import("../../src/components/canvas/canvas-node");
 const { ConnectionPath, canvasConnectionPath } = await import("../../src/components/canvas/canvas-connections");
-const { CanvasNodeResizeMotionProvider } = await import("../../src/components/canvas/canvas-node-resize-motion");
+const { CanvasNodeResizeMotionProvider, useCanvasNodeResizeMotion } = await import("../../src/components/canvas/canvas-node-resize-motion");
 const { applyNodeConfigPatch } = await import("../../src/lib/canvas/canvas-project-domain");
 const { CanvasNodeType } = await import("../../src/types/canvas");
 
@@ -75,6 +75,91 @@ afterAll(() => {
 const noop = () => {};
 const target: CanvasNodeData = { id: "target", type: CanvasNodeType.Image, title: "目标", position: { x: 1300, y: 200 }, width: 520, height: 520 };
 const connection = { id: "connection", fromNodeId: "image", toNodeId: target.id };
+
+test("纯移位只更新节点几何，不重读图片或重订尺寸动效，操作仍拿到最新节点", async () => {
+    const host = document.body.appendChild(document.createElement("div"));
+    const root = createRoot(host);
+    let mediaReads = 0;
+    let node: CanvasNodeData = {
+        ...target,
+        metadata: {
+            content: "https://cdn.example.com/cover.jpg",
+            get mimeType() {
+                mediaReads++;
+                return "image/jpeg";
+            },
+        },
+    };
+    let readOnly = false;
+    const viewImage = mock((_node: CanvasNodeData) => {});
+    const retry = mock((_node: CanvasNodeData) => {});
+    let motion!: NonNullable<ReturnType<typeof useCanvasNodeResizeMotion>>;
+    function Probe() {
+        motion = useCanvasNodeResizeMotion()!;
+        return null;
+    }
+    const render = () =>
+        root.render(
+            <CanvasNodeResizeMotionProvider nodes={[node]}>
+                <Probe />
+                <CanvasNode
+                    data={node}
+                    renderLOD="full"
+                    scale={1}
+                    isSelected
+                    readOnly={readOnly}
+                    isRelated={false}
+                    isFocusRelated={false}
+                    isConnectionTarget={false}
+                    showImageInfo={false}
+                    onMouseDown={noop}
+                    onHoverStart={noop}
+                    onHoverEnd={noop}
+                    onConnectStart={noop}
+                    onResize={noop}
+                    onContentChange={noop}
+                    onContextMenu={noop}
+                    onTitleChange={noop}
+                    onViewImage={viewImage}
+                    onRetry={retry}
+                />
+            </CanvasNodeResizeMotionProvider>,
+        );
+    try {
+        await act(async () => render());
+        expect(mediaReads).toBeGreaterThan(0);
+        const subscribe = spyOn(motion, "subscribeNode");
+        const box = host.querySelector<HTMLElement>("[data-node-id]")!;
+        expect(box.querySelector("[data-resize-corner]")).not.toBeNull();
+        const img = host.querySelector("img[data-image-pack-result]")!;
+        mediaReads = 0;
+        node = { ...node, position: { x: 95, y: 130 }, updatedAt: "2026-11-21T00:00:00Z" };
+        await act(async () => render());
+        expect({ mediaReads, subscribes: subscribe.mock.calls.length }).toEqual({ mediaReads: 0, subscribes: 0 });
+        expect(box.style.transform).toBe("translate(95px, 130px)");
+        await act(async () => box.querySelector(".canvas-node-shell")!.dispatchEvent(new dom.MouseEvent("dblclick", { bubbles: true })));
+        expect(viewImage.mock.calls[0][0]).toBe(node);
+        node = { ...node, title: "新图名", width: 360, height: 240 };
+        readOnly = true;
+        await act(async () => render());
+        expect(mediaReads).toBeGreaterThan(0);
+        expect(host.querySelector("img[data-image-pack-result]")).toBe(img);
+        expect(img.getAttribute("alt")).toBe(node.title);
+        expect(box.style.width).toBe("360px");
+        expect(box.querySelector("[data-resize-corner]")).toBeNull();
+        readOnly = false;
+        node = { ...node, metadata: { status: "error" } };
+        await act(async () => render());
+        node = { ...node, position: { x: 22, y: 40 } };
+        await act(async () => render());
+        const retryButton = [...box.querySelectorAll("button")].find((button) => button.textContent.includes("重新生成"))!;
+        await act(async () => retryButton.click());
+        expect(retry.mock.calls.at(-1)?.[0]).toBe(node);
+    } finally {
+        await act(async () => root.unmount());
+        host.remove();
+    }
+});
 
 test("pointer resize previews once per frame and commits only on pointerup", async () => {
     const host = document.createElement("div");

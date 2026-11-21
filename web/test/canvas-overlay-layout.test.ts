@@ -1,10 +1,27 @@
 import { describe, expect, test } from "bun:test";
-import { avoidCanvasNodePanels, canvasNodePanelBounds, canvasOverlayBounds, canvasToolbarLayoutLevel, placeCanvasNodePanel, subscribeCanvasNodePanelBounds, updateCanvasNodePanelBounds } from "@/lib/canvas/canvas-overlay-layout";
+import {
+    avoidCanvasNodePanels,
+    canvasNodePanelBounds,
+    canvasOverlayBounds,
+    canvasToolbarLayoutLevel,
+    placeCanvasNodePanel,
+    placeCanvasSelectionToolbar,
+    subscribeCanvasNodePanelBounds,
+    updateCanvasNodePanelBounds,
+} from "@/lib/canvas/canvas-overlay-layout";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 
 const image: CanvasNodeData = { id: "image", title: "Image", type: CanvasNodeType.Image, position: { x: 20, y: 500 }, width: 180, height: 160 };
 
 describe("canvas floating overlay layout", () => {
+    test("positions the selection toolbar from world geometry, preserving zoomed margins and viewport edges", () => {
+        const selection = { left: 300, top: 180, width: 200, height: 60 };
+        const size = { width: 800, height: 600 };
+        const toolbar = { width: 200, height: 40 };
+        expect(placeCanvasSelectionToolbar(selection, { x: 10, y: 100, k: 0.5 }, size, toolbar, 1)).toEqual({ left: 210, top: 176, above: true });
+        expect(placeCanvasSelectionToolbar(selection, { x: -1000, y: -180, k: 1 }, size, toolbar, 1)).toEqual({ left: 112, top: 80, above: false });
+        expect(placeCanvasSelectionToolbar({ ...selection, height: 1000 }, { x: 1000, y: -180, k: 1 }, size, toolbar, 1)).toEqual({ left: 688, top: 548, above: false });
+    });
     test("late composer layout moves the toolbar above its measured 1366px viewport bounds", () => {
         const bounds = canvasOverlayBounds({ width: 1366, height: 768 }, { left: 76, top: 64, bottom: 704 });
         const panel = { left: 247.514, top: 349.538, right: 927.514, bottom: 587.538 };

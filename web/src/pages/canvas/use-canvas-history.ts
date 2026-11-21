@@ -43,11 +43,11 @@ type CanvasHistoryPatch = {
 
 type UseCanvasHistoryOptions = CanvasHistorySnapshot & {
     projectLoaded: boolean;
-    setNodes: Dispatch<SetStateAction<CanvasNodeData[]>>;
+    restoreHistoryNodes: (nodes: CanvasNodeData[]) => CanvasNodeData[];
     setConnections: Dispatch<SetStateAction<CanvasConnection[]>>;
     setChatSessions: Dispatch<SetStateAction<CanvasAssistantSession[]>>;
     setActiveChatId: Dispatch<SetStateAction<string | null>>;
-    applyCanvasAppearance: (appearance: CanvasAppearance) => void;
+    restoreHistoryAppearance: (appearance: CanvasAppearance) => CanvasAppearance;
     setBackgroundMode: Dispatch<SetStateAction<CanvasBackgroundMode>>;
     setShowImageInfo: Dispatch<SetStateAction<boolean>>;
     setSelectedNodeIds: Dispatch<SetStateAction<Set<string>>>;
@@ -64,11 +64,11 @@ export function useCanvasHistory({
     canvasAppearance,
     backgroundMode,
     showImageInfo,
-    setNodes,
+    restoreHistoryNodes,
     setConnections,
     setChatSessions,
     setActiveChatId,
-    applyCanvasAppearance,
+    restoreHistoryAppearance,
     setBackgroundMode,
     setShowImageInfo,
     setSelectedNodeIds,
@@ -78,8 +78,6 @@ export function useCanvasHistory({
     const historyRef = useRef<{ past: CanvasHistoryPatch[]; future: CanvasHistoryPatch[] }>({ past: [], future: [] });
     const lastHistoryRef = useRef<CanvasHistorySnapshot | null>(null);
     const historyCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const applyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const applyingHistoryRef = useRef(false);
     const historyPausedRef = useRef(false);
     const [historyState, setHistoryState] = useState({ canUndo: false, canRedo: false });
 
@@ -94,40 +92,35 @@ export function useCanvasHistory({
         historyCommitTimerRef.current = null;
     }, []);
 
-    const resetHistory = useCallback((snapshot: CanvasHistorySnapshot) => {
-        clearCommitTimer();
-        if (applyTimerRef.current) {
-            clearTimeout(applyTimerRef.current);
-            applyTimerRef.current = null;
-        }
-        historyRef.current = { past: [], future: [] };
-        lastHistoryRef.current = snapshot;
-        applyingHistoryRef.current = false;
-        historyPausedRef.current = false;
-        setHistoryState({ canUndo: false, canRedo: false });
-    }, [clearCommitTimer]);
+    const resetHistory = useCallback(
+        (snapshot: CanvasHistorySnapshot) => {
+            clearCommitTimer();
+            historyRef.current = { past: [], future: [] };
+            lastHistoryRef.current = snapshot;
+            historyPausedRef.current = false;
+            setHistoryState({ canUndo: false, canRedo: false });
+        },
+        [clearCommitTimer],
+    );
 
-    const applyHistorySnapshot = useCallback((snapshot: CanvasHistorySnapshot) => {
-        clearCommitTimer();
-        applyingHistoryRef.current = true;
-        lastHistoryRef.current = snapshot;
-        setNodes(snapshot.nodes);
-        setConnections(snapshot.connections);
-        setChatSessions(snapshot.chatSessions);
-        setActiveChatId(snapshot.activeChatId);
-        applyCanvasAppearance(snapshot.canvasAppearance);
-        setBackgroundMode(snapshot.backgroundMode);
-        setShowImageInfo(snapshot.showImageInfo);
-        setSelectedNodeIds(new Set());
-        setSelectedConnectionId(null);
-        setContextMenu(null);
-        if (applyTimerRef.current) clearTimeout(applyTimerRef.current);
-        applyTimerRef.current = setTimeout(() => {
-            applyingHistoryRef.current = false;
-            applyTimerRef.current = null;
+    const applyHistorySnapshot = useCallback(
+        (snapshot: CanvasHistorySnapshot) => {
+            clearCommitTimer();
+            const nodes = restoreHistoryNodes(snapshot.nodes);
+            const canvasAppearance = restoreHistoryAppearance(snapshot.canvasAppearance);
+            lastHistoryRef.current = { ...snapshot, nodes, canvasAppearance };
+            setConnections(snapshot.connections);
+            setChatSessions(snapshot.chatSessions);
+            setActiveChatId(snapshot.activeChatId);
+            setBackgroundMode(snapshot.backgroundMode);
+            setShowImageInfo(snapshot.showImageInfo);
+            setSelectedNodeIds(new Set());
+            setSelectedConnectionId(null);
+            setContextMenu(null);
             setHistoryState({ canUndo: historyRef.current.past.length > 0, canRedo: historyRef.current.future.length > 0 });
-        });
-    }, [applyCanvasAppearance, clearCommitTimer, setActiveChatId, setBackgroundMode, setChatSessions, setConnections, setContextMenu, setNodes, setSelectedConnectionId, setSelectedNodeIds, setShowImageInfo]);
+        },
+        [clearCommitTimer, restoreHistoryNodes, restoreHistoryAppearance, setActiveChatId, setBackgroundMode, setChatSessions, setConnections, setContextMenu, setSelectedConnectionId, setSelectedNodeIds, setShowImageInfo],
+    );
 
     const undoCanvas = useCallback(() => {
         const patch = historyRef.current.past.pop();
@@ -148,7 +141,7 @@ export function useCanvasHistory({
     const getHistoryCleanupContext = useCallback(() => ({ history: historyRef.current, lastHistory: lastHistoryRef.current }), []);
 
     useEffect(() => {
-        if (!projectLoaded || applyingHistoryRef.current || historyPausedRef.current) return;
+        if (!projectLoaded || historyPausedRef.current) return;
         const next = createHistorySnapshot();
         const previous = lastHistoryRef.current;
         if (!previous || snapshotsShareReferences(previous, next)) return;
@@ -170,22 +163,21 @@ export function useCanvasHistory({
         return clearCommitTimer;
     }, [clearCommitTimer, createHistorySnapshot, projectLoaded]);
 
-    useEffect(() => () => {
-        clearCommitTimer();
-        if (applyTimerRef.current) clearTimeout(applyTimerRef.current);
-    }, [clearCommitTimer]);
+    useEffect(() => clearCommitTimer, [clearCommitTimer]);
 
     return { getHistoryCleanupContext, historyPausedRef, historyState, redoCanvas, resetHistory, undoCanvas };
 }
 
 function snapshotsShareReferences(before: CanvasHistorySnapshot, after: CanvasHistorySnapshot) {
-    return before.nodes === after.nodes
-        && before.connections === after.connections
-        && before.chatSessions === after.chatSessions
-        && before.activeChatId === after.activeChatId
-        && before.canvasAppearance === after.canvasAppearance
-        && before.backgroundMode === after.backgroundMode
-        && before.showImageInfo === after.showImageInfo;
+    return (
+        before.nodes === after.nodes &&
+        before.connections === after.connections &&
+        before.chatSessions === after.chatSessions &&
+        before.activeChatId === after.activeChatId &&
+        before.canvasAppearance === after.canvasAppearance &&
+        before.backgroundMode === after.backgroundMode &&
+        before.showImageInfo === after.showImageInfo
+    );
 }
 
 function createCanvasHistoryPatch(before: CanvasHistorySnapshot, after: CanvasHistorySnapshot): CanvasHistoryPatch | null {

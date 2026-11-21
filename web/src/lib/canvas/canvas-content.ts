@@ -1,5 +1,12 @@
 import { canonicalize } from "json-canonicalize";
 import type { CanvasProject } from "@/stores/canvas/use-canvas-store";
+import type { CanvasNodeData } from "@/types/canvas";
+
+export function canvasNodeHasDifferentStoredPosition(before: CanvasNodeData, after: CanvasNodeData) {
+    if (before === after || before.position === after.position) return false;
+    const { x, y } = after.position;
+    return Number.isFinite(x) && Number.isFinite(y) && (before.position.x !== x || before.position.y !== y);
+}
 
 // These fields describe local viewing / synchronization, not an edit to the document.
 export function canvasContentSnapshot(project: CanvasProject) {
@@ -22,7 +29,12 @@ export function sameCanvasContent(left: CanvasProject | undefined, right: Canvas
     const b = canvasContentSnapshot(right) as Record<string, unknown>;
     return [...new Set([...Object.keys(a), ...Object.keys(b)])].every((key) => {
         if (a[key] === b[key]) return true;
-        if ((key === "nodes" || key === "connections") && Array.isArray(a[key]) && Array.isArray(b[key])) {
+        if (key === "nodes") {
+            return (
+                left.nodes.length === right.nodes.length && left.nodes.every((item, index) => item === right.nodes[index] || (!canvasNodeHasDifferentStoredPosition(item, right.nodes[index]) && canonicalValue(item) === canonicalValue(right.nodes[index])))
+            );
+        }
+        if (key === "connections" && Array.isArray(a[key]) && Array.isArray(b[key])) {
             const leftItems = a[key] as unknown[];
             const rightItems = b[key] as unknown[];
             return leftItems.length === rightItems.length && leftItems.every((item, index) => item === rightItems[index] || canonicalValue(item) === canonicalValue(rightItems[index]));

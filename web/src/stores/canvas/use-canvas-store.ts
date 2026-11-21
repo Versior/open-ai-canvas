@@ -194,7 +194,7 @@ function writeCanvasPersistenceJournal(journal: CanvasPersistenceJournal) {
         const serialized = JSON.stringify(journal);
         // Large media stays in IndexedDB. Oversized recovery records trigger an
         // immediate full save and remain visibly pending until that write succeeds.
-        if (new TextEncoder().encode(serialized).byteLength > CANVAS_JOURNAL_MAX_BYTES) return false;
+        if (serialized.length > CANVAS_JOURNAL_MAX_BYTES || (serialized.length * 3 > CANVAS_JOURNAL_MAX_BYTES && new TextEncoder().encode(serialized).byteLength > CANVAS_JOURNAL_MAX_BYTES)) return false;
         window.localStorage.setItem(canvasPersistenceJournalKey(journal.scope, journal.writerId), serialized);
         return true;
     } catch {

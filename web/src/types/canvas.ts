@@ -849,7 +849,6 @@ export type SelectionBox = {
     currentWorldY: number;
     strategy: CanvasSelectionStrategy;
     hitMode: CanvasSelectionHitMode;
-    initialSelectedNodeIds: string[];
 };
 
 export type ContextMenuState =

@@ -1,7 +1,7 @@
 import type { CanvasProject } from "@/stores/canvas/use-canvas-store";
 import type { CanvasAssistantSession, CanvasConnection, CanvasNodeData } from "@/types/canvas";
 import { normalizeAssetCategory } from "@/lib/asset-category";
-import { sameCanvasContent } from "@/lib/canvas/canvas-content";
+import { canvasNodeHasDifferentStoredPosition, sameCanvasContent } from "@/lib/canvas/canvas-content";
 
 export type CanvasStorageTombstones = {
     projects: Record<string, number>;
@@ -194,10 +194,12 @@ function mergeEntities<T extends { id: string }>(input: {
     baseRevision: number;
     nextRevision: number;
     merge: (base: T | undefined, local: T, durable: T) => T;
+    equal?: (before: T, after: T) => boolean;
     conflict: (id: string) => CanvasStorageConflict;
     conflicts: CanvasStorageConflict[];
 }) {
     const baseById = new Map(input.base.map((item) => [item.id, item]));
+    const equal = input.equal ?? deepEqual;
     const localById = new Map(input.local.map((item) => [item.id, item]));
     const durableById = new Map(input.durable.map((item) => [item.id, item]));
     const result = [...input.durable];
@@ -228,7 +230,7 @@ function mergeEntities<T extends { id: string }>(input: {
         if (base && !local) {
             // A concurrent durable edit must not be erased by a stale local delete.
             // Keep the durable branch and surface a conflict for the caller.
-            if (durable && !deepEqual(base, durable)) {
+            if (durable && !equal(base, durable)) {
                 input.conflicts.push(input.conflict(id));
                 continue;
             }
@@ -236,7 +238,7 @@ function mergeEntities<T extends { id: string }>(input: {
             input.tombstones[id] = input.nextRevision;
             continue;
         }
-        if (!local || (base && deepEqual(base, local))) continue;
+        if (!local || (base && equal(base, local))) continue;
 
         if (!durable) {
             // base 中存在只能证明本地此前读过它；跨写入者删除由更新的墓碑证明。
@@ -343,6 +345,7 @@ function mergeProject(base: CanvasProject | undefined, local: CanvasProject, dur
         local: local.nodes,
         durable: durable.nodes,
         tombstones: nestedTombstones(document.tombstones.nodes, local.id),
+        equal: (before, after) => !canvasNodeHasDifferentStoredPosition(before, after) && deepEqual(before, after),
         merge: (baseNode, localNode, durableNode) => {
             let conflictRecorded = false;
             return mergeRecord((baseNode || {}) as unknown as Record<string, unknown>, localNode as unknown as Record<string, unknown>, durableNode as unknown as Record<string, unknown>, new Set(), () => {
@@ -397,6 +400,10 @@ export function rebaseCanvasProjects(input: { document: CanvasStorageDocument; b
         tombstones: document.tombstones.projects,
         baseRevision: input.baseRevision,
         nextRevision,
+        equal: (before, after) => {
+            if (before.nodes !== after.nodes && (before.nodes.length !== after.nodes.length || before.nodes.some((item, index) => canvasNodeHasDifferentStoredPosition(item, after.nodes[index])))) return false;
+            return deepEqual(before, after);
+        },
         merge: (base, local, durable) => mergeProject(base, local, durable, document, input.baseRevision, nextRevision, conflicts),
         conflict: (id) => ({ kind: "project", id }),
         conflicts,

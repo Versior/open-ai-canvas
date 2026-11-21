@@ -5,16 +5,21 @@ export const CANVAS_GRAPHICS_VIEWPORT_PREVIEW_EVENT = "canvas:graphics-viewport-
 export const CANVAS_SELECTION_PREVIEW_EVENT = "canvas:selection-preview";
 export const CANVAS_NODE_DRAG_PREVIEW_EVENT = "canvas:node-drag-preview";
 const CANVAS_INTERACTION_CHANGE_EVENT = "canvas:interaction-change";
+const activeGestureCounts = new WeakMap<Document, number>();
 
 export function setCanvasGestureActive(container: HTMLDivElement | null, attribute: "canvasNodeDragging" | "canvasViewportInteracting", active: boolean) {
     if (!container || (container.dataset[attribute] === "true") === active) return;
     if (active) container.dataset[attribute] = "true";
     else delete container.dataset[attribute];
-    container.ownerDocument.dispatchEvent(new Event(CANVAS_INTERACTION_CHANGE_EVENT));
+    const doc = container.ownerDocument;
+    const count = (activeGestureCounts.get(doc) ?? 0) + (active ? 1 : -1);
+    if (count > 0) activeGestureCounts.set(doc, count);
+    else activeGestureCounts.delete(doc);
+    doc.dispatchEvent(new Event(CANVAS_INTERACTION_CHANGE_EVENT));
 }
 
 export function observeCanvasGestureActive(doc: Document, listener: (active: boolean) => void) {
-    const update = () => listener(Boolean(doc.querySelector('[data-canvas-viewport-interacting="true"],[data-canvas-node-dragging="true"]')));
+    const update = () => listener(activeGestureCounts.has(doc));
     doc.addEventListener(CANVAS_INTERACTION_CHANGE_EVENT, update);
     update();
     return () => doc.removeEventListener(CANVAS_INTERACTION_CHANGE_EVENT, update);
@@ -28,8 +33,12 @@ export type CanvasNodeDragPreview = {
 };
 
 type NodeDragPreviewDomState = {
-    elementsById: Map<string, HTMLElement>;
-    previousIds: Set<string>;
+    nodeIds: ReadonlySet<string>;
+    translatedLayer: HTMLElement | null;
+    individualNodes: Map<HTMLElement, boolean>;
+    observer: MutationObserver | null;
+    x: number;
+    y: number;
     selectionBounds: HTMLElement | null;
 };
 
@@ -119,47 +128,98 @@ export function subscribeCanvasViewportPreview(container: HTMLDivElement, listen
     return () => container.removeEventListener(CANVAS_VIEWPORT_PREVIEW_EVENT, handlePreview);
 }
 
-/**
- * Applies transient node movement without changing React state. Only nodes
- * currently mounted in the virtualized world are touched; the committed
- * positions are still written by the drag-end path.
- */
+export const CANVAS_ACTIVE_NODE_SLOT = "canvas-active";
+
+export function prepareCanvasNodeLayer(layer: HTMLDivElement | null) {
+    if (!layer || layer.shadowRoot) return;
+    const doc = layer.ownerDocument;
+    const shadow = layer.attachShadow({ mode: "open" });
+    const group = doc.createElement("div");
+    group.style.cssText = "position:absolute;left:0;top:0;z-index:var(--z-node-active)";
+    const activeSlot = doc.createElement("slot");
+    activeSlot.name = CANVAS_ACTIVE_NODE_SLOT;
+    group.append(activeSlot);
+    shadow.append(doc.createElement("slot"), group);
+}
+
+function mountNodeDragPreview(container: HTMLDivElement, nodeIds: ReadonlySet<string>): NodeDragPreviewDomState {
+    const layer = container.querySelector<HTMLElement>("[data-canvas-node-layer]");
+    const activeGroup = layer?.shadowRoot?.querySelector<HTMLElement>("div") || null;
+    const elements = Array.from(layer ? layer.children : container.querySelectorAll<HTMLElement>("[data-node-id]")).filter((element): element is HTMLElement => element instanceof HTMLElement && Boolean(element.dataset.nodeId));
+    let directWrites = 0;
+    let activeWrites = 1;
+    for (const node of elements) {
+        const moving = nodeIds.has(node.dataset.nodeId!);
+        if (moving) directWrites++;
+        if (moving !== (node.slot === CANVAS_ACTIVE_NODE_SLOT)) activeWrites++;
+    }
+    const wholeLayerWrites = elements.length - directWrites + 1;
+    const translatedLayer = activeGroup && activeWrites < Math.min(directWrites, wholeLayerWrites) ? activeGroup : layer && wholeLayerWrites < directWrites ? layer : null;
+    const state: NodeDragPreviewDomState = { nodeIds, translatedLayer, individualNodes: new Map(), observer: null, x: 0, y: 0, selectionBounds: null };
+    const classify = (element: HTMLElement) => {
+        const moving = nodeIds.has(element.dataset.nodeId!);
+        const layerMoves = Boolean(translatedLayer && (translatedLayer === layer || element.slot === CANVAS_ACTIVE_NODE_SLOT));
+        if (moving === layerMoves) {
+            if (state.individualNodes.delete(element)) element.style.removeProperty("translate");
+        } else {
+            state.individualNodes.set(element, moving);
+            if (state.x || state.y) element.style.translate = moving ? `${state.x}px ${state.y}px` : `${-state.x}px ${-state.y}px`;
+        }
+    };
+    for (const node of elements) classify(node);
+    if (translatedLayer) translatedLayer.style.willChange = "transform";
+    if (layer) {
+        const observer = new container.ownerDocument.defaultView!.MutationObserver((records) => {
+            for (const record of records) {
+                if (record.target !== layer) {
+                    if (record.type === "attributes" && record.target instanceof HTMLElement && record.target.parentElement === layer && record.target.dataset.nodeId) classify(record.target);
+                    continue;
+                }
+                for (const element of record.removedNodes) {
+                    if (element instanceof HTMLElement && state.individualNodes.delete(element)) element.style.removeProperty("translate");
+                }
+                for (const element of record.addedNodes) {
+                    if (element instanceof HTMLElement && element.dataset.nodeId) classify(element);
+                }
+            }
+        });
+        observer.observe(layer, translatedLayer && translatedLayer === activeGroup ? { childList: true, subtree: true, attributeFilter: ["slot"] } : { childList: true });
+        state.observer = observer;
+    }
+    return state;
+}
+
 export function applyCanvasNodeDragPreview(container: HTMLDivElement | null, preview: CanvasNodeDragPreview | null, selectionBounds: HTMLElement | null = null) {
     if (!container) return;
     setCanvasGestureActive(container, "canvasNodeDragging", Boolean(preview));
 
     let state = nodeDragPreviewDomStates.get(container);
-    if (!state) {
-        state = { elementsById: new Map(), previousIds: new Set(), selectionBounds: null };
-        nodeDragPreviewDomStates.set(container, state);
+    if (state && state.nodeIds !== preview?.nodeIds) {
+        state.observer?.disconnect();
+        state.translatedLayer?.style.removeProperty("will-change");
+        state.translatedLayer?.style.removeProperty("translate");
+        state.selectionBounds?.style.removeProperty("translate");
+        for (const element of state.individualNodes.keys()) element.style.removeProperty("translate");
+        nodeDragPreviewDomStates.delete(container);
+        state = undefined;
     }
-
-    for (const nodeId of state.previousIds) {
-        if (!preview?.nodeIds.has(nodeId)) state.elementsById.get(nodeId)?.style.removeProperty("translate");
-    }
-    if (state.selectionBounds !== selectionBounds) state.selectionBounds?.style.removeProperty("translate");
-    state.selectionBounds = selectionBounds;
-
-    state.previousIds.clear();
     if (preview) {
-        // Build the lookup once per drag session. A single DOM scan is much
-        // cheaper than one selector query per selected node on every frame.
-        if (state.elementsById.size === 0) {
-            container.querySelectorAll<HTMLElement>("[data-node-id]").forEach((element) => {
-                const nodeId = element.dataset.nodeId;
-                if (nodeId) state?.elementsById.set(nodeId, element);
-            });
+        if (!state) {
+            state = mountNodeDragPreview(container, preview.nodeIds);
+            nodeDragPreviewDomStates.set(container, state);
         }
-        for (const nodeId of preview.nodeIds) {
-            const element = state.elementsById.get(nodeId);
-            if (!element || !element.isConnected) continue;
-            element.style.setProperty("translate", `${preview.x}px ${preview.y}px`);
-            state.previousIds.add(nodeId);
+        const moved = state.x !== preview.x || state.y !== preview.y;
+        const translate = `${preview.x}px ${preview.y}px`;
+        if (moved) {
+            state.x = preview.x;
+            state.y = preview.y;
+            const inverse = `${-preview.x}px ${-preview.y}px`;
+            if (state.translatedLayer) state.translatedLayer.style.translate = translate;
+            for (const [element, forward] of state.individualNodes) element.style.translate = forward ? translate : inverse;
         }
-        state.selectionBounds?.style.setProperty("translate", `${preview.x}px ${preview.y}px`);
-    } else {
-        state.elementsById.clear();
-        state.selectionBounds = null;
+        if (state.selectionBounds !== selectionBounds) state.selectionBounds?.style.removeProperty("translate");
+        if (selectionBounds && (moved || state.selectionBounds !== selectionBounds)) selectionBounds.style.translate = translate;
+        state.selectionBounds = selectionBounds;
     }
 
     container.dispatchEvent(new CustomEvent<CanvasNodeDragPreview | null>(CANVAS_NODE_DRAG_PREVIEW_EVENT, { detail: preview }));
