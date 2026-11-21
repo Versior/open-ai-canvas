@@ -222,6 +222,10 @@ OpenAPI 中的路径都相对于服务端前缀 `/api`；浏览器和部署环�
 
 当前配置、上一版与审计同事务提交，并比较持久化快照防止并发覆盖。当前及上一版 `models` 里的图片引用仍阻止后台删除和自动清理；配置损坏时暂停删除。这些业务开关不替代模型权限与额度策略，也不取消已提交任务。
 
+生图台在最终策划步骤 `studioStep=plan` 同时提交 `studioPlanScope`（`template/detail/main/single`）、实际输出用途 `studioPlanKind`、张数 `studioPlanCount`、基于商品资料的角色列表 `studioPlanRoles` 和本次 `studioPlanAttemptId`。模板另带 `studioTemplateId`、`studioTemplateSource`（`admin/library`）。准入与 worker 采用同一合同；识别、提问、提方向不受逐屏合同影响。更新前后端应配套发布，旧标签页如遇合同错误需刷新。
+
+文本任务 `succeeded` 表示上游已有返回，不表示策划已被商品表单采用。新建策划把原任务编号、输入身份、结果状态和逐屏诊断随商品保存。对同一输入的「重新核对原结果」只读取已有任务并重新校验，不发起新的模型任务；只有旧任务号、没有原输入身份的历史记录不会自动套用。服务端商品保存失败与策划校验失败分别显示，重试保存也不触发生成。
+
 ## 游客只读接口
 
 不需要登录，供游客浏览首页、模型与灵感。接口只读、不含凭证；结果在应用层缓存 60 秒（键数有上限），响应头 `Cache-Control: private, no-store`。每个来源地址与全站游客各有一份每分钟限流，超限返回 429 和 `Retry-After`。`c.ClientIP()` 仅在连接来自 `CANVAS_TRUSTED_PROXIES` 时采信转发头，仓库 nginx 覆盖外来的来源 IP 头；多级代理部署应按实际入口配置可信范围。
