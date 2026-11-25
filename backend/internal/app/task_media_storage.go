@@ -275,7 +275,7 @@ func mediaUploadKey(taskID string, index int) *string {
 
 // storeTaskMediaFile 保存一份暂存作品。fallbackCause 非 nil 表示对象存储写入失败、
 // 作品已兜底保存到本地并登记了补传任务。
-func (s *Service) storeTaskMediaFile(task *model.Task, index int, path, mimeType, kind string, existing *model.Resource) (resource *model.Resource, fallbackCause error, err error) {
+func (s *Service) storeTaskMediaFile(task *model.Task, uploadKey *string, path, mimeType, kind string, existing *model.Resource) (resource *model.Resource, fallbackCause error, err error) {
 	info, err := os.Lstat(path)
 	if err != nil {
 		return nil, nil, err
@@ -335,7 +335,7 @@ func (s *Service) storeTaskMediaFile(task *model.Task, index int, path, mimeType
 	}()
 	writeObject := s.taskMediaObjectWriter(task, path, &fallbackCause)
 	if existing == nil {
-		resource, _, err = s.storeResourceWithWriter(task.UserID, kind, "generated."+extensionFromMimeType(mimeType), mimeType, info.Size(), width, height, durationMs, file, mediaUploadKey(task.ID, index), false, writeObject)
+		resource, _, err = s.storeResourceWithWriter(task.UserID, kind, "generated."+extensionFromMimeType(mimeType), mimeType, info.Size(), width, height, durationMs, file, uploadKey, false, writeObject)
 	} else {
 		// Reuse the same object key after a failed upload; no orphan per retry.
 		resource = existing

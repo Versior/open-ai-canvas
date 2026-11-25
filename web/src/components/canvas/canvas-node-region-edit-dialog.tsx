@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
-import { Button } from "antd";
+import { Button, Segmented } from "antd";
 import { ArrowUp, Redo2, RotateCcw, SquareDashed, Undo2, X } from "lucide-react";
 
 import { AppModal } from "@/components/ui/product/app-modal";
 import { Tooltip } from "@/components/ui/base/tooltip";
 import { ModelPicker } from "@/components/model-picker";
 import { defaultImageParamsForModel } from "@/lib/model-selection";
+import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
 import { loadRasterImage } from "@/lib/image-raster";
 import type { PixelSize } from "@/lib/canvas/image-operation-plan";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
@@ -21,6 +22,9 @@ import {
     regionMentionToken,
     renderRegionAnnotatedImage,
     renderRegionThumbnail,
+    regionEditIssue,
+    regionSourcePNG,
+    type RegionEditMode,
     syncRegionPrompt,
     type ImageEditRegion,
     type RegionPoint,
@@ -32,6 +36,8 @@ import { CanvasResourceMentionTextarea } from "./canvas-resource-mention-textare
 import "./canvas-node-region-edit-dialog.css";
 
 export type CanvasImageRegionEditPayload = {
+    editMode: RegionEditMode;
+    sourcePNG?: string;
     /** 用户原文，保留 @区域N，由调用方编译为模型提示词。 */
     prompt: string;
     regions: ImageEditRegion[];
@@ -40,7 +46,7 @@ export type CanvasImageRegionEditPayload = {
     annotatedDataUrl: string;
     /** 透明像素为可编辑区域；仅在模型支持蒙版时提交。 */
     maskDataUrl: string;
-    generationConfig?: Partial<Pick<AiConfig, "model" | "imageModel" | "size" | "quality" | "count" | "transparentBackground">>;
+    generationConfig?: Partial<Pick<AiConfig, "model" | "imageModel" | "size" | "quality" | "imageResolution" | "imageParameters" | "count" | "transparentBackground">>;
 };
 
 type RegionEditorProps = {
@@ -96,6 +102,7 @@ function RegionEditor({ image, config, onClose, onConfirm }: RegionEditorProps) 
     const [dragging, setDragging] = useState(false);
     const [prompt, setPrompt] = useState("");
     const [error, setError] = useState("");
+    const [editMode, setEditMode] = useState<RegionEditMode>("strict");
     const [settings, setSettings] = useState(() => {
         const model = config.imageModel || config.model;
         return { ...config, model, imageModel: model };
@@ -158,7 +165,8 @@ function RegionEditor({ image, config, onClose, onConfirm }: RegionEditorProps) 
         [orderedRegions, thumbnails],
     );
     const trimmedPrompt = prompt.trim();
-    const canSubmit = Boolean(size && regions.length && trimmedPrompt);
+    const issue = size ? regionEditIssue(editMode, modelCapabilityConfigFor(settings, settings.model).image?.references, size) : "";
+    const canSubmit = Boolean(size && regions.length && trimmedPrompt && !issue);
 
     const applyRegions = (next: ImageEditRegion[], previous: ImageEditRegion[]) => {
         setRegions(next);
@@ -272,13 +280,16 @@ function RegionEditor({ image, config, onClose, onConfirm }: RegionEditorProps) 
 
     const submit = () => {
         if (!source || !size) return;
+        if (issue) return setError(issue);
         if (!regions.length) return setError("请先在图片上框选至少一个区域");
         if (!trimmedPrompt) return setError("请写下修改要求，可用 @区域1 指定区域");
         const missing = missingRegionReferences(trimmedPrompt, regions);
         if (missing.length) return setError(`提示词引用了不存在的 ${missing.map((index) => regionMentionToken(index)).join("、")}`);
         let annotatedDataUrl: string;
         let maskDataUrl: string;
+        let sourcePNG: string | undefined;
         try {
+            if (editMode === "strict") sourcePNG = regionSourcePNG(source.url, source.element, size);
             annotatedDataUrl = renderRegionAnnotatedImage(source.element, size, orderedRegions);
             maskDataUrl = exportRegionMask(size, orderedRegions);
         } catch (failure) {
@@ -286,7 +297,16 @@ function RegionEditor({ image, config, onClose, onConfirm }: RegionEditorProps) 
             return;
         }
         const { model, quality, count, transparentBackground } = settings;
-        onConfirm({ prompt: trimmedPrompt, regions: orderedRegions, size, annotatedDataUrl, maskDataUrl, generationConfig: { model, imageModel: model, size: settings.size, quality, count, transparentBackground } });
+        onConfirm({
+            editMode,
+            sourcePNG,
+            prompt: trimmedPrompt,
+            regions: orderedRegions,
+            size,
+            annotatedDataUrl,
+            maskDataUrl,
+            generationConfig: { model, imageModel: model, size: settings.size, quality, imageResolution: settings.imageResolution, imageParameters: settings.imageParameters, count, transparentBackground },
+        });
     };
 
     const percentStyle = (rect: Omit<ImageEditRegion, "index">): CSSProperties =>
@@ -413,6 +433,23 @@ function RegionEditor({ image, config, onClose, onConfirm }: RegionEditorProps) 
                     </header>
 
                     <div className="rgn-body">
+                        <div className="rgn-label">成品保护</div>
+                        <Segmented
+                            block
+                            aria-label="局改模式"
+                            value={editMode}
+                            options={[
+                                { value: "strict", label: "严格局改" },
+                                { value: "reference", label: "参考重绘" },
+                            ]}
+                            onChange={(value) => {
+                                setEditMode(value as RegionEditMode);
+                                setError("");
+                            }}
+                        />
+                        <p className="text-[var(--fs-label)] text-[var(--muted-foreground)]" role="status">
+                            {issue || (editMode === "strict" ? "只交付框内合成的 PNG，框外像素与冻结原图一致。" : "参考重绘允许整图变化，脸部、姿态和背景不受保护。")}
+                        </p>
                         <div className="rgn-label">区域{regions.length ? <span className="rgn-label-count">{regions.length}</span> : null}</div>
                         {orderedRegions.length ? (
                             <div className="rgn-tiles">

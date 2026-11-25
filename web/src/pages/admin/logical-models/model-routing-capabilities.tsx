@@ -106,7 +106,11 @@ export function capabilitySpecFromChannelModel(item?: ChannelModel): CapabilityS
             return {
                 version: 1,
                 capability,
-                inputs: compactInputs({ image: { min: 0, max: image.references.maxImages }, mask: { min: 0, max: image.references.maskSupported ? 1 : 0 } }),
+                inputs: compactInputs({
+                    image: { min: 0, max: image.references.maxImages },
+                    mask: { min: 0, max: image.references.maskSupported ? 1 : 0 },
+                    strictmask: { min: 0, max: image.references.maskSupported && image.references.strictRegionVerified ? 1 : 0 },
+                }),
                 imageParameters: image.parameters.map(({ binding: _binding, models: _models, encoding: _encoding, ...p }) => p),
                 options: imageParameterConstraints(image.parameters),
                 imageSize: image.size.parameter === "none" ? undefined : { parameter: image.size.parameter, allowCustom: image.size.allowCustom, presets: imageSizePresets(image), defaultTier: image.size.defaultTier },
@@ -117,6 +121,7 @@ export function capabilitySpecFromChannelModel(item?: ChannelModel): CapabilityS
             inputs: compactInputs({
                 image: { min: 0, max: image.references.maxImages },
                 mask: { min: 0, max: image.references.maskSupported ? 1 : 0 },
+                strictmask: { min: 0, max: image.references.maskSupported && image.references.strictRegionVerified ? 1 : 0 },
             }),
             options: compactOptions({
                 size: image.size.parameter === "none" ? undefined : { values: imageSizeOptionValues(image.size.values, image.size.allowCustom) },

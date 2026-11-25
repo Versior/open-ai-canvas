@@ -58,10 +58,11 @@ type ImageCapabilityConfig struct {
 }
 
 type ImageReferenceConfig struct {
-	PromptMaxChars int   `json:"promptMaxChars"`
-	MaxImages      int   `json:"maxImages"`
-	MaxImageBytes  int64 `json:"maxImageBytes"`
-	MaskSupported  bool  `json:"maskSupported"`
+	PromptMaxChars       int   `json:"promptMaxChars"`
+	MaxImages            int   `json:"maxImages"`
+	MaxImageBytes        int64 `json:"maxImageBytes"`
+	MaskSupported        bool  `json:"maskSupported"`
+	StrictRegionVerified bool  `json:"strictRegionVerified,omitempty"`
 }
 
 type ImageSizeConfig struct {
@@ -572,6 +573,9 @@ func CapabilitySpecFromModelCapabilityConfig(config *ModelCapabilityConfig, capa
 		addInputConstraint(spec.Inputs, "image", 0, image.References.MaxImages)
 		if image.References.MaskSupported {
 			addInputConstraint(spec.Inputs, "mask", 0, 1)
+			if image.References.StrictRegionVerified {
+				addInputConstraint(spec.Inputs, "strictmask", 0, 1)
+			}
 		}
 		if image.Size.Parameter != "none" {
 			spec.Options["size"] = imageSizeOptionConstraint(image.Size)

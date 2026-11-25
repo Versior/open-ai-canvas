@@ -74,6 +74,8 @@ func mediaStageLabel(stage string) string {
 		return "保存本地文件失败"
 	case "register":
 		return "登记作品失败"
+	case "region_edit":
+		return "局改成品校验失败，未交付候选原图"
 	case "local_fallback":
 		return "本地兜底保存失败"
 	case "offload":
@@ -173,12 +175,8 @@ func (s *Service) resumeTaskMedia(ctx context.Context, task *model.Task) (map[st
 	if err != nil {
 		return nil, &mediaRecoveryError{stage: "checkpoint", cause: err}
 	}
-	raw, err := s.decryptTaskInputJSON(task.InputJSON)
+	input, err := s.storedMediaTaskInput(task)
 	if err != nil {
-		return nil, &mediaRecoveryError{stage: "checkpoint", cause: err}
-	}
-	var input canvasGenerationInput
-	if err := json.Unmarshal([]byte(raw), &input); err != nil {
 		return nil, &mediaRecoveryError{stage: "checkpoint", cause: err}
 	}
 	return s.materializeTaskMedia(withProviderAnalytics(ctx, s, *task), task, input.Config, checkpoint)
@@ -201,13 +199,29 @@ func (s *Service) materializeTaskMedia(ctx context.Context, task *model.Task, co
 	if _, err := s.optionalMediaTaskProject(task); err != nil {
 		return nil, &mediaRecoveryError{stage: "register", cause: err}
 	}
+	var strict bool
+	var regionInput canvasGenerationInput
+	if task.Type == "canvas_image" || checkpoint.Mode == "image" {
+		regionInput, err = s.storedMediaTaskInput(task)
+		if err != nil {
+			return nil, &mediaRecoveryError{stage: "checkpoint", cause: err}
+		}
+		strict = metadataString(regionInput.Metadata, "edit") == strictRegionEdit
+		if strict && (checkpoint.Mode != "image" || len(checkpoint.Items) != 1) {
+			return nil, &mediaRecoveryError{stage: "region_edit", cause: errors.New("每个局改任务只接受一张候选图片")}
+		}
+	}
 	items := make([]interface{}, 0, len(checkpoint.Items))
 	for index := range checkpoint.Items {
 		item := &checkpoint.Items[index]
 		if err := ctx.Err(); err != nil {
 			return nil, &mediaRecoveryError{stage: task.MediaStage, retryable: true, cause: err}
 		}
-		resource, err := s.resourceForUploadKey(task.UserID, mediaUploadKey(task.ID, index))
+		uploadKey := mediaUploadKey(task.ID, index)
+		if strict {
+			uploadKey = strictRegionUploadKey(task.ID)
+		}
+		resource, err := s.resourceForUploadKey(task.UserID, uploadKey)
 		if err != nil {
 			return nil, &mediaRecoveryError{stage: "register", retryable: true, cause: err}
 		}
@@ -247,7 +261,19 @@ func (s *Service) materializeTaskMedia(ctx context.Context, task *model.Task, co
 			}
 			started := time.Now()
 			var fallbackCause error
-			resource, fallbackCause, err = s.storeTaskMediaFile(task, index, path, item.MIMEType, checkpoint.Mode, resource)
+			if strict {
+				region, err := s.loadStrictRegionInputs(task.UserID, regionInput)
+				if err != nil {
+					return nil, &mediaRecoveryError{stage: "region_edit", cause: err}
+				}
+				finalName, err := s.composeStrictRegionFile(path, region)
+				if err != nil {
+					return nil, &mediaRecoveryError{stage: "region_edit", retryable: retryableMediaRecovery(err), cause: err}
+				}
+				path, item.MIMEType = s.mediaTempPath(finalName), "image/png"
+				defer os.Remove(path)
+			}
+			resource, fallbackCause, err = s.storeTaskMediaFile(task, uploadKey, path, item.MIMEType, checkpoint.Mode, resource)
 			if fallbackCause != nil {
 				// 直传失败已由本地兜底接住：分别记录失败的上传和成功的兜底保存。
 				s.logMediaStage(*task, stage, started, fallbackCause)
@@ -274,10 +300,10 @@ func (s *Service) materializeTaskMedia(ctx context.Context, task *model.Task, co
 		}
 		url := resourceFileURL(resource.ID)
 		output := map[string]interface{}{"dataUrl": url, "url": url, "resourceId": resource.ID, "storageKey": "resource:" + resource.ID, "mimeType": resource.MimeType, "bytes": resource.Size, "width": resource.Width, "height": resource.Height, "durationMs": resource.DurationMs}
-		if len(item.Reference.Metadata) > 0 {
+		if !strict && len(item.Reference.Metadata) > 0 {
 			output["metadata"] = item.Reference.Metadata
 		}
-		if item.Reference.Name != "" {
+		if !strict && item.Reference.Name != "" {
 			output["name"] = item.Reference.Name
 		}
 		items = append(items, output)

@@ -80,6 +80,7 @@ export type ImageCapabilityConfig = {
         maxImages: number;
         maxImageBytes: number;
         maskSupported: boolean;
+        strictRegionVerified?: boolean;
     };
     size: {
         parameter: ImageSizeParameter;

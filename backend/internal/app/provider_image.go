@@ -31,6 +31,9 @@ func runImageTask(ctx context.Context, input canvasGenerationInput) (map[string]
 	if _, ok := declarativeProtocolAdapterForContext(ctx, input.Config.InterfaceType); ok {
 		return runDeclarativeProtocolTask(ctx, input)
 	}
+	if metadataString(input.Metadata, "edit") == strictRegionEdit {
+		return nil, errors.New("严格局改需要支持成品检查点的声明式图片协议")
+	}
 	if input.Config.InterfaceType == string(model.ChannelInterfaceGrokImage) {
 		return runGrokImageTask(ctx, input)
 	}

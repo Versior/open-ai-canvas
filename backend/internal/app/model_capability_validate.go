@@ -304,6 +304,9 @@ func (s *Service) ValidateTaskCapability(input map[string]any) error {
 	if err := json.Unmarshal(encoded, &taskInput); err != nil {
 		return BadAuthRequest("任务输入格式无效")
 	}
+	if wantsStrictRegion(input) && (taskInput.Mode != "image" || isWorkflowProviderInterface(taskInput.Config.InterfaceType)) {
+		return BadAuthRequest("严格局改仅支持经验证的图片模型")
+	}
 	if taskInput.Mode == "text" {
 		if err := ValidateThinkingLevelRequest(taskInput.TextOptions.ThinkingLevel); err != nil {
 			return newModelCapabilityArgumentError("thinkingLevel", "unsupported_value", err)
@@ -343,6 +346,17 @@ func (s *Service) ValidateTaskCapability(input map[string]any) error {
 			return err
 		}
 		taskInput.Config.InterfaceType = string(item.Protocol)
+		taskInput.Config.ChannelID = channelID
+		if wantsStrictRegion(input) {
+			release, err := selectModelRelease(s.protocolRegistry(), string(item.Protocol), item.ProtocolRelease, false)
+			if err != nil {
+				return err
+			}
+			adapter, ok := release.Registry.Resolve(string(item.Protocol))
+			if !ok || adapter.Metadata().Execution != "declarative" {
+				return BadAuthRequest("严格局改需要支持成品检查点的声明式图片协议")
+			}
+		}
 	}
 	if taskInput.Mode == "image" {
 		if presetErr := imageSizePresetReadyError(profile.Image, taskInput.Config.InterfaceType); presetErr != nil {
@@ -512,6 +526,14 @@ func addReferenceDuration(totalMs *int64, durationMs int64, limitSeconds *int) b
 }
 
 func validateImageTask(profile *ImageCapabilityConfig, input canvasGenerationInput) error {
+	if metadataString(input.Metadata, "edit") == strictRegionEdit {
+		if profile == nil || !profile.References.MaskSupported || !profile.References.StrictRegionVerified || input.Config.ChannelID == "" || input.Mask == nil || len(input.ReferenceImages) == 0 {
+			return BadAuthRequest("严格局改需要通过实测的系统渠道、原图和蒙版；不会降级成整图重绘")
+		}
+		if count := strings.TrimSpace(input.Config.Count); count != "" && count != "1" {
+			return BadAuthRequest("每个严格局改任务只接受一个候选；多张请分任务提交")
+		}
+	}
 	if profile == nil {
 		return nil
 	}

@@ -719,6 +719,7 @@ export type CanvasNodeMetadata = {
     drawingPreviewUrl?: string;
     drawingShapeCount?: number;
     drawingPageCount?: number;
+    strictRegionSourceId?: string;
     emotionEdit?: {
         sourceNodeId: string;
         characterName: string;

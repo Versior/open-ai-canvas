@@ -291,6 +291,10 @@ export function useCanvasGenerationRetry({
                 }
                 return;
             }
+            if (node.metadata?.strictRegionSourceId) {
+                message.info("请从原图打开严格局改并确认选区；不会按普通生图重试。");
+                return;
+            }
             // 处理节点按保存的参数重建请求，不能落入普通视频生成。
             const videoEnhance = node.metadata?.videoEnhance;
             const videoDepth = node.metadata?.videoDepth;

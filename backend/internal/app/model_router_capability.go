@@ -74,6 +74,9 @@ func ModelRequestIntentFromTaskInput(input map[string]any, taskType string, oper
 	if mask, exists := input["mask"]; exists && mask != nil {
 		intent.Inputs["mask"] = 1
 	}
+	if wantsStrictRegion(input) {
+		intent.Inputs["strictmask"] = 1
+	}
 	explicitOptions := false
 	if options, ok := input["capabilityOptions"].(map[string]any); ok {
 		explicitOptions = true
@@ -501,6 +504,8 @@ func capabilityInputLabel(name string) string {
 		return "参考音频"
 	case "mask":
 		return "蒙版"
+	case "strictmask":
+		return "已验证的严格局改蒙版"
 	default:
 		return name
 	}

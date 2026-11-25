@@ -312,6 +312,9 @@ func (w *taskWorkerCoordinator) processClaimedTask(task *model.Task, globalSlot 
 		return s.finishTaskMediaRecovery(task, result, err)
 	}
 	providerSucceeded := routeResult.providerSucceeded
+	if err == nil && wantsStrictRegion(admissionInput) {
+		return terminal.handleResultPersistenceFailureError(task, errors.New("严格局改未经过成品校验，拒绝保存渠道候选"))
+	}
 	if err == nil {
 		result, err = s.persistGeneratedMediaResult(task.UserID, result)
 	}

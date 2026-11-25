@@ -188,6 +188,30 @@ func (s *Service) createGenerationTask(userID string, req CreateTaskRequest, sub
 	if err := s.ValidateTaskCapability(normalizedInput); err != nil {
 		return nil, err
 	}
+	if wantsStrictRegion(normalizedInput) {
+		if taskType != "canvas_image" {
+			return nil, BadAuthRequest("严格局改只接受画布图片任务")
+		}
+		encoded, err := json.Marshal(normalizedInput)
+		if err != nil {
+			return nil, err
+		}
+		var edit canvasGenerationInput
+		if err := json.Unmarshal(encoded, &edit); err != nil {
+			return nil, BadAuthRequest("严格局改输入无效")
+		}
+		// Bound admission decodes as well as worker decodes for large uploads.
+		select {
+		case strictRegionAdmission <- struct{}{}:
+		default:
+			return nil, BadAuthRequest("局改素材校验繁忙，请稍后重试")
+		}
+		_, err = s.loadStrictRegionInputs(userID, edit)
+		<-strictRegionAdmission
+		if err != nil {
+			return nil, BadAuthRequest(err.Error())
+		}
+	}
 	if containsInlineMediaDataURL(normalizedInput) {
 		return nil, BadAuthRequest("任务输入不能包含内嵌媒体，请先上传到资源存储")
 	}

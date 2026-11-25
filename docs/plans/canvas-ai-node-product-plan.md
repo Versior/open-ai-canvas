@@ -1,6 +1,12 @@
 # 画布 AI 节点：竞品调研与实施方案
 
-**状态：提案，未实施。** 对照影策当前源码、GitHub 仓库及产品官方资料（查阅于 2026-11-25）。本轮未登录竞品操作、未调用付费模型，不把宣传案例当作效果、延迟或成本实测。
+**状态：分项实施。** 竞品调研于 2026-11-25；各项的开发与实测状态见下表。未登录竞品生成作品、未调用付费模型，不把宣传案例当作效果、延迟或成本实测。
+
+| 切片 | 实现 / 验证 | 尚未放行 |
+| --- | --- | --- |
+| 严格局改 | 图片节点区域编辑器默认严格模式；服务端冻结原图、校验二值蒙版、保护区四通道原样复制；落盘 PNG 的透明、半透明和不透明像素、首次执行与恢复后读取同一成品、跨账号拒绝均有回归。 | 实际渠道需逐个验证。未验收不能提交严格任务，用户可主动改为「参考重绘」。仅支持可在原像素坐标系对齐的静态图，不保证模型在框内的审美质量。 |
+
+**开发合同：每个电商功能是可命名、连线、保存、重开的独立画布节点，不是跳转工具网站的快捷方式。** 共享节点底座不等于共用一份草稿。模型型节点复用原生的模型、张数、尺寸、画质等按能力显示的参数与费用确认；确定性本地工具不摆没有作用的模型选择器。创建、拖入、选材、配置、撤销均不发模型任务。
 
 ## 1. 产品结论
 
@@ -17,6 +23,7 @@
 | [OpenAI Images：蒙版编辑](https://developers.openai.com/api/docs/guides/image-generation)、[AUTOMATIC1111：GitHub](https://github.com/AUTOMATIC1111/stable-diffusion-webui) | GPT Image 官方说明蒙版是指引，不保证精确遵循轮廓；开源工作流有局部重绘路径。 | 可靠的「框外不变」靠最终合成，不靠模型听话。先比较真实蒙版编辑与带上下文裁切，供应商适配单独验收。 |
 | [Photoroom：Product Staging](https://www.photoroom.com/tools/product-staging)、[Virtual Model API](https://docs.photoroom.com/image-editing-api-plus-plan/virtual-model)、[Virtual Try-On](https://www.photoroom.com/tools/virtual-try-on) | 有商品布景、服装上身、真人照片试穿；输入与产物按场景区分。 | 一个 SKU 可扩背景、摆拍和模特，但应默认保住实物像素；换装要展示原衣对照。官网没有证明任意服装纹理能保真。 |
 | [Pixelcut：官方产品页](https://www.pixelcut.ai/) | 公开展示商品图工作流、局部填充、批量编辑。 | 优先验证批量套模板、换背景、统一交付尺寸；不做一个只能逐张出图的节点集。 |
+| [PixelAI：AI 工具目录](https://gpt.axoxe.com/user/ai-tools) | 游客目录展示 47 项工具；这里验证的是工具组织和入口，不是登录后的输入协议或出图质量。 | 按运营要做的工作命名节点；统一壳、不同输入角色与成品检验。不复制对方素材，不把 47 个入口等同于 47 个通过实测的功能。 |
 | [ControlNet：GitHub](https://github.com/lllyasviel/ControlNet)、[Kling：Motion Control](https://kling.ai/quickstart/motion-control-user-guide) | 分别展示人体骨架条件，以及人物图和参考动作视频驱动的视频工作流。 | 静态姿势和长时动作是两种节点。品牌、脸、衣服、动作一致性须分别验收，不把营销文案当作保证。 |
 | [IDM-VTON：GitHub](https://github.com/yisol/IDM-VTON) | 学术虚拟试穿方案，仓库标注 CC BY-NC-SA 4.0。 | 可作技术比较，不作为商业默认依赖。若走本地方案，代码、模型权重和素材许可都要单独核对。 |
 | [Recraft：位图转 SVG](https://www.recraft.ai/ai-image-vectorizer) | 支持把 PNG、JPG、WebP 描摹成可编辑的 SVG 路径。 | 给用户交付「描摹版」与原图，不声称恢复 Illustrator/CorelDRAW 原始图层。Adobe 帮助页本次未能直接读取，不以它佐证原生导出。 |
@@ -35,7 +42,7 @@
 
 ## 4. 能力矩阵
 
-「可做」指技术上有明确实现路径；「需验证」指能开发流程但质量或接入条件不能预先承诺。均非本轮已上线。
+「可做」指技术上有明确实现路径；「需验证」指能开发流程但质量或接入条件不能预先承诺。此矩阵不是发布清单，实际覆盖以上方切片表为准。
 
 | 节点与优先级 | 输入 → 交付 | 能做 / 不能承诺 |
 | --- | --- | --- |

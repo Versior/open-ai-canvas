@@ -4,7 +4,7 @@ import { nanoid } from "nanoid";
 
 import type { CanvasImageCropRect } from "@/components/canvas/canvas-node-crop-dialog";
 import type { CanvasImageRegionEditPayload } from "@/components/canvas/canvas-node-region-edit-dialog";
-import { buildRegionEditPrompt } from "@/lib/canvas/image-region-edit";
+import { buildRegionEditPrompt, regionEditIssue } from "@/lib/canvas/image-region-edit";
 import type { CanvasImageEditPayload } from "@/components/canvas/canvas-node-image-edit-dialog";
 import type { CanvasImageLayerDecompositionPayload } from "@/components/canvas/canvas-node-layer-decomposition-dialog";
 import { buildCanvasTextEditPrompt, type CanvasImageTextEditPayload, type CanvasImageTextLine } from "@/components/canvas/canvas-node-text-edit-dialog";
@@ -819,13 +819,18 @@ export function useCanvasMediaTools({
                 message.warning(translate("canvasPage.mediaTools.selectRegionFirst"));
                 return;
             }
-            if (maxReferenceImages < 1) {
-                message.error(translate("canvasPage.mediaTools.modelNoReferenceEdit"));
+            const issue = regionEditIssue(payload.editMode, selectedImageProfile?.references, payload.size);
+            if (issue) {
+                message.error(issue);
                 return;
             }
-            // 能收两张参考图时附带编号标注图；支持蒙版时再用蒙版锁住框外像素。坐标始终写进提示词，单图模型也能定位。
+            const strict = payload.editMode === "strict";
+            if (strict && !payload.sourcePNG) {
+                message.error("缺少冻结原图，请重新框选");
+                return;
+            }
             const useAnnotatedReference = maxReferenceImages >= 2;
-            const useMask = Boolean(selectedImageProfile?.references.maskSupported);
+            const useMask = strict;
             const generationConfig = {
                 ...baseGenerationConfig,
                 ...payload.generationConfig,
@@ -845,7 +850,7 @@ export function useCanvasMediaTools({
             }
             const userPrompt = payload.prompt.trim();
             const prompt = buildRegionEditPrompt({ prompt: userPrompt, regions: payload.regions, size: payload.size, annotatedReference: useAnnotatedReference, mask: useMask });
-            const source = nodeReferenceImage(node);
+            const source = strict ? { id: node.id, name: "original.png", type: "image/png", dataUrl: payload.sourcePNG! } : nodeReferenceImage(node);
             if (!source) return;
             const annotatedReference = { id: `${node.id}-regions`, name: "regions.jpg", type: "image/jpeg", dataUrl: payload.annotatedDataUrl };
             const referenceImages = useAnnotatedReference ? [source, annotatedReference] : [source];
@@ -854,7 +859,8 @@ export function useCanvasMediaTools({
             if (!styleExecution) return;
             const { prompt: effectivePrompt, metadata: styleMetadata } = styleExecution;
             const requestedCount = Math.max(1, Number(generationConfig.count) || 1);
-            const generationMetadata = buildImageGenerationMetadata("edit", generationConfig, requestedCount, referenceImages);
+            // Keep binary snapshots in task resources, never serialized into canvas metadata.
+            const generationMetadata = { ...buildImageGenerationMetadata("edit", generationConfig, requestedCount, strict ? [] : referenceImages), strictRegionSourceId: strict ? node.id : undefined };
             setRegionEditNodeId(null);
             const rootId = nanoid();
             const childIds = requestedCount > 1 ? Array.from({ length: requestedCount }, () => nanoid()) : [];
@@ -919,7 +925,7 @@ export function useCanvasMediaTools({
                                     referenceImages,
                                     mask,
                                     signal: controller.signal,
-                                    metadata: { sourceNodeId: node.id, edit: "region", regionCount: payload.regions.length, annotationReference: useAnnotatedReference || undefined, ...styleMetadata },
+                                    metadata: { ...styleMetadata, sourceNodeId: node.id, edit: strict ? "region-strict" : "region-reference", regionCount: payload.regions.length, annotationReference: useAnnotatedReference || undefined },
                                 },
                                 {
                                     bindTask: (task) => {

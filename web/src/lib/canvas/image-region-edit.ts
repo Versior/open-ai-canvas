@@ -3,6 +3,29 @@ import type { PixelSize } from "@/lib/canvas/image-operation-plan";
 /** 区域框使用原图像素坐标；index 创建后不再变化，删除区域不会重排已写进提示词的 @区域N。 */
 export type ImageEditRegion = { index: number; x: number; y: number; width: number; height: number };
 export type RegionPoint = { x: number; y: number };
+export type RegionEditMode = "strict" | "reference";
+
+export function regionEditIssue(mode: RegionEditMode, refs: { maxImages: number; maskSupported: boolean; strictRegionVerified?: boolean } | undefined, size: PixelSize) {
+    if (!refs?.maxImages) return "当前模型不支持参考图编辑";
+    if (mode === "reference") return "";
+    if (!refs.maskSupported || !refs.strictRegionVerified) return "该模型未通过严格蒙版实测。请选择已验证模型，或明确切换到参考重绘。";
+    if (size.width * size.height > 8 * 1024 * 1024) return "严格局改最多支持 8388608 像素，请先裁切原图。";
+    return "";
+}
+
+/** Preserve PNG bytes (including RGB under transparent pixels). Other formats
+ * use the same oriented, decoded browser raster the user actually selected. */
+export function regionSourcePNG(url: string, image: HTMLImageElement, size: PixelSize) {
+    if (url.startsWith("data:image/png;base64,")) return url;
+    const surface = document.createElement("canvas");
+    Object.assign(surface, size);
+    const ctx = surface.getContext("2d");
+    if (!ctx) throw new Error("无法冻结局改原图");
+    ctx.drawImage(image, 0, 0, size.width, size.height);
+    const png = surface.toDataURL("image/png");
+    if (!png.startsWith("data:image/png;base64,")) throw new Error("局改原图导出失败");
+    return png;
+}
 
 /** 标注参考图与编辑器共用的框色：模型看到的颜色必须与界面一致，所以不跟随主题。 */
 export const IMAGE_REGION_COLOR = "#2f7cf6";

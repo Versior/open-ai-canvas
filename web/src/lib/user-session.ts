@@ -298,6 +298,7 @@ export function projectLogicalCapability(spec: CapabilitySpec, defaults: Record<
     if (spec.capability === "image" && projected.image) {
         projected.image.references.maxImages = spec.inputs?.image?.max ?? 0;
         projected.image.references.maskSupported = (spec.inputs?.mask?.max ?? 0) > 0;
+        projected.image.references.strictRegionVerified = (spec.inputs?.strictmask?.max ?? 0) > 0;
         projected.image.size = { parameter: "none", values: [], default: "auto", allowCustom: false };
         projected.image.quality = { supported: false, values: [], default: "auto" };
         projected.image.transparentBackground = { supported: false, default: false };

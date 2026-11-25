@@ -548,6 +548,13 @@ function ImageCapabilityEditor({
                         <NumberField label="最大参考图" value={profile.references.maxImages} min={0} disabled={disabled} onChange={(maxImages) => updateReferences({ maxImages: maxImages || 0 })} />
                         <NumberField label="单图上限 MB" value={bytesToMB(profile.references.maxImageBytes)} min={0} disabled={disabled} onChange={(maxImageBytes) => updateReferences({ maxImageBytes: mbToBytes(maxImageBytes) })} />
                         <ParameterField label="蒙版编辑" description="允许图片编辑接口提交 mask" supported={profile.references.maskSupported} disabled={disabled} onChange={(maskSupported) => updateReferences({ maskSupported })} />
+                        <ParameterField
+                            label="严格局改已实测"
+                            description="仅在此声明式渠道实测蒙版方向、原尺寸 PNG 和保护像素后启用"
+                            supported={Boolean(profile.references.maskSupported && profile.references.strictRegionVerified)}
+                            disabled={disabled || !profile.references.maskSupported}
+                            onChange={(strictRegionVerified) => updateReferences({ strictRegionVerified })}
+                        />
                     </ReferenceCard>
                     <ReferenceCard title="通用限制" description="所有图片请求共用的基础约束">
                         <NumberField label="提示词最大字符数" value={profile.references.promptMaxChars} min={1} disabled={disabled} onChange={(promptMaxChars) => updateReferences({ promptMaxChars: promptMaxChars || 1 })} />
@@ -621,6 +628,13 @@ function ImageCapabilityEditor({
                     <NumberField label="单图上限 MB" value={bytesToMB(profile.references.maxImageBytes)} min={0} disabled={disabled} onChange={(maxImageBytes) => updateReferences({ maxImageBytes: mbToBytes(maxImageBytes) })} />
                 </div>
                 <ParameterField label="蒙版编辑" description="允许调用图片编辑接口并提交 mask" supported={profile.references.maskSupported} disabled={disabled} onChange={(maskSupported) => updateReferences({ maskSupported })} />
+                <ParameterField
+                    label="严格局改已实测"
+                    description="仅在此声明式渠道实测蒙版方向、原尺寸 PNG 和保护像素后启用"
+                    supported={Boolean(profile.references.maskSupported && profile.references.strictRegionVerified)}
+                    disabled={disabled || !profile.references.maskSupported}
+                    onChange={(strictRegionVerified) => updateReferences({ strictRegionVerified })}
+                />
             </CapabilityGroup>
 
             <CapabilityGroup title="输出规格" description="单次生成数量、尺寸参数与默认值">
