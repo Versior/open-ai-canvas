@@ -1,13 +1,28 @@
 import { STUDIO_SINGLE_TYPES, studioDisplayName, studioInfoPoints, studioInfoText, studioOutputSpec, studioPlatformForbidsText, studioRunRatio, studioSingleTypes, studioTitleOf } from "./brief";
-import { STUDIO_DETAIL_PLAN_NAME, STUDIO_PLAN_FIELD, studioDetailPlanKey, studioDetailScreenCount, studioPlannedShotVisual, studioSameTargets } from "./detail-plan";
-import { studioAttemptActive, studioShotCopy, studioGenerationSource } from "./product";
+import { STUDIO_DETAIL_CONTRACT, STUDIO_DETAIL_PLAN_NAME, STUDIO_PLAN_FIELD, studioDetailPlanKey, studioDetailScreenCount, studioPlannedShotVisual, studioSameTargets } from "./detail-plan";
+import { studioAttemptActive, studioGenerationSource, studioShotCopy, studioUsablePoints } from "./product";
 import { studioPlanRoles, studioProductStyle, studioShotSpec } from "./shot-specs";
 import { studioSuiteLayoutLines, studioSuiteShotRole } from "./suites";
 import { canonicalize } from "json-canonicalize";
 import { nextStudioComposition } from "./art-direction";
 import { studioDesignProfile } from "./design-knowledge";
 import { studioPlanInputSignature } from "./plan-input";
-import type { StudioBrief, StudioCompositionId, StudioDetailLayoutId, StudioDetailPlan, StudioPhoto, StudioPlanKind, StudioPlanScope, StudioPlanTarget, StudioProduct, StudioRun, StudioShot, StudioShotRole } from "./types";
+import type {
+    StudioBrief,
+    StudioCompositionId,
+    StudioCopySource,
+    StudioDetailLayoutId,
+    StudioDetailPlan,
+    StudioPhoto,
+    StudioPlanKind,
+    StudioPlanScope,
+    StudioPlanTarget,
+    StudioProduct,
+    StudioRun,
+    StudioShot,
+    StudioShotRole,
+    StudioDesignToneId,
+} from "./types";
 
 /**
  * 表单生成的记录：点一次「生成商品图」就是一组镜头。
@@ -27,29 +42,18 @@ function jsonBytes(value: unknown) {
     return new TextEncoder().encode(JSON.stringify(value)).byteLength;
 }
 
-/** 用表单里的标题和卖点代替档案文案，复用镜头规格里按角色取文案的规则。 */
-function copySource(product: StudioProduct): StudioProduct {
-    const points = studioInfoPoints(studioInfoText(product));
-    return {
-        ...product,
-        name: studioDisplayName(product),
-        sellingPoints: points.map((point, index) => ({ id: `info_${index}`, title: point.title, detail: point.detail, evidence: "confirmed", factIds: [], enabled: true })),
-        copy: { headline: studioTitleOf(product).trim(), subhead: product.copy?.subhead || "", listingTitle: product.copy?.listingTitle || "", bullets: product.copy?.bullets || [] },
-    };
-}
-
-export function studioRunShotCopy(role: StudioShotRole, product: StudioProduct, single: boolean): Pick<StudioShot, "headline" | "subline" | "lines" | "sellingPointIds"> {
+export function studioRunShotCopy(role: StudioShotRole, product: StudioProduct, single: boolean, pageKind?: StudioPlanKind | "single", screenIndex?: number): Pick<StudioShot, "headline" | "subline" | "lines" | "sellingPointIds"> {
     const empty = { headline: "", subline: "", lines: [] as string[], sellingPointIds: [] as string[] };
-    if (product.brief.language === "none" || studioPlatformForbidsText(product, role)) return empty;
-    const source = copySource(product);
+    if (product.brief.language === "none" || studioPlatformForbidsText(product, role, pageKind, screenIndex)) return empty;
+    const points = studioUsablePoints(product).length
+        ? studioUsablePoints(product).map((point) => ({ id: point.id, title: point.title, detail: point.detail }))
+        : studioInfoPoints(studioInfoText(product)).map((point, index) => ({ id: `info_${index}`, ...point }));
     const title = studioTitleOf(product).trim();
-    if (single && role === "main-selling") {
-        const first = source.sellingPoints[0];
-        if (title) return { ...empty, headline: title, subline: first ? first.title : "" };
-        return first ? { ...empty, headline: first.title, subline: first.detail } : empty;
-    }
+    const fromPoint = (point?: (typeof points)[number]) => (point ? { ...empty, headline: point.title, subline: point.detail, sellingPointIds: [point.id] } : empty);
+    if (single && role === "main-selling") return title ? { ...empty, headline: title, subline: points[0]?.title || "" } : fromPoint(points[0]);
     if (single && title && (role === "detail-model" || role === "detail-angles")) return { ...empty, headline: title };
-    return { ...studioShotCopy(role, source), sellingPointIds: [] };
+    const point = role === "main-selling" || role === "detail-scene" || role === "detail-closeup" ? points[0] : undefined;
+    return point ? fromPoint(point) : studioShotCopy(role, product);
 }
 
 /**
@@ -66,16 +70,23 @@ export type StudioSetEntry = {
     noText?: boolean;
     planIndex?: number;
     visual?: string;
+    purchaseQuestion?: string;
+    displayContent?: string;
+    visualBeat?: string;
+    visualFocus?: string;
+    imagePrompt?: string;
+    negativePrompt?: string;
     layout?: StudioDetailLayoutId;
     composition?: StudioCompositionId;
     elements?: string;
     eyebrow?: string;
     copy?: Pick<StudioShot, "headline" | "subline" | "lines">;
+    copySource?: StudioCopySource;
     included: boolean;
 };
 
 /** 套图按主图还是详情页出：模板套图看模板用途，单张类型返回 undefined。 */
-export function studioSetKind(product: StudioProduct): StudioPlanKind | undefined {
+export function studioSetKind(product: Pick<StudioProduct, "brief">): StudioPlanKind | undefined {
     const spec = studioOutputSpec(product.brief.outputType);
     if (!spec.set) return undefined;
     return product.brief.outputType === "template-set" ? product.brief.suite?.kind || spec.set : spec.set;
@@ -100,16 +111,17 @@ export function studioRevisionPlan(product: StudioProduct): StudioDetailPlan | u
     const scope = studioPlanScopeOf(product);
     if (!scope) return undefined;
     const plan = product.brief[STUDIO_PLAN_FIELD[scope]];
-    if (scope !== "template") return plan;
-    const suite = product.brief.suite;
-    if (!suite || plan?.suiteId !== suite.id || !plan.inputSignature) return undefined;
-    let previous: unknown;
+    if (scope !== "detail" && scope !== "template") return plan;
+    if (!plan?.inputSignature) return undefined;
+    let previous: { studioDetailContract?: unknown; brief?: { suite?: unknown } } | null;
     try {
-        previous = JSON.parse(plan.inputSignature)?.brief?.suite;
+        previous = JSON.parse(plan.inputSignature);
     } catch {
         return undefined;
     }
-    return previous && canonicalize(previous) === canonicalize(suite) ? plan : undefined;
+    if (scope === "detail") return previous?.studioDetailContract === STUDIO_DETAIL_CONTRACT ? plan : undefined;
+    const suite = product.brief.suite;
+    return suite && plan.suiteId === suite.id && previous?.brief?.suite && canonicalize(previous.brief.suite) === canonicalize(suite) ? plan : undefined;
 }
 
 /** 当前商品与创作输入匹配的策划；历史生成组继续使用自己的快照。 */
@@ -118,12 +130,20 @@ export function studioActivePlan(product: StudioProduct): StudioDetailPlan | und
     if (!scope) return undefined;
     const plan = product.brief[STUDIO_PLAN_FIELD[scope]];
     if (!plan?.inputSignature || plan.inputSignature !== studioPlanInputSignature(product)) return undefined;
-    if (scope === "single") return studioSameTargets(plan.targets, studioSingleTargets(product.brief)) ? plan : undefined;
+    if (scope === "single") {
+        const targets = studioSingleTargets(product.brief);
+        return studioSameTargets(plan.targets, targets) && plan.screens.length === targets.reduce((count, target) => count + target.count, 0) ? plan : undefined;
+    }
     if (scope === "template") {
         const suite = product.brief.suite;
         return suite && plan.suiteId === suite.id && plan.screens.length === suite.shots.length ? plan : undefined;
     }
-    if (scope === "detail") return (plan.requestedScreens ?? plan.screens.length) === studioDetailScreenCount(product.brief) && plan.screens.length === studioDetailScreenCount(product.brief) ? plan : undefined;
+    if (scope === "detail") {
+        const requested = studioDetailScreenCount(product.brief);
+        const plannedForRequest = (plan.requestedScreens ?? plan.screens.length) === requested;
+        // 资料容量只产生诊断，不改变用户选择的策划契约。旧版曾保存短页，屏数改变后必须重新策划。
+        return plannedForRequest && plan.screens.length === requested ? plan : undefined;
+    }
     return plan;
 }
 
@@ -139,12 +159,20 @@ function planEntries(product: StudioProduct, plan: StudioDetailPlan): Omit<Studi
         ...(templateShots?.[index]?.ratio ? { ratio: templateShots[index].ratio } : {}),
         planIndex: index,
         visual: screen.visual,
+        ...(screen.purchaseQuestion ? { purchaseQuestion: screen.purchaseQuestion } : {}),
+        ...(screen.displayContent ? { displayContent: screen.displayContent } : {}),
+        ...(screen.visualBeat ? { visualBeat: screen.visualBeat } : {}),
+        ...(screen.visualFocus ? { visualFocus: screen.visualFocus } : {}),
+        ...(screen.imagePrompt ? { imagePrompt: screen.imagePrompt } : {}),
+        ...(screen.negativePrompt ? { negativePrompt: screen.negativePrompt } : {}),
+        ...(product.brief.outputType !== "detail-set" && screen.aspectRatio ? { ratio: screen.aspectRatio } : {}),
         layout: screen.layout,
         composition: screen.composition,
         elements: screen.elements,
         ...(screen.eyebrow ? { eyebrow: screen.eyebrow } : {}),
         copy: { headline: screen.headline, subline: screen.subline, lines: screen.lines },
-        ...(screen.noText ? { noText: true } : {}),
+        ...(screen.copySource ? { copySource: screen.copySource } : {}),
+        ...(templateShots?.[index]?.noText ? { noText: true } : {}),
     }));
 }
 
@@ -205,21 +233,39 @@ export function studioEntryRatio(entry: Pick<StudioSetEntry, "role" | "ratio">, 
 
 const EMPTY_COPY = { headline: "", subline: "", lines: [] as string[], sellingPointIds: [] as string[] };
 
-/** 清单里的一张变成出图记录里的一张：策划的屏带画面、版式和文案，模板的带职责，其余按角色取文案。 */
-function entryShot(entry: StudioSetEntry, product: StudioProduct, plan: StudioDetailPlan | undefined, createId: StudioIdFactory, single: boolean): StudioShot {
+/** 清单里的一张变成出图记录里的一张：策划文案是可选素材，最终文案与排版交给图片模型。 */
+function entryShot(entry: StudioSetEntry, product: StudioProduct, plan: StudioDetailPlan | undefined, createId: StudioIdFactory, pageKind: StudioPlanKind | "single", screenIndex?: number): StudioShot {
     const textless = product.brief.language === "none";
-    const visual = entry.planIndex !== undefined && plan ? studioPlannedShotVisual(plan.screens[entry.planIndex]) : "";
-    // 策划的屏用策划写好的文案；不加文字或平台不许放字时和按角色取文案一样留空。
-    const planned = entry.copy ? (textless || studioPlatformForbidsText(product, entry.role) ? EMPTY_COPY : { ...entry.copy, sellingPointIds: [] }) : undefined;
-    const copy = entry.noText ? EMPTY_COPY : planned || studioRunShotCopy(entry.role, product, single);
+    const plannedScreen = entry.planIndex === undefined ? undefined : plan?.screens[entry.planIndex];
+    const ordinaryDetail = product.brief.outputType === "detail-set";
+    const visualBeat = plannedScreen?.visualBeat?.trim();
+    const visual = plannedScreen && (ordinaryDetail || (plannedScreen.displayContent || plannedScreen.visual).trim()) ? studioPlannedShotVisual(plannedScreen) : "";
+    const ratio = studioEntryRatio(entry, product);
+    const planned = plannedScreen && entry.copy && !textless && !studioPlatformForbidsText(product, entry.role, pageKind, screenIndex) ? { ...entry.copy, sellingPointIds: [] } : undefined;
+    const copy = entry.noText ? EMPTY_COPY : plannedScreen ? planned || EMPTY_COPY : studioRunShotCopy(entry.role, product, pageKind === "single", pageKind, screenIndex);
     return {
         id: createId(),
         role: entry.role,
         title: entry.title,
-        ratio: studioEntryRatio(entry, product),
+        ...(entry.noText ? { noText: true as const } : {}),
+        ratio,
         ...copy,
+        ...(plannedScreen?.copySource ? { copySource: plannedScreen.copySource } : {}),
         ...(entry.duty ? { duty: entry.duty } : {}),
-        ...(visual ? { visual, ...(entry.layout ? { layout: entry.layout } : {}), ...(entry.composition ? { composition: entry.composition } : {}), ...(entry.eyebrow && !entry.noText && !textless ? { eyebrow: entry.eyebrow } : {}) } : {}),
+        ...(visualBeat ? { visualBeat } : {}),
+        ...(visual
+            ? {
+                  visual,
+                  ...(plannedScreen ? { purchaseQuestion: plannedScreen.purchaseQuestion || plannedScreen.purpose, displayContent: plannedScreen.displayContent || plannedScreen.visual } : {}),
+                  ...(plannedScreen?.visualFocus ? { visualFocus: plannedScreen.visualFocus } : {}),
+                  ...(!ordinaryDetail && plannedScreen?.imagePrompt ? { imagePrompt: plannedScreen.imagePrompt } : {}),
+                  ...(!ordinaryDetail && plannedScreen?.negativePrompt ? { negativePrompt: plannedScreen.negativePrompt } : {}),
+                  evidenceRefs: [...(plannedScreen?.evidenceRefs || [])],
+                  ...(entry.layout ? { layout: entry.layout } : {}),
+                  ...(entry.composition ? { composition: entry.composition } : {}),
+                  ...(entry.eyebrow && !entry.noText && !textless ? { eyebrow: entry.eyebrow } : {}),
+              }
+            : {}),
         tweaks: [],
         attempts: [],
     };
@@ -230,6 +276,7 @@ export function createStudioRun(product: StudioProduct, createId: StudioIdFactor
     const spec = studioOutputSpec(brief.outputType);
     const kind = studioSetKind(product);
     const plan = studioActivePlan(product);
+    const explicitStyleId = product.style !== "auto" ? studioProductStyle(product).id : undefined;
     const base = {
         id: createId(),
         createdAt: now,
@@ -237,22 +284,30 @@ export function createStudioRun(product: StudioProduct, createId: StudioIdFactor
         textMode: "model" as const,
         source: studioGenerationSource(product),
         quality: brief.quality,
-        styleId: studioProductStyle(product, plan?.styleId).id,
+        // A style chosen by the analysis model is not a seller lock. When the
+        // form is set to auto, let the image model make the visual decision;
+        // only an explicit form style is carried into the generation snapshot.
+        ...(explicitStyleId ? { styleId: explicitStyleId } : {}),
         ...(brief.resolution ? { resolution: brief.resolution } : {}),
     };
     // 策划的整套视觉规范和模板的一样代替风格锁，记在 suite 里（另带设计调性和创意主线），结果区的组名带上「按商品策划」；
     // 按模板策划的组名前面再带上模板名。
     const planName = brief.outputType === "template-set" && brief.suite ? `${brief.suite.name} · ${STUDIO_DETAIL_PLAN_NAME}` : STUDIO_DETAIL_PLAN_NAME;
+    // The analysis result is a content brief, not a hidden art-direction lock.
+    // Keep its knowledge receipt for traceability, but let the image model choose
+    // typography, composition, palette, effects and copy unless the seller chose
+    // those constraints explicitly in the form or a reference-layout toggle.
+    const selectedTemplate = brief.outputType === "template-set" ? brief.suite : undefined;
     const planSuite = plan
         ? {
               id: plan.id,
               name: planName,
-              style: plan.style,
-              ...(plan.designAnalysis ? { designAnalysis: plan.designAnalysis } : {}),
-              ...(plan.tone ? { tone: plan.tone } : {}),
-              ...(plan.concept ? { concept: plan.concept } : {}),
-              ...(plan.motifs?.length ? { motifs: plan.motifs } : {}),
-              ...(plan.artDirection ? { artDirection: plan.artDirection } : {}),
+              // A seller-selected template is an explicit visual constraint;
+              // ordinary product planning has no hidden style lock.
+              style: selectedTemplate?.style || "",
+              ...(brief.outputType === "detail-set" ? {} : plan.tone ? { tone: plan.tone as StudioDesignToneId } : brief.outputType === "main-set" ? { tone: "global-minimal" as StudioDesignToneId } : {}),
+              ...(brief.outputType !== "detail-set" && plan.artDirection ? { artDirection: plan.artDirection } : {}),
+              ...(plan.knowledgeReceipt ? { knowledgeReceipt: plan.knowledgeReceipt } : {}),
           }
         : undefined;
     if (kind) {
@@ -261,7 +316,12 @@ export function createStudioRun(product: StudioProduct, createId: StudioIdFactor
         const entries = studioSetEntries(product).filter((entry) => entry.included);
         if (!entries.length) throw new Error("镜头清单里至少留一张");
         const suite = planSuite || (brief.outputType === "template-set" && brief.suite ? { id: brief.suite.id, name: brief.suite.name, style: brief.suite.style } : undefined);
-        return { ...base, kind, ...(suite ? { suite } : {}), shots: entries.map((entry) => entryShot(entry, product, plan, createId, false)) };
+        return {
+            ...base,
+            kind,
+            ...(suite ? { suite } : {}),
+            shots: entries.map((entry, index) => ({ ...entryShot(entry, product, plan, createId, kind, index + 1), screenIndex: index + 1, screenCount: entries.length })),
+        };
     }
     const types = studioSingleTypes(brief);
     if (!types.length) throw new Error("先选择出图类型");
@@ -269,7 +329,7 @@ export function createStudioRun(product: StudioProduct, createId: StudioIdFactor
     if (plan) {
         const entries = studioSetEntries(product).filter((entry) => entry.included);
         if (!entries.length) throw new Error("策划的清单里至少留一张");
-        return { ...base, ...(planSuite ? { suite: planSuite } : {}), shots: entries.map((entry) => entryShot(entry, product, plan, createId, true)) };
+        return { ...base, ...(planSuite ? { suite: planSuite } : {}), shots: entries.map((entry) => entryShot(entry, product, plan, createId, "single")) };
     }
     // 没策划的单张类型（含同时选了几种）：每种按数量出，每张都按单张图写文案。
     const count = Math.max(1, Math.min(4, brief.count));

@@ -1,7 +1,7 @@
 import type { EcommerceDraft, EcommercePlan, EcommerceReference } from "@/services/api/ecommerce";
 import { getResourceBlob, refreshResource, resourceStorageKey, uploadResourceFile } from "@/services/api/resources";
 import { getActiveUserScope } from "@/lib/user-scope";
-import { commerceLayoutReferences, commerceReferenceViewRanges, normalizeReferenceDraft, validateCommerceReferencePlan } from "./reference-plan";
+import { commerceLayoutReferences, commerceReferenceViewCount, commerceReferenceViewRanges, normalizeReferenceDraft, validateCommerceReferencePlan } from "./reference-plan";
 import { activeCommerceReferences } from "./model-context";
 
 function ownerGuard(assertCurrent?: () => void) {
@@ -65,31 +65,48 @@ async function uploadCrop(bitmap: ImageBitmap, sourceId: string, top: number, bo
     }
 }
 
-export async function prepareCommerceReferenceViews(input: EcommerceDraft, maxImages: number, assertCurrent?: () => void) {
+export async function prepareCommerceReferenceViews(input: EcommerceDraft, maxImages: number, assertCurrent?: () => void, readingMode: "all" | "sample" = "all") {
     const draft = normalizeReferenceDraft(input);
     const sources = commerceLayoutReferences(draft);
     const views: Array<EcommerceReference & { sourceResourceId: string; top: number; bottom: number }> = [];
     if (!sources.length) return { draft, views };
     const { scope, check } = ownerGuard(assertCurrent);
     const originalCount = activeCommerceReferences(draft).length;
-    const prepared: Array<{ source: EcommerceReference; width: number; height: number; ranges: ReturnType<typeof commerceReferenceViewRanges> }> = [];
+    const capacity = Math.floor(maxImages);
+    if (readingMode === "sample" && originalCount > capacity) throw new Error(`商品图和参考原图共${originalCount}张，超过当前策划模型最多${capacity}张的限制`);
+    const prepared: Array<{ source: EcommerceReference; width: number; height: number; count: number }> = [];
     // Inspect sources sequentially to bound bitmap memory; validate the whole batch
     // before creating reading-window resources.
     for (const source of sources) {
         const bitmap = await readReference(source.resourceId, check);
         try {
-            prepared.push({ source, width: bitmap.width, height: bitmap.height, ranges: commerceReferenceViewRanges(bitmap.width, bitmap.height) });
+            const count = commerceReferenceViewCount(bitmap.width, bitmap.height);
+            prepared.push({ source, width: bitmap.width, height: bitmap.height, count });
         } finally {
             bitmap.close();
         }
     }
-    const extra = prepared.reduce((sum, item) => sum + item.ranges.length, 0);
-    if (originalCount + extra > maxImages) throw new Error(`这些借鉴图需要原图及${extra}张局部阅读图，共${originalCount + extra}张输入；请选择支持更多参考图的 Agent 模型`);
+    const extra = prepared.reduce((sum, item) => sum + item.count, 0);
+    const budgets = prepared.map(() => 0);
+    if (readingMode === "all") {
+        if (prepared.some(({ count }) => count > 24)) throw new Error("参考长图过长，请拆为较短的详情页参考后分别策划");
+        if (originalCount + extra > maxImages) throw new Error(`这些借鉴图需要原图及${extra}张局部阅读图，共${originalCount + extra}张输入；请选择支持更多参考图的 Agent 模型`);
+    } else {
+        let remaining = Math.min(extra, capacity - originalCount);
+        while (remaining > 0) {
+            for (const [index, { count }] of prepared.entries()) {
+                if (budgets[index] >= count) continue;
+                budgets[index]++;
+                if (--remaining === 0) break;
+            }
+        }
+    }
     for (const [sourceIndex, item] of prepared.entries()) {
-        if (!item.ranges.length) continue;
+        const ranges = commerceReferenceViewRanges(item.width, item.height, readingMode === "sample" ? budgets[sourceIndex] : undefined);
+        if (!ranges.length) continue;
         const bitmap = await readReference(item.source.resourceId, check);
         try {
-            for (const [index, range] of item.ranges.entries()) {
+            for (const [index, range] of ranges.entries()) {
                 check();
                 const crop = await uploadCrop(bitmap, item.source.resourceId, range.top, range.bottom, `借鉴图${sourceIndex + 1}-局部阅读-${index + 1}`, scope, check);
                 views.push({ ...crop, sourceResourceId: item.source.resourceId, ...range });

@@ -131,6 +131,11 @@ function LegacyInspirationsRedirect() {
     return <Navigate to={{ pathname: "/inspiration", search: `?${params}`, hash }} replace />;
 }
 
+function LegacyStudioRedirect() {
+    const { search, hash } = useLocation();
+    return <Navigate to={{ pathname: "/studio", search, hash }} replace />;
+}
+
 function AuthenticatedWorkspaceLayout() {
     const { pathname } = useLocation();
     const isCanvasProjectRoute = workspacePagePath(pathname).startsWith("/canvas/");
@@ -210,6 +215,7 @@ const routes: RouteObject[] = [
                     </RequireAuth>
                 ),
             },
+            { path: "/ecommerce-studio", element: <LegacyStudioRedirect /> },
             // 商品视频（元素替换）并进了视频复刻，旧地址跳过去。
             { path: "/product-video", element: <Navigate to="/video-replication?mode=replace" replace /> },
             // 室内设计：房间照片、毛坯、线稿出装修效果图。

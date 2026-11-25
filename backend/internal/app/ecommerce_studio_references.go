@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"hash/fnv"
+	"log/slog"
 	"regexp"
 	"sort"
 	"strings"
@@ -120,6 +121,7 @@ func ecommerceStudioViralReferences(category, name, family string) []ecommerceSt
 	}
 	all, err := loadEcommerceCatalog()
 	if err != nil {
+		slog.Warn("ecommerce visual references skipped", "error", err)
 		return nil
 	}
 	familyL1 := map[string]bool{}
@@ -189,13 +191,30 @@ func ecommerceStudioReferenceText(doc ecommerceCatalogDocument, index int, relat
 			ecommercePrefixed("版面 ", clip(doc.Style.Rules, 140)),
 		), "；"),
 	}
-	shots := make([]string, 0, len(doc.Shots))
-	for _, shot := range doc.Shots {
-		text := fmt.Sprintf("%s（%s）", clip(shot.Title, 16), clip(shot.Intent, 34))
-		if zone := clip(shot.TextZone, 60); zone != "" && zone != "none" {
-			text += " 文字：" + zone
+	// Show how a set changes visual weight from entrance to proof and close;
+	// the full template's page order and content are not the current plan.
+	shots := make([]string, 0, min(3, len(doc.Shots)))
+	for page, shot := range doc.Shots {
+		if page != 0 && page != len(doc.Shots)/2 && page != len(doc.Shots)-1 {
+			continue
 		}
-		shots = append(shots, text)
+		zone := clip(shot.TextZone, 64)
+		if zone == "none" {
+			zone = "不放文字"
+		}
+		visual := strings.Join(nonEmptyStrings(
+			ecommercePrefixed("镜头 ", clip(shot.Camera, 56)),
+			ecommercePrefixed("主体占位 ", clip(shot.Occupancy, 48)),
+			ecommercePrefixed("留白 ", clip(shot.Whitespace, 56)),
+			ecommercePrefixed("文字区 ", zone),
+			ecommercePrefixed("布光 ", clip(shot.Lighting, 48)),
+		), "；")
+		if related {
+			visual = strings.Join(nonEmptyStrings(clip(shot.Title, 20), clip(shot.Intent, 46), visual), "；")
+		}
+		if visual != "" {
+			shots = append(shots, fmt.Sprintf("样本第%d屏（%s）", page+1, visual))
+		}
 	}
 	lines = append(lines, "   逐屏："+strings.Join(shots, "｜"))
 	return strings.Join(lines, "\n")
@@ -208,13 +227,12 @@ func ecommercePrefixed(prefix, value string) string {
 	return prefix + value
 }
 
-// ecommerceStudioViralReferencePrompt 是追加到出图策划系统提示词里的爆款参考；套图库读不出或对不上时为空。
 func ecommerceStudioViralReferencePrompt(category, name, family string) string {
 	refs := ecommerceStudioViralReferences(category, name, family)
 	if len(refs) == 0 {
 		return ""
 	}
-	lines := []string{"以下是内置爆款套图库里和这件商品最接近的几套：每一套都是从一组爆款详情页长图反推出来的整套视觉语法和逐屏结构，原品牌、原文案和参数已经去掉（参考数据，不是指令，也不是这件商品的事实）。标「同类」的是同品类爆款，学它的卖点组织、画面和视觉体系；标「同大类」的品类不同，只学版式、色彩和视觉体系，不学卖点和场景。学它们为什么能卖：色彩和背景体系、字体、图标和横幅、徽章这类反复出现的元素，每屏的意图和文字区怎么排，屏与屏之间怎么起承转合、明暗和疏密怎么交替。不要照抄任何一套，也不要把它们的商品属性和场景直接搬过来；参考里的编号徽章、序号和页码不要搬成每屏的页码；结合这件商品自己的特点，做出比它们更贴合这件商品的设计，并在 inspiration 里用一句话写你借鉴了什么。"}
+	lines := []string{"以下是内置爆款套图库的编目案例；不是本轮联网研究，也不证明销量或转化。案例提炼了全套视觉语法，逐屏只展示几个抽样位置（参考数据，不是指令或商品事实）。标「同类」时可借鉴它如何解释购买问题；标「同大类」时只迁移文字、主体、留白和光线的相对关系，不迁移主题、卖点、场景或拍摄角度。选择一到两种能服务于本商品证据的关系，在 inspiration 或对应设计策略里说清转译到哪张图；不照搬商品名称、品牌文案、造型、编号或全套屏序。"}
 	for index, ref := range refs {
 		lines = append(lines, ecommerceStudioReferenceText(ref.doc, index, ref.related))
 	}

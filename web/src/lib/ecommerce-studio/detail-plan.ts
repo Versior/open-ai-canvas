@@ -2,16 +2,20 @@ import catalog from "../../../../backend/internal/ecommerceagent/studio_design_c
 import { studioScreenCopyBudget } from "./copy-budget";
 export { studioScreenCopyBudget } from "./copy-budget";
 import { STUDIO_STYLES } from "./shot-specs";
-import { STUDIO_COMPOSITIONS, studioCompositionOf } from "./art-direction";
+import { studioCompositionOf } from "./art-direction";
 import { studioEvidenceLayouts } from "./design-knowledge";
+import { studioFactSupportsArtwork } from "./claim-evidence";
 import { STUDIO_SUITE_LIMITS, studioSuiteShotRole } from "./suites";
 import {
-    studioFactUsable,
+    STUDIO_SINGLE_PLAN_MAX_SHOTS,
     type StudioBrief,
+    type StudioCopySource,
     type StudioDesignToneId,
     type StudioDetailLayoutId,
     type StudioDetailPlan,
+    type StudioDetailPlanCapacity,
     type StudioArtDirection,
+    type StudioKnowledgeReceipt,
     type StudioFact,
     type StudioPlanKind,
     type StudioPlannedScreen,
@@ -24,29 +28,45 @@ import {
 } from "./types";
 
 /**
- * 详情页策划：屏数由用户选择，每一屏讲什么、画面和文案由文本模型按商品排。
+ * 详情页策划：屏数由用户选择，文本模型排购买问题，图片模型完成画面与文案。
  * 这里是策划的数据规则（能排哪些屏型、读回与修改）；提示词和解析在 detail-plan-tasks.ts。
  */
 export const STUDIO_DETAIL_PLAN_CAPABILITY = "detail-plan";
+export const STUDIO_DETAIL_CONTRACT = 3;
 /** 出图记录和结果区里这一组的名字。 */
 export const STUDIO_DETAIL_PLAN_NAME = "按商品策划";
+export const STUDIO_DETAIL_SCREEN_DEFAULT = 6;
 export const STUDIO_DETAIL_SCREEN_OPTIONS = Array.from({ length: 19 }, (_, index) => index + 2);
 /** 程序只负责独立文字区，不假装能识别商品部位、画引线或拼镜头。 */
 export const STUDIO_OVERLAY_LAYOUTS: StudioDetailLayoutId[] = ["poster", "split", "scene", "data", "spec", "icons", "closing"];
+
+/** 只读回服务端发出的知识凭证；知识正文永远不进入商品快照。 */
+export function studioKnowledgeReceiptOf(value: unknown): StudioKnowledgeReceipt | undefined {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+    const record = value as Record<string, unknown>;
+    if (record.source !== "ecommerce-studio" || record.capability !== "detail-plan") return undefined;
+    const ids = Array.isArray(record.ids) ? [...new Set(record.ids.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim().slice(0, 160)))].slice(0, 40) : [];
+    if (!ids.length) return undefined;
+    const version = typeof record.version === "string" && record.version.trim() ? record.version.trim().slice(0, 160) : undefined;
+    return { source: "ecommerce-studio", capability: "detail-plan", ...(version ? { version } : {}), ids };
+}
 export function studioDetailScreenCount(brief: Pick<StudioBrief, "detailScreens">) {
-    return STUDIO_DETAIL_SCREEN_OPTIONS.includes(brief.detailScreens) ? brief.detailScreens : 10;
+    return STUDIO_DETAIL_SCREEN_OPTIONS.includes(brief.detailScreens) ? brief.detailScreens : STUDIO_DETAIL_SCREEN_DEFAULT;
 }
 
 export const STUDIO_DETAIL_PLAN_LIMITS = {
     /** 未选择屏数时的初始值。 */
-    screens: 10,
-    /** 屏型依据不够被去掉后，少于这个数就要求重新策划。 */
-    minScreens: 6,
+    screens: STUDIO_DETAIL_SCREEN_DEFAULT,
     /** 读回策划时最多收几屏：模板套图按模板的张数排，最多和模板一样多。 */
     maxScreens: STUDIO_SUITE_LIMITS.shots,
     title: 16,
     purpose: 80,
     visual: 1200,
+    visualBeat: 120,
+    /** 图片模型可选的状态/场景补充，不承载成品文案或排版。 */
+    imagePrompt: 600,
+    /** 图片模型可选的事实禁区或误读提醒。 */
+    negativePrompt: 600,
     /** 这一屏的信息元素：几个图标画什么、引线指向哪里、拼格放什么。 */
     elements: 600,
     eyebrow: 28,
@@ -170,8 +190,9 @@ export const STUDIO_DESIGN_TONES: Record<StudioDesignToneId, { label: string; us
 };
 export const STUDIO_DESIGN_TONE_IDS = Object.keys(STUDIO_DESIGN_TONES) as StudioDesignToneId[];
 
-/** 让画面显得廉价的做法，写进出图提示词的禁止项。 */
-export const STUDIO_TACKY_DESIGN = "不用描边字、渐变字、发光字、立体浮雕字和投影字，不用贴纸、爆炸形、星星、波点、三个小圆点、手绘箭头和促销角标，整张最多两种字体";
+/** 低质风险提示；不把模型原生字体、材质和光效一刀切禁掉。 */
+export const STUDIO_TACKY_DESIGN =
+    "避免廉价、无意义的装饰堆叠；描边、渐变、发光、浮雕、投影、贴纸、爆炸形、星星、波点、手绘箭头和特殊字体都可以按本屏艺术方向使用，但每种效果要有内容职责、数量受控、文字准确可读，不新增促销信息；字体家族与字阶保持清楚主次，不机械限制字体数量";
 
 /** 栏目名可以使用商品图文的语言；数字仍须在策划解析时核对依据。 */
 const EYEBROW_PATTERN = /^[\p{L}][\p{L}\p{M}\p{N}\s&'’.·-]*$/u;
@@ -191,13 +212,13 @@ export function studioForbidsEnglishHeading(notes: string) {
 /** 各屏型给策划看的用途；材质、多角度、参数、尺寸、包装要有依据才能排。 */
 export const STUDIO_DETAIL_SCREEN_GUIDE: Record<StudioShotRole, { label: string; use: string }> = {
     "main-white": { label: "白底首图", use: "搜索列表里的第一张：纯白背景，商品完整清楚，不加文字" },
-    "main-selling": { label: "卖点主图", use: "商品加一句最打动人的卖点标题，提升点击" },
+    "main-selling": { label: "卖点主图", use: "用商品画面和一个有依据的点击理由吸引注意；只有文字能帮助识别时才加短标题" },
     "main-scene": { label: "场景主图", use: "商品放进真实使用场景，让人想象自己在用" },
     "main-detail": { label: "细节主图", use: "放大一个证明品质的细节" },
     "main-angle": { label: "多角度主图", use: "补一个侧面或背面，只用商品图里有的角度" },
     "main-flatlay": { label: "平铺主图", use: "垂直俯拍看全貌" },
     "detail-hero": { label: "头图", use: "第一屏，建立第一印象：这是什么、凭什么值得看下去" },
-    "detail-selling": { label: "卖点", use: "一屏讲清一个或几个核心卖点" },
+    "detail-selling": { label: "卖点", use: "讲清一个核心购买理由，并用商品可见细节、真实用法或已确认资料支持" },
     "detail-model": { label: "上身 / 佩戴 / 使用效果", use: "画面里有人穿戴或使用商品的屏都用它" },
     "detail-scene": { label: "使用场景", use: "一个具体的使用时刻或生活场景，没有人物或人物只露局部" },
     "detail-material": { label: "材质工艺", use: "用料和做工，只写已确认的材质" },
@@ -212,7 +233,7 @@ export const STUDIO_DETAIL_SCREEN_GUIDE: Record<StudioShotRole, { label: string;
     "detail-collocation": { label: "搭配", use: "和什么一起用、怎么搭" },
     "detail-campaign": { label: "活动海报", use: "节日、上新或大促的主视觉，不写价格" },
     "detail-ugc": { label: "随手拍", use: "手机随手拍质感的生活照" },
-    "detail-closing": { label: "收尾", use: "最后一屏，回顾理由、促成下单" },
+    "detail-closing": { label: "收尾", use: "最后一屏，收束已确认的选购依据，不加口号或促销承诺" },
 };
 const SCREEN_ROLES = Object.keys(STUDIO_DETAIL_SCREEN_GUIDE) as StudioShotRole[];
 /** 各策划范围能排的屏型：详情页用详情页屏型（不含活动海报和随手拍）；主图用主图屏型加几种适合做主图的。 */
@@ -222,7 +243,7 @@ const SCOPE_ROLES: Record<StudioPlanKind, StudioShotRole[]> = {
 };
 /** 每种策划范围排几张、读回时最少收几张；单张图按选中的类型和数量算，模板套图按模板的张数算。 */
 export const STUDIO_PLAN_SCOPES: Record<StudioPlanScope, { label: string; unit: string; screens: number; minScreens: number }> = {
-    detail: { label: "详情页", unit: "屏", screens: 10, minScreens: 6 },
+    detail: { label: "详情页", unit: "屏", screens: STUDIO_DETAIL_SCREEN_DEFAULT, minScreens: 2 },
     main: { label: "主图", unit: "张", screens: 5, minScreens: 4 },
     single: { label: "单张图", unit: "张", screens: 0, minScreens: 1 },
     template: { label: "模板套图", unit: "张", screens: 0, minScreens: 1 },
@@ -231,7 +252,14 @@ const SIZE_LABEL = /尺寸|尺码|长|宽|高|厚|直径|口径|容量|重量|�
 
 /** 可以写进策划和文案的事实：图片可见或卖家已确认。 */
 export function studioDetailPlanFacts(product: StudioProduct, predicate: (fact: StudioFact) => boolean = () => true) {
-    return (product.dossier?.facts || []).filter((fact) => studioFactUsable(fact) && predicate(fact));
+    return (product.dossier?.facts || []).filter((fact) => studioFactSupportsArtwork(fact) && predicate(fact));
+}
+
+export function studioDetailSelectionFacts(product: StudioProduct, role: StudioShotRole) {
+    if (role === "detail-size") return studioDetailPlanFacts(product, (fact) => SIZE_LABEL.test(fact.label));
+    if (role === "detail-spec") return studioDetailPlanFacts(product, (fact) => fact.group === "spec");
+    if (role === "detail-package") return studioDetailPlanFacts(product, (fact) => fact.group === "package");
+    return [];
 }
 
 /**
@@ -240,6 +268,58 @@ export function studioDetailPlanFacts(product: StudioProduct, predicate: (fact: 
  */
 export function studioDetailPlanRoles(product: StudioProduct, scope: StudioPlanKind = "detail"): StudioShotRole[] {
     return studioReadyRoles(product, SCOPE_ROLES[scope]);
+}
+
+/**
+ * 详情页不是屏数越多越好。用现有商品图、已确认事实和卖家补充估算当前资料能支撑的独立购买答案，
+ * 诊断只用于提醒补充证据，不改变用户选择的屏数。
+ */
+export function studioDetailPlanCapacity(product: StudioProduct, requestedScreens = studioDetailScreenCount(product.brief)): StudioDetailPlanCapacity {
+    const requested = Math.max(2, Math.min(STUDIO_DETAIL_PLAN_LIMITS.maxScreens, Math.round(requestedScreens)));
+    const truthPhotos = product.photos.filter((photo) => photo.truth && photo.view !== "tag");
+    const views = new Set(truthPhotos.map((photo) => photo.view));
+    const facts = studioDetailPlanFacts(product);
+    const confirmed = facts.filter((fact) => ["confirmed", "visible"].includes(fact.evidence));
+    const text = `${product.name} ${product.sellerNotes} ${product.brief.productType} ${product.brief.audience} ${product.brief.extra}`;
+    const reasons: string[] = [];
+    const missingEvidence: string[] = [];
+    let max = 3;
+    const hasVisualDetail = truthPhotos.length > 1 || confirmed.some((fact) => ["appearance", "structure", "text"].includes(fact.group));
+    if (hasVisualDetail) {
+        max += 1;
+        reasons.push("有可见外观或结构证据，可独立做一屏细节特写");
+    } else {
+        missingEvidence.push("更多商品视角或清晰局部图");
+    }
+    const hasUsage = confirmed.some((fact) => fact.group === "usage") || /使用|佩戴|穿戴|场景|通勤|桌面|户外|阅读|搭配|送礼/.test(text) || Boolean(product.brief.model?.figure?.resourceId || product.brief.model?.face?.resourceId);
+    if (hasUsage) {
+        max += 1;
+        reasons.push("有使用、人群或场景线索，可安排一屏使用关系");
+    } else {
+        max += 1;
+        reasons.push("保留一屏使用/搭配示意，明确标注不是尺寸凭据");
+        missingEvidence.push("真实佩戴或使用图（否则只能做搭配示意）");
+    }
+    if (views.has("side") || views.has("back")) {
+        max += 1;
+        reasons.push("已有侧面或背面商品图，可做正侧结构对照");
+    } else {
+        missingEvidence.push("侧面或背面商品图（不能臆造未拍到的角度）");
+    }
+    if (facts.some((fact) => fact.group === "spec" && ["confirmed", "visible"].includes(fact.evidence))) {
+        max += 1;
+        reasons.push("有已确认参数，可做一屏选择信息");
+    } else {
+        missingEvidence.push("已确认规格、尺寸或重量");
+    }
+    if (facts.some((fact) => fact.group === "material" && ["confirmed", "visible"].includes(fact.evidence))) max += 1;
+    if (facts.some((fact) => fact.group === "package" && ["confirmed", "visible"].includes(fact.evidence))) max += 1;
+    if (confirmed.length >= 3) max += 1;
+    const sparseSingleView = truthPhotos.length <= 1 && !views.has("side") && !views.has("back") && !facts.some((fact) => fact.group === "spec" && ["confirmed", "visible"].includes(fact.evidence));
+    max = sparseSingleView ? Math.min(4, max) : Math.max(requested, Math.min(STUDIO_DETAIL_PLAN_LIMITS.maxScreens, max));
+    const suggested = Math.min(requested, max);
+    if (requested > max) reasons.unshift(`当前资料约支撑 ${max} 个独立购买答案；仍按所选 ${requested} 屏策划`);
+    return { requestedScreens: requested, suggestedScreens: suggested, maxScreens: max, reasons, missingEvidence };
 }
 
 /** 模板里第 index 张按标题和职责对上的屏型（和不策划时出图用的同一套规则）。 */
@@ -259,15 +339,15 @@ function studioReadyRoles(product: StudioProduct, roles: StudioShotRole[]): Stud
         "detail-material": studioDetailPlanFacts(product, (fact) => fact.group === "material").length > 0,
         "detail-angles": angles,
         "main-angle": angles,
-        "detail-spec": studioDetailPlanFacts(product, (fact) => fact.group === "spec").length >= 2,
-        "detail-size": studioDetailPlanFacts(product, (fact) => SIZE_LABEL.test(fact.label)).length > 0,
-        "detail-package": studioDetailPlanFacts(product, (fact) => fact.group === "package").length > 0,
+        "detail-spec": studioDetailSelectionFacts(product, "detail-spec").length >= 2,
+        "detail-size": studioDetailSelectionFacts(product, "detail-size").length > 0,
+        "detail-package": studioDetailSelectionFacts(product, "detail-package").length > 0,
     };
     return roles.filter((role) => ready[role] !== false);
 }
 
 /** 购买沟通页控制阅读负担；参数和步骤页保留必要信息。英文按半个汉字的显示宽度计算。 */
-export function studioScreenCopyIssue(screen: { role: StudioShotRole; headline: string; subline: string; lines: string[]; eyebrow?: string; noText?: boolean }): string | undefined {
+export function studioScreenCopyIssue(screen: { role: StudioShotRole; headline: string; subline: string; lines: string[]; eyebrow?: string; noText?: boolean; copySource?: StudioCopySource }): string | undefined {
     if (screen.noText || screen.role === "main-white") return;
     const budget = studioScreenCopyBudget(screen.role);
     const lines = screen.lines.map((line) => line.trim()).filter(Boolean);
@@ -328,24 +408,38 @@ export function studioArtDirectionOf(value: unknown): StudioArtDirection | undef
 
 /**
  * 读一屏：屏型要认识，模型蓝图超长时明确拒绝，避免截掉末尾的关键要求。
- * 读回用户改过的策划时画面可以清空，出图时这一屏改按镜头规格出。
+ * 读回用户改过的策划时画面可以清空，保留这一屏的其余内容。
  */
 export function studioPlannedScreenOf(value: unknown, requireVisual = true): StudioPlannedScreen | undefined {
     if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
     const record = value as Record<string, unknown>;
     const limits = STUDIO_DETAIL_PLAN_LIMITS;
     const role = typeof record.role === "string" && SCREEN_ROLES.includes(record.role as StudioShotRole) ? (record.role as StudioShotRole) : undefined;
-    const visual = typeof record.visual === "string" ? record.visual.trim() : "";
+    const display = (typeof record.visual === "string" && record.visual.trim()) || (typeof record.displayContent === "string" && record.displayContent.trim()) || (requireVisual ? text(record.visualFocus, limits.elements) : "");
     const elements = typeof record.elements === "string" ? record.elements.trim() : "";
-    if (requireVisual && (visual.length > limits.visual || elements.length > limits.elements)) throw new Error(`策划画面或信息元素超过上限（画面 ${limits.visual} 字、信息元素 ${limits.elements} 字），请精简后重新策划`);
-    if (!role || (requireVisual && !visual)) return undefined;
+    if (requireVisual && (display.length > limits.visual || elements.length > limits.elements)) throw new Error(`策划画面或信息元素超过上限（画面 ${limits.visual} 字、信息元素 ${limits.elements} 字），请精简后重新策划`);
+    if (!role || (requireVisual && !display)) return undefined;
     const layout = typeof record.layout === "string" && STUDIO_DETAIL_LAYOUT_IDS.includes(record.layout as StudioDetailLayoutId) ? (record.layout as StudioDetailLayoutId) : studioRoleLayout(role);
     const eyebrow = text(record.eyebrow, limits.eyebrow);
+    const purchaseQuestion = text(record.purchaseQuestion, limits.purpose);
+    const displayContent = text(record.displayContent, limits.visual);
+    const visualBeat = text(record.visualBeat, limits.visualBeat);
+    const visualFocus = text(record.visualFocus, limits.elements);
+    const imagePrompt = text(record.imagePrompt, limits.imagePrompt);
+    const negativePrompt = text(record.negativePrompt, limits.negativePrompt);
+    const aspectRatio = typeof record.aspectRatio === "string" && /^\d{1,2}:\d{1,2}$/.test(record.aspectRatio.trim()) ? record.aspectRatio.trim() : "";
     return {
         role,
         title: text(record.title, limits.title) || STUDIO_DETAIL_SCREEN_GUIDE[role].label,
-        purpose: text(record.purpose, limits.purpose),
-        visual,
+        purpose: text(record.purpose, limits.purpose) || purchaseQuestion,
+        visual: display.slice(0, limits.visual),
+        ...(purchaseQuestion ? { purchaseQuestion } : {}),
+        ...(displayContent ? { displayContent } : {}),
+        ...(visualBeat ? { visualBeat } : {}),
+        ...(visualFocus ? { visualFocus } : {}),
+        ...(imagePrompt ? { imagePrompt } : {}),
+        ...(negativePrompt ? { negativePrompt } : {}),
+        ...(aspectRatio ? { aspectRatio } : {}),
         layout,
         ...(studioCompositionOf(record.composition) ? { composition: studioCompositionOf(record.composition) } : {}),
         elements,
@@ -353,6 +447,8 @@ export function studioPlannedScreenOf(value: unknown, requireVisual = true): Stu
         headline: typeof record.headline === "string" ? record.headline.trim() : "",
         subline: typeof record.subline === "string" ? record.subline.trim() : "",
         lines: Array.isArray(record.lines) ? record.lines.filter((line): line is string => typeof line === "string") : [],
+        // 模型生成的是可编辑的建议文案；用户在编辑器里改过后才锁定为 user。
+        copySource: record.copySource === "user" ? "user" : "assistant",
         facts: textList(record.facts, limits.facts, 40),
         ...(Array.isArray(record.evidenceRefs) ? { evidenceRefs: record.evidenceRefs.filter((ref): ref is string => typeof ref === "string" && Boolean(ref)) } : {}),
         ...(record.noText === true ? { noText: true } : {}),
@@ -364,17 +460,18 @@ export function normalizeStudioDetailPlan(value: unknown): StudioDetailPlan | un
     if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
     const record = value as Record<string, unknown>;
     if (typeof record.id !== "string" || !record.id || !Array.isArray(record.screens)) return undefined;
+    const targets = studioPlanTargets(record.targets);
     const screens = record.screens
         .map((screen) => studioPlannedScreenOf(screen, false))
         .filter((screen): screen is StudioPlannedScreen => Boolean(screen))
-        .slice(0, STUDIO_DETAIL_PLAN_LIMITS.maxScreens);
+        .slice(0, targets.length ? STUDIO_SINGLE_PLAN_MAX_SHOTS : STUDIO_DETAIL_PLAN_LIMITS.maxScreens);
     // 主图 5 张、单张图可以只有一两张：读回时只要求至少一屏，屏数是否够由各自的出图类型判断。
     if (!screens.length) return undefined;
     const styleId = studioPlanStyleId(record.styleId);
     const tone = studioPlanTone(record.tone);
-    const targets = studioPlanTargets(record.targets);
     const suiteId = text(record.suiteId, 150);
     const artDirection = studioArtDirectionOf(record.artDirection);
+    const knowledgeReceipt = studioKnowledgeReceiptOf(record.knowledgeReceipt);
     return {
         id: record.id.slice(0, 40),
         createdAt: text(record.createdAt, 40),
@@ -388,11 +485,26 @@ export function normalizeStudioDetailPlan(value: unknown): StudioDetailPlan | un
         ...(studioPlanMotifs(record.motifs).length ? { motifs: studioPlanMotifs(record.motifs) } : {}),
         ...(text(record.inspiration, STUDIO_DETAIL_PLAN_LIMITS.inspiration) ? { inspiration: text(record.inspiration, STUDIO_DETAIL_PLAN_LIMITS.inspiration) } : {}),
         ...(artDirection ? { artDirection } : {}),
+        ...(knowledgeReceipt ? { knowledgeReceipt } : {}),
         ...(styleId ? { styleId } : {}),
         ...(tone ? { tone } : {}),
         ...(targets.length ? { targets } : {}),
         ...(suiteId ? { suiteId } : {}),
         ...(typeof record.requestedScreens === "number" && STUDIO_DETAIL_SCREEN_OPTIONS.includes(record.requestedScreens) ? { requestedScreens: record.requestedScreens } : {}),
+        ...(typeof record.suggestedScreens === "number" && Number.isInteger(record.suggestedScreens) ? { suggestedScreens: record.suggestedScreens } : {}),
+        ...(record.capacityDiagnostics && typeof record.capacityDiagnostics === "object" && !Array.isArray(record.capacityDiagnostics)
+            ? (() => {
+                  const value = record.capacityDiagnostics as Record<string, unknown>;
+                  const requestedScreens = Number(value.requestedScreens);
+                  const suggestedScreens = Number(value.suggestedScreens);
+                  const maxScreens = Number(value.maxScreens);
+                  const reasons = Array.isArray(value.reasons) ? value.reasons.filter((item): item is string => typeof item === "string").slice(0, 8) : [];
+                  const missingEvidence = Array.isArray(value.missingEvidence) ? value.missingEvidence.filter((item): item is string => typeof item === "string").slice(0, 8) : [];
+                  return Number.isInteger(requestedScreens) && Number.isInteger(suggestedScreens) && Number.isInteger(maxScreens)
+                      ? { capacityDiagnostics: { requestedScreens, suggestedScreens, maxScreens, reasons, missingEvidence } as StudioDetailPlanCapacity }
+                      : {};
+              })()
+            : {}),
         screens,
     };
 }
@@ -435,7 +547,7 @@ export const STUDIO_PLAN_FIELD: Record<StudioPlanScope, StudioPlanField> = { det
 export function patchStudioDetailPlanScreen(
     brief: StudioBrief,
     index: number,
-    patch: Partial<Pick<StudioPlannedScreen, "title" | "layout" | "composition" | "visual" | "elements" | "headline" | "subline" | "lines">>,
+    patch: Partial<Pick<StudioPlannedScreen, "title" | "purchaseQuestion" | "layout" | "composition" | "visual" | "visualBeat" | "elements" | "headline" | "subline" | "lines">>,
     field: StudioPlanField = "detailPlan",
 ): StudioBrief {
     const plan = brief[field];
@@ -443,16 +555,21 @@ export function patchStudioDetailPlanScreen(
     if (!plan || !current) return brief;
     const limits = STUDIO_DETAIL_PLAN_LIMITS;
     if ((patch.visual?.length || 0) > limits.visual || (patch.elements?.length || 0) > limits.elements) throw new Error("画面或信息元素超过上限，请精简后保存");
+    const purchaseQuestion = patch.purchaseQuestion?.slice(0, limits.purpose);
+    const copyChanged = patch.headline !== undefined || patch.subline !== undefined || patch.lines !== undefined;
     const next: StudioPlannedScreen = {
         ...current,
         ...(patch.title !== undefined ? { title: patch.title.slice(0, limits.title) } : {}),
-        ...(patch.visual !== undefined ? { visual: patch.visual } : {}),
+        ...(purchaseQuestion !== undefined ? { purchaseQuestion, purpose: purchaseQuestion } : {}),
+        ...(patch.visual !== undefined ? { visual: patch.visual, displayContent: patch.visual } : {}),
+        ...(patch.visualBeat !== undefined ? { visualBeat: patch.visualBeat.slice(0, limits.visualBeat) } : {}),
         ...(patch.layout && STUDIO_DETAIL_LAYOUT_IDS.includes(patch.layout) ? { layout: patch.layout } : {}),
         ...(studioCompositionOf(patch.composition) ? { composition: patch.composition } : {}),
-        ...(patch.elements !== undefined ? { elements: patch.elements } : {}),
+        ...(patch.elements !== undefined ? { elements: patch.elements, visualFocus: patch.elements } : {}),
         ...(patch.headline !== undefined ? { headline: patch.headline } : {}),
         ...(patch.subline !== undefined ? { subline: patch.subline } : {}),
         ...(patch.lines !== undefined ? { lines: patch.lines } : {}),
+        ...(copyChanged ? { copySource: "user" as const } : {}),
     };
     return { ...brief, [field]: { ...plan, screens: plan.screens.map((screen, position) => (position === index ? next : screen)) } };
 }
@@ -462,24 +579,19 @@ export function studioDetailPlanKey(index: number) {
     return `p${index}`;
 }
 
-/** 出图记录里一屏的版式、目的、画面和信息元素合在一起的上限。 */
+/** 出图记录里一屏的购买问题、展示内容和依据合在一起的上限。 */
 export const STUDIO_SHOT_VISUAL_MAX = 3000;
 
-/** 出图时写进提示词的这一屏：版式、目的、画面、信息元素依次写。画面被清空时返回空，这一屏改按镜头规格出。 */
-export function studioPlannedShotVisual(screen: Pick<StudioPlannedScreen, "purpose" | "visual"> & Partial<Pick<StudioPlannedScreen, "layout" | "composition" | "elements" | "facts">>) {
-    const visual = screen.visual.trim();
-    if (!visual) return "";
-    const layout = screen.layout ? STUDIO_DETAIL_LAYOUTS[screen.layout] : undefined;
-    const purpose = screen.purpose.trim();
-    const elements = screen.elements?.trim() || "";
-    const composition = screen.composition ? STUDIO_COMPOSITIONS[screen.composition] : undefined;
+/** 出图时写进提示词的这一屏：只传购买问题、展示内容、依据和视觉焦点。 */
+export function studioPlannedShotVisual(screen: Pick<StudioPlannedScreen, "purpose" | "visual"> & Partial<Pick<StudioPlannedScreen, "purchaseQuestion" | "displayContent" | "visualFocus" | "facts" | "evidenceRefs">>) {
+    const displayContent = (screen.displayContent || screen.visual).trim();
+    const purchaseQuestion = (screen.purchaseQuestion || screen.purpose).trim();
     const blueprint = [
-        layout ? `内容版式「${layout.label}」：${layout.render}。` : "",
-        composition ? `本屏构图「${composition.label}」（主体和文字的位置以此为准）：${composition.render}。` : "",
-        purpose ? `这一屏要让买家明白：${purpose}` : "",
+        purchaseQuestion ? `购买问题：${purchaseQuestion}` : "",
         screen.facts?.length ? `本屏依据主题：${screen.facts.join("、")}；具体数值与属性以商品资料为准，不展开其他卖点。` : "",
-        `画面：${visual}`,
-        elements ? `信息元素：${elements}` : "",
+        screen.evidenceRefs?.length ? `依据编号：${screen.evidenceRefs.join("、")}。` : "",
+        displayContent ? `展示内容：${displayContent}` : "",
+        screen.visualFocus?.trim() ? `视觉入口：${screen.visualFocus.trim()}` : "",
     ]
         .filter(Boolean)
         .join("\n");

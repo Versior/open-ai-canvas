@@ -42,16 +42,18 @@ test("图文构图提供实际不同的设计骨架", () => {
     }
 });
 
-test("儿童眼镜与数码获得不同候选，构图与设计依据进入保存和实际出图", () => {
+test("品类候选不同，但商品策划不锁定图文模板", () => {
     const product = kids();
     const tech = { ...product, name: "机械键盘", dossier: { ...product.dossier!, name: "机械键盘", category: "键盘", family: "electronics" as const } };
     expect(studioDesignProfile(product).key).toBe("kids");
     expect(studioDesignProfile(tech).key).toBe("electronics");
     expect(studioDesignProfile(product).compositions).not.toEqual(studioDesignProfile(tech).compositions);
     const prompt = buildDetailPlanPrompt(product, studioDetailPlanRoles(product));
-    expect(prompt.indexOf("- candy（")).toBeLessThan(prompt.indexOf("- mist（"));
-    expect(prompt).toContain("灰色镜腿或透明镜片是商品颜色");
-    expect(prompt).toContain("优先信息版式：color-block");
+    expect(prompt).toContain("图片模型直接看商品原图");
+    expect(prompt).toMatch(/图片模型[^。\n]*一次完成成品文案、摄影、排版、艺术字和特效/);
+    expect(prompt).not.toContain("- candy（");
+    expect(prompt).not.toContain("- mist（");
+    expect(prompt).not.toContain("优先信息版式：");
     expect(buildDirectionsPrompt(product, "detail")).toContain("商品设计匹配");
     for (const composition of STUDIO_COMPOSITION_IDS) {
         const parsed = parseDetailPlan(
@@ -72,18 +74,16 @@ test("儿童眼镜与数码获得不同候选，构图与设计依据进入保�
         let index = 0;
         const run = createStudioRun(restored, () => `shot-${index++}`);
         const compiled = compileStudioPrompt({ product: restored, shot: run.shots[0], suite: run.suite, brief: restored.brief, model: "gpt-image-2" });
-        expect(run.shots[0].composition).toBe(composition);
-        expect(compiled.prompt).toContain(STUDIO_COMPOSITIONS[composition].render);
-        expect(compiled.prompt).toContain("#FFE27A");
+        expect(run.shots[0].composition).toBeUndefined();
+        expect(compiled.prompt).not.toContain(STUDIO_COMPOSITIONS[composition].render);
+        expect(compiled.prompt).not.toContain("#FFE27A");
         expect(compiled.layoutGuide).toBeUndefined();
-        expect(compiled.prompt).toContain("本屏画面蓝图决定具体排字");
-        const compressed = compileStudioPrompt({ product: restored, shot: run.shots[0], suite: run.suite, brief: restored.brief, model: "gpt-image-2", maxChars: compiled.prompt.length - 10 });
-        expect(compressed.trimmed).not.toContain("style");
-        expect(compressed.prompt).toContain("#FFE27A");
+        expect(compiled.layers.find((layer) => layer.id === "copy")?.text).toMatch(/必须[^。\n]*可读[^。\n]*简体中文/);
+        expect(compiled.layers.find((layer) => layer.id === "visual")?.text).toContain("明亮场景");
     }
 });
 
-test("儿童自动灰板被拦截，明确锁定和平台白底保留", () => {
+test("儿童的显式设计方向仍校验灰板，普通详情不采用策划给的色板", () => {
     const product = kids();
     expect(studioAutoColorIssue(product, { styleId: "pure", style: "灰白 #EEEEEE 与冷灰 #AAAAAA" })).toBeDefined();
     expect(studioAutoColorIssue(product, { styleId: "pure", style: "天空蓝 #BFE3FF 与暖黄 #FFE27A" })).toBeUndefined();
@@ -91,7 +91,10 @@ test("儿童自动灰板被拦截，明确锁定和平台白底保留", () => {
     expect(studioAutoColorIssue({ ...product, brief: { ...product.brief, extra: "使用灰白极简" } }, { style: "灰白" })).toBeUndefined();
     expect(studioAutoColorIssue({ ...product, brief: { ...product.brief, extra: "不要灰白" } }, { style: "灰白" })).toBeDefined();
     expect(studioAutoColorIssue({ ...product, brief: { ...product.brief, outputType: "white" } }, { style: "灰白" })).toBeUndefined();
-    expect(() => parseDetailPlan('{"styleId":"pure","style":"灰白","screens":[]}', product, [], { id: "p", model: "m", createdAt: "" })).toThrow("儿童商品");
+    const planned = parseDetailPlan('{"styleId":"pure","style":"灰白","screens":[]}', product, [], { id: "p", model: "m", createdAt: "" });
+    expect(planned.plan.style).toBe("");
+    expect(planned.plan.styleId).toBeUndefined();
+    expect(planned.warnings.some((issue) => issue.field === "style")).toBe(false);
     const directions = ["家长视角", "孩子视角"].map((angle) => ({
         angle,
         positioning: "选购眼镜",

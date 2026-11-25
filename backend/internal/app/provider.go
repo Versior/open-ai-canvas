@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
 	"time"
@@ -263,6 +264,11 @@ func (s *Service) processCanvasGenerationTask(ctx context.Context, userID string
 	}
 	switch input.Mode {
 	case "image":
+		if resumedProviderRequestID(ctx) == "" {
+			if ids := s.applyEcommerceStudioImageDesign(&input); len(ids) > 0 && task.ID != "" {
+				slog.Info("ecommerce studio image design knowledge injected", "taskId", task.ID, "entryIds", ids)
+			}
+		}
 		if err := validateResolvedImageCapability(&input); err != nil {
 			return nil, err
 		}
@@ -301,6 +307,11 @@ func (s *Service) processCanvasGenerationTask(ctx context.Context, userID string
 				return nil, err
 			}
 			return runAgentToolTask(ctx, input)
+		}
+		if metadataString(input.Metadata, "source") == ecommerceStudioSource && metadataString(input.Metadata, "studioStep") == "plan" && task.ID != "" {
+			if ids, ok := input.Metadata[ecommercePlanningKnowledgeIDsKey].([]string); ok {
+				slog.Info("ecommerce studio planning knowledge injected", "taskId", task.ID, "entryIds", ids)
+			}
 		}
 		var result map[string]interface{}
 		var taskErr error

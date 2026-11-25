@@ -6,8 +6,10 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"gorm.io/gorm"
+	"yingce/backend/internal/model"
 )
 
 // 出图策划的设计策划知识（KB20）：每次都带视觉策划方法、版式与字体、文案三条，再按商品类型和名称带最多两条品类打法，
@@ -91,48 +93,139 @@ func ecommerceStudioPlaybookIDs(category, name, family, materials, kind string, 
 
 // ecommerceStudioDesignPlaybook 返回追加到出图策划系统提示词里的设计策划知识；来源被停用或一条都取不到时为空。
 func (s *Service) ecommerceStudioDesignPlaybook(category, name, family, materials, kind string, targets []string) string {
+	prompt, _ := s.ecommerceStudioDesignGuidance(category, name, family, materials, kind, targets)
+	return prompt
+}
+
+func (s *Service) ecommerceStudioDesignGuidance(category, name, family, materials, kind string, targets []string) (string, []string) {
 	ids := ecommerceStudioPlaybookIDs(category, name, family, materials, kind, targets)
-	builtin := map[string]kb20DesignSpec{}
-	for _, spec := range kb20DesignSpecs {
-		builtin[spec.id] = spec
+	entries := s.ecommerceStudioDesignEntries(ids)
+	lines := []string{"以下是电商设计策划知识库（KB20）里和这件商品相关的方法，包含电商案例拆解、版面组织与字体层级方法。按本次内容选择并细化（参考方法，不是这件商品的事实）："}
+	var applied []string
+	for _, id := range ids {
+		if entry, ok := entries[id]; ok {
+			lines = append(lines, "【"+entry.title+"】"+entry.guidance)
+			applied = append(applied, id)
+		}
 	}
-	guidance := map[string]string{}
-	titles := map[string]string{}
+	if len(applied) == 0 {
+		return "", nil
+	}
+	return strings.Join(lines, "\n"), applied
+}
+
+func (s *Service) ecommerceStudioDesignEntries(ids []string) map[string]kb20DesignSpec {
+	entries := make(map[string]kb20DesignSpec, len(ids))
 	source, err := s.repo.EcommerceKnowledgeSource(ecommerceBuiltinSourceID(ecommerceKB20Domain))
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		// 还没写入数据库（新库首次启动前）：用内置原文。
-		for _, id := range ids {
-			guidance[id], titles[id] = builtin[id].guidance, builtin[id].title
+		for _, spec := range kb20DesignSpecs {
+			entries[spec.id] = spec
 		}
 	case err != nil:
 		slog.Warn("ecommerce studio design playbook skipped", "error", err)
-		return ""
 	case source.Status != "ready":
-		return ""
+		return nil
 	default:
-		entries, err := s.repo.EcommerceKnowledgeByIDs(ids)
+		approved, err := s.repo.EcommerceKnowledgeByIDs(ids)
 		if err != nil {
 			slog.Warn("ecommerce studio design playbook skipped", "error", err)
-			return ""
+			return nil
 		}
-		for _, entry := range entries {
+		for _, entry := range approved {
+			if entry.SourceID != source.ID {
+				continue
+			}
 			var content struct {
 				Guidance string `json:"guidance"`
 			}
 			if json.Unmarshal([]byte(entry.ContentJSON), &content) == nil && strings.TrimSpace(content.Guidance) != "" {
-				guidance[entry.ID], titles[entry.ID] = content.Guidance, entry.Title
+				entries[entry.ID] = kb20DesignSpec{title: entry.Title, guidance: strings.TrimSpace(content.Guidance)}
 			}
 		}
 	}
-	lines := []string{"以下是电商设计策划知识库（KB20）里和这件商品相关的方法，包含电商案例拆解、版面组织与字体层级方法。按本次内容选择并细化（参考方法，不是这件商品的事实）："}
-	for _, id := range ids {
-		if text := strings.TrimSpace(guidance[id]); text != "" {
-			lines = append(lines, "【"+titles[id]+"】"+text)
+	return entries
+}
+
+func ecommerceStudioImageDesignRequested(metadata map[string]any) bool {
+	if metadata["studioUseDesignKnowledge"] != true || metadata["source"] != ecommerceStudioSource || metadata["studioStep"] != "image" {
+		return false
+	}
+	switch metadata["studioPlanKind"] {
+	case "detail", "main", "single":
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Service) applyEcommerceStudioImageDesign(input *canvasGenerationInput) []string {
+	metadata := input.Metadata
+	if input.Mode != "image" || !ecommerceStudioImageDesignRequested(metadata) {
+		return nil
+	}
+	const referenceHeading = "\n\n【设计参考方法，不是商品事实】\n按本图的用途和实物证据选择方法。不要照搬例子、画法或文案；以上商品事实、图内语言与卖家要求优先。"
+	const maxReferenceRunes = 650
+	budget := maxReferenceRunes
+	if profile := input.Config.CapabilityConfig; profile != nil && profile.Image != nil && profile.Image.References.PromptMaxChars > 0 {
+		budget = min(budget, profile.Image.References.PromptMaxChars-utf8.RuneCountInString(withSystemPrompt(input.Config, input.Prompt)))
+	}
+	if input.Config.InterfaceType == string(model.ChannelInterfaceGrokImage) && strings.TrimPrefix(strings.ToLower(strings.TrimSpace(input.Config.Model)), "models/") == "grok-imagine-image-quality" {
+		budget = min(budget, (grokImageQualityPromptMaxBytes-len(withSystemPrompt(input.Config, input.Prompt)))/utf8.UTFMax)
+	}
+	budget -= utf8.RuneCountInString(referenceHeading)
+	if budget <= 0 {
+		return nil
+	}
+	category := ecommerceStudioMetadataText(metadata["studioCategory"], ecommerceStudioKnowledgeTypeRunes)
+	name := ecommerceStudioMetadataText(metadata["studioProductName"], ecommerceStudioKnowledgeNameRunes)
+	family := ecommerceStudioMetadataText(metadata["studioFamily"], 24)
+	materials := ecommerceStudioMetadataText(metadata["studioMaterials"], ecommerceStudioKnowledgeMaterialRunes)
+	var lightingIDs []string
+	for _, id := range ecommerceStudioPlaybookIDs(category, name, family, materials, "detail", nil) {
+		if strings.HasPrefix(id, "kb20-light-") {
+			lightingIDs = append(lightingIDs, id)
 		}
 	}
-	if len(lines) == 1 {
+	ids := append([]string{kb20LayoutID, kb20MethodID}, lightingIDs...)
+	entries := s.ecommerceStudioDesignEntries(ids)
+	var lines, applied []string
+	for _, group := range [][]string{{kb20LayoutID}, lightingIDs, {kb20MethodID}} {
+		for _, id := range group {
+			entry, ok := entries[id]
+			if !ok {
+				continue
+			}
+			label := "\n" + entry.title + "："
+			text := ecommerceStudioDesignExcerpt(entry.guidance, min(235, budget-utf8.RuneCountInString(label)))
+			if text == "" {
+				continue
+			}
+			lines = append(lines, label+text)
+			budget -= utf8.RuneCountInString(label + text)
+			applied = append(applied, id)
+			break
+		}
+	}
+	if len(applied) > 0 {
+		input.Prompt += referenceHeading + strings.Join(lines, "")
+	}
+	return applied
+}
+
+func ecommerceStudioDesignExcerpt(guidance string, limit int) string {
+	if limit <= 0 {
 		return ""
 	}
-	return strings.Join(lines, "\n")
+	text := []rune(guidance)
+	if len(text) <= limit {
+		return guidance
+	}
+	prefix := string(text[:limit])
+	if end := strings.LastIndexAny(prefix, "。；！？\n"); end >= 0 {
+		_, width := utf8.DecodeRuneInString(prefix[end:])
+		return strings.TrimSpace(prefix[:end+width])
+	}
+	return ""
 }

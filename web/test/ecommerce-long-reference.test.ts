@@ -357,6 +357,27 @@ describe("ecommerce long reference media", () => {
         expect(bitmaps[0].closed).toBe(true);
     });
 
+    test("the studio can keep both originals when a fourteen-window reference fills the input budget", async () => {
+        dimensions = { width: 800, height: 21_600 };
+        const original = { ...referenceDraft(), count: 16, referenceMode: "style" as const };
+        const { draft, views } = await prepareCommerceReferenceViews(original, 2, undefined, "sample");
+        expect(activeCommerceReferences(draft).map(({ resourceId }) => resourceId)).toEqual(["product-photo", "long-reference"]);
+        expect(draft.count).toBe(16);
+        expect(views).toEqual([]);
+        expect(uploadKeys).toEqual([]);
+    });
+
+    test("the studio samples readable top, middle and bottom windows without expanding the request", async () => {
+        dimensions = { width: 800, height: 21_600 };
+        const { views } = await prepareCommerceReferenceViews({ ...referenceDraft(), referenceMode: "style" }, 5, undefined, "sample");
+        expect(views).toHaveLength(3);
+        expect(views.every((view) => view.sourceResourceId === "long-reference" && view.bottom - view.top < 0.1)).toBe(true);
+        expect(views[0].top).toBe(0);
+        expect(views[1].top).toBeGreaterThan(0.4);
+        expect(views[2].bottom).toBe(1);
+        expect(uploadKeys).toHaveLength(3);
+    });
+
     test("the actual planning payload delivers original pixels and all reading aids with source coordinates", async () => {
         const payload = await prepareCommercePlanningPayload(referenceDraft(), 5, "所选技能的文案方法");
         expect(payload.referenceImages.map((reference) => reference.id)).toEqual(["product-photo", "long-reference", "crop-1", "crop-2", "crop-3"]);

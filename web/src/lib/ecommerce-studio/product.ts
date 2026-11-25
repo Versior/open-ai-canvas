@@ -1,6 +1,6 @@
 import { ECOMMERCE_PLATFORMS, type EcommercePlatformId } from "@/lib/ecommerce/ecommerce-platform-specs";
 import { createStudioBrief, normalizeStudioBrief, STUDIO_LANGUAGES, STUDIO_OUTPUT_TYPES, studioCleanNotes } from "./brief";
-import { STUDIO_DETAIL_LAYOUT_IDS, STUDIO_DETAIL_PLAN_LIMITS, STUDIO_SHOT_VISUAL_MAX, studioArtDirectionOf, studioEyebrowText, studioPlanMotifs, studioPlanTone, studioPlanStyleId } from "./detail-plan";
+import { STUDIO_DETAIL_LAYOUT_IDS, STUDIO_DETAIL_PLAN_LIMITS, STUDIO_SHOT_VISUAL_MAX, studioArtDirectionOf, studioEyebrowText, studioKnowledgeReceiptOf, studioPlanMotifs, studioPlanTone, studioPlanStyleId } from "./detail-plan";
 import { STUDIO_STYLES } from "./shot-specs";
 import { STUDIO_SUITE_LIMITS } from "./suites";
 import { studioCompositionOf } from "./art-direction";
@@ -11,6 +11,9 @@ import {
     studioFactUsable,
     type StudioAttempt,
     type StudioAttemptStatus,
+    type StudioVisualReview,
+    type StudioVisualReviewFinding,
+    type StudioVisualReviewStatus,
     type StudioCategoryFamily,
     type StudioDossier,
     type StudioEvidence,
@@ -36,6 +39,9 @@ import {
 const STEPS: StudioStep[] = ["dossier", "plan", "generate", "deliver"];
 const VIEWS = new Set<string>(["front", "side", "back", "detail", "tag", "package", "scene", "other"]);
 const STATUSES = new Set<string>(["submitting", "queued", "running", "succeeded", "failed", "cancelled"]);
+const VISUAL_REVIEW_STATUSES = new Set<string>(["pending", "running", "passed", "failed", "unknown"]);
+const VISUAL_REVIEW_AREAS = new Set<string>(["text", "composition", "product", "design"]);
+const VISUAL_REVIEW_FINDING_STATUSES = new Set<string>(["pass", "fail", "unknown"]);
 const PLATFORM_IDS = new Set(ECOMMERCE_PLATFORMS.map((platform) => platform.id));
 const STYLE_IDS = new Set<string>(["auto", ...STUDIO_STYLES.map((style) => style.id)]);
 const OUTPUT_IDS = new Set(STUDIO_OUTPUT_TYPES.map((item) => item.id));
@@ -68,7 +74,16 @@ export function createStudioProduct(id: string, now = new Date().toISOString()):
 
 export function studioGenerationSource(product: StudioProduct): StudioGenerationSource {
     const { name, platform, style, sellerNotes, photos, references, dossier, sellingPoints, copy, brief } = product;
-    return structuredClone({ name, platform, style, sellerNotes, photos, references, dossier, sellingPoints, copy, brief });
+    // 模板快照只属于模板套图。清掉历史切换残留，避免详情页/主图的 run
+    // 继续把旧模板带进图片提示词和结果页。
+    const sourceBrief =
+        brief.outputType === "template-set"
+            ? brief
+            : (() => {
+                  const { suite: _suite, templatePlan: _templatePlan, ...rest } = brief;
+                  return rest;
+              })();
+    return structuredClone({ name, platform, style, sellerNotes, photos, references, dossier, sellingPoints, copy, brief: sourceBrief });
 }
 
 /** 换质感后重新策划当前表单，已有生成组继续使用自己的快照。 */
@@ -187,6 +202,26 @@ export function studioShotPreview(shot: StudioShot): StudioOutput | undefined {
     return undefined;
 }
 
+/** 找到某个成品所属的尝试，供视觉验收和导出门禁共用。 */
+export function studioAttemptForOutput(shot: StudioShot, resourceId: string) {
+    return shot.attempts.find((attempt) => attempt.outputs.some((output) => output.resourceId === resourceId));
+}
+
+/** 视觉检查是可选辅助信息；只要图片任务成功，就可以交付和下载。 */
+export function studioOutputReviewStatus(shot: StudioShot, output: StudioOutput): StudioVisualReviewStatus | "legacy-approved" {
+    if (shot.adopted?.resourceId === output.resourceId) return "passed";
+    const review = studioAttemptForOutput(shot, output.resourceId)?.visualReview;
+    return review?.status || "legacy-approved";
+}
+
+export function studioShotApproved(shot: StudioShot) {
+    return Boolean(studioShotPreview(shot));
+}
+
+export function studioShotPendingReview(shot: StudioShot) {
+    return false;
+}
+
 export function studioShotOutputs(shot: StudioShot) {
     return shot.attempts.flatMap((attempt) => (attempt.status === "succeeded" ? attempt.outputs : []));
 }
@@ -229,6 +264,29 @@ function normalizeOutput(item: Record<string, unknown>): StudioOutput | undefine
     return typeof item.resourceId === "string" && typeof item.url === "string" ? { resourceId: item.resourceId, url: item.url, width: Number(item.width) || undefined, height: Number(item.height) || undefined } : undefined;
 }
 
+function normalizeVisualReviewFinding(item: Record<string, unknown>): StudioVisualReviewFinding | undefined {
+    if (!VISUAL_REVIEW_AREAS.has(str(item.area)) || !VISUAL_REVIEW_FINDING_STATUSES.has(str(item.status)) || !str(item.evidence).trim() || typeof item.correction !== "string") return undefined;
+    return {
+        area: item.area as StudioVisualReviewFinding["area"],
+        status: item.status as StudioVisualReviewFinding["status"],
+        evidence: str(item.evidence).trim().slice(0, 500),
+        correction: str(item.correction).trim().slice(0, 400),
+    };
+}
+
+function normalizeVisualReview(value: unknown): StudioVisualReview | undefined {
+    if (!isRecord(value) || !VISUAL_REVIEW_STATUSES.has(str(value.status))) return undefined;
+    const findings = arrayOf(value.findings, normalizeVisualReviewFinding);
+    return {
+        status: value.status as StudioVisualReviewStatus,
+        ...(typeof value.taskId === "string" && value.taskId ? { taskId: value.taskId } : {}),
+        ...(findings.length ? { findings } : {}),
+        ...(typeof value.revision === "string" && value.revision.trim() ? { revision: value.revision.trim().slice(0, 1000) } : {}),
+        ...(typeof value.error === "string" && value.error.trim() ? { error: value.error.trim().slice(0, 500) } : {}),
+        ...(typeof value.checkedAt === "string" ? { checkedAt: value.checkedAt } : {}),
+    };
+}
+
 function normalizePhoto(item: Record<string, unknown>, fallbackTime: string, truthDefault: boolean): StudioPhoto | undefined {
     if (typeof item.resourceId !== "string" || typeof item.url !== "string" || typeof item.id !== "string") return undefined;
     return {
@@ -246,6 +304,7 @@ function normalizePhoto(item: Record<string, unknown>, fallbackTime: string, tru
 
 function normalizeAttempt(attempt: Record<string, unknown>, fallbackTime: string): StudioAttempt | undefined {
     if (typeof attempt.id !== "string") return undefined;
+    const visualReview = normalizeVisualReview(attempt.visualReview);
     return {
         id: attempt.id,
         taskId: typeof attempt.taskId === "string" ? attempt.taskId : undefined,
@@ -259,6 +318,7 @@ function normalizeAttempt(attempt: Record<string, unknown>, fallbackTime: string
         createdAt: str(attempt.createdAt, fallbackTime),
         completedAt: typeof attempt.completedAt === "string" ? attempt.completedAt : undefined,
         error: typeof attempt.error === "string" ? attempt.error : undefined,
+        ...(visualReview ? { visualReview } : {}),
         outputs: arrayOf(attempt.outputs, normalizeOutput),
     };
 }
@@ -278,7 +338,16 @@ function normalizeAttemptInput(input: Record<string, unknown>, time: string): St
     return {
         compiled: {
             prompt: compiled.prompt,
-            ...(copySnapshot ? { copySnapshot } : {}),
+            ...(typeof compiled.studioDetailContract === "number" && Number.isInteger(compiled.studioDetailContract) ? { studioDetailContract: compiled.studioDetailContract } : {}),
+            ...(compiled.useDesignKnowledge === true ? { useDesignKnowledge: true as const } : {}),
+            ...(copySnapshot
+                ? {
+                      copySnapshot: {
+                          ...copySnapshot,
+                          ...(isRecord(copy) && (copy.source === "user" || copy.source === "assistant") ? { source: copy.source } : {}),
+                      },
+                  }
+                : {}),
             layers: arrayOf(compiled.layers, (layer) =>
                 typeof layer.id === "string" && typeof layer.text === "string" ? { id: layer.id as NonNullable<StudioAttempt["input"]>["compiled"]["layers"][number]["id"], title: str(layer.title), source: str(layer.source), text: layer.text } : undefined,
             ),
@@ -320,10 +389,15 @@ function normalizeShot(shot: Record<string, unknown>, fallbackTime: string): Stu
         id: shot.id,
         role: shot.role as StudioShotRole,
         title: str(shot.title),
+        ...(Number.isInteger(shot.screenIndex) && Number(shot.screenIndex) > 0 ? { screenIndex: Number(shot.screenIndex) } : {}),
+        ...(Number.isInteger(shot.screenCount) && Number(shot.screenCount) > 0 ? { screenCount: Number(shot.screenCount) } : {}),
+        ...(shot.noText === true ? { noText: true } : {}),
         ratio: str(shot.ratio, "1:1"),
+        ...(typeof shot.aspectRatio === "string" && /^\d{1,2}:\d{1,2}$/.test(shot.aspectRatio.trim()) ? { aspectRatio: shot.aspectRatio.trim() } : {}),
         headline: str(shot.headline),
         subline: str(shot.subline),
         lines: strings(shot.lines),
+        ...(shot.copySource === "user" || shot.copySource === "assistant" ? { copySource: shot.copySource } : {}),
         sellingPointIds: strings(shot.sellingPointIds),
         tweaks: strings(shot.tweaks),
         ...(typeof shot.layout === "string" && STUDIO_DETAIL_LAYOUT_IDS.includes(shot.layout as StudioDetailLayoutId) ? { layout: shot.layout as StudioDetailLayoutId } : {}),
@@ -333,6 +407,13 @@ function normalizeShot(shot: Record<string, unknown>, fallbackTime: string): Stu
         ...(typeof shot.adjust === "string" && shot.adjust.trim() ? { adjust: shot.adjust.trim().slice(0, STUDIO_SHOT_ADJUST_MAX) } : {}),
         ...(typeof shot.duty === "string" && shot.duty.trim() ? { duty: shot.duty.slice(0, STUDIO_SUITE_LIMITS.duty) } : {}),
         ...(typeof shot.visual === "string" && shot.visual.trim() ? { visual: shot.visual.slice(0, STUDIO_SHOT_VISUAL_MAX) } : {}),
+        ...(typeof shot.purchaseQuestion === "string" && shot.purchaseQuestion.trim() ? { purchaseQuestion: shot.purchaseQuestion.slice(0, STUDIO_DETAIL_PLAN_LIMITS.purpose) } : {}),
+        ...(typeof shot.displayContent === "string" && shot.displayContent.trim() ? { displayContent: shot.displayContent.slice(0, STUDIO_DETAIL_PLAN_LIMITS.visual) } : {}),
+        ...(typeof shot.visualBeat === "string" && shot.visualBeat.trim() ? { visualBeat: shot.visualBeat.trim().slice(0, STUDIO_DETAIL_PLAN_LIMITS.visualBeat) } : {}),
+        ...(typeof shot.visualFocus === "string" && shot.visualFocus.trim() ? { visualFocus: shot.visualFocus.slice(0, STUDIO_DETAIL_PLAN_LIMITS.elements) } : {}),
+        ...(typeof shot.imagePrompt === "string" && shot.imagePrompt.trim() ? { imagePrompt: shot.imagePrompt.slice(0, STUDIO_DETAIL_PLAN_LIMITS.imagePrompt) } : {}),
+        ...(typeof shot.negativePrompt === "string" && shot.negativePrompt.trim() ? { negativePrompt: shot.negativePrompt.slice(0, STUDIO_DETAIL_PLAN_LIMITS.negativePrompt) } : {}),
+        ...(Array.isArray(shot.evidenceRefs) ? { evidenceRefs: strings(shot.evidenceRefs).filter(Boolean) } : {}),
         attempts: arrayOf(shot.attempts, (attempt) => normalizeAttempt(attempt, fallbackTime)),
         adopted: isRecord(shot.adopted) ? normalizeOutput(shot.adopted) : undefined,
     };
@@ -365,6 +446,7 @@ function normalizeRun(run: Record<string, unknown>, fallbackTime: string): Studi
                       ...(str(run.suite.concept).trim() ? { concept: str(run.suite.concept).trim().slice(0, STUDIO_DETAIL_PLAN_LIMITS.concept) } : {}),
                       ...(studioPlanMotifs(run.suite.motifs).length ? { motifs: studioPlanMotifs(run.suite.motifs) } : {}),
                       ...(studioArtDirectionOf(run.suite.artDirection) ? { artDirection: studioArtDirectionOf(run.suite.artDirection) } : {}),
+                      ...(studioKnowledgeReceiptOf(run.suite.knowledgeReceipt) ? { knowledgeReceipt: studioKnowledgeReceiptOf(run.suite.knowledgeReceipt) } : {}),
                   },
               }
             : {}),
@@ -437,6 +519,7 @@ function normalizePlanReceipt(value: unknown): StudioPlanReceipt | undefined {
         ...(typeof value.message === "string" && value.message ? { message: value.message } : {}),
         ...(review.length ? { review } : {}),
         ...(issues.length ? { issues } : {}),
+        ...(studioKnowledgeReceiptOf(value.knowledgeReceipt) ? { knowledgeReceipt: studioKnowledgeReceiptOf(value.knowledgeReceipt) } : {}),
     };
 }
 

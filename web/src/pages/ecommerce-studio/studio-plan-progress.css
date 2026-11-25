@@ -1,0 +1,99 @@
+.es-plan-progress {
+    display: grid;
+    gap: var(--space-3);
+    padding: var(--space-4);
+    border: 1px solid var(--es-line);
+    border-radius: var(--es-radius);
+    background: var(--es-muted);
+}
+.es-plan-progress-head {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: var(--space-2);
+}
+.es-plan-progress-head > span {
+    color: var(--es-ink-3);
+    font-size: var(--fs-caption);
+}
+.es-plan-progress-head strong {
+    color: var(--es-ink);
+    font-size: var(--fs-ui);
+}
+.es-plan-progress-track {
+    display: flex;
+    gap: var(--space-1);
+}
+.es-plan-progress-track > span {
+    flex: 1;
+    height: var(--space-1);
+    border-radius: var(--r-full);
+    background: var(--es-line);
+}
+.es-plan-progress-track > span[data-state="ready"] {
+    background: var(--control-selected-fg);
+}
+.es-plan-progress-track > span[data-state="writing"] {
+    background: var(--control-selected-border);
+}
+.es-plan-progress-direction {
+    display: grid;
+    gap: var(--space-1);
+}
+.es-plan-progress-direction > h3 {
+    margin: 0;
+    font-size: var(--fs-heading);
+    font-weight: 650;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+.es-plan-progress-direction > p,
+.es-plan-progress-note {
+    margin: 0;
+    color: var(--es-ink-2);
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+}
+.es-plan-progress-note {
+    font-size: var(--fs-caption);
+}
+.es-plan-draft-list {
+    display: grid;
+    gap: var(--space-2);
+    padding: 0;
+    margin: 0;
+    list-style: none;
+}
+.es-plan-draft-list > li {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--space-3);
+    padding: var(--space-3);
+    border: 1px solid var(--es-line);
+    border-radius: var(--es-radius-control);
+    background: var(--es-panel);
+}
+.es-plan-draft-number {
+    color: var(--es-ink-3);
+    font-size: var(--fs-caption);
+    font-variant-numeric: tabular-nums;
+}
+.es-plan-draft-list strong {
+    overflow-wrap: anywhere;
+}
+.es-plan-draft-list p {
+    margin: var(--space-1) 0 0;
+    color: var(--es-ink-2);
+    font-size: var(--fs-caption);
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+}
+.es-plan-draft-list details {
+    margin-top: var(--space-2);
+    color: var(--es-ink-2);
+    font-size: var(--fs-caption);
+}
+.es-plan-draft-list summary {
+    cursor: pointer;
+}

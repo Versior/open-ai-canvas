@@ -1,5 +1,6 @@
 import { jsonrepair } from "jsonrepair";
 import { checkEcommerceText, type EcommerceComplianceIssue } from "@/lib/ecommerce/ecommerce-compliance";
+import { checkStudioClaim } from "./claim-evidence";
 import { STUDIO_FAMILY_LABEL, STUDIO_VIEW_LABEL, studioFactUsable, type StudioCategoryFamily, type StudioCopy, type StudioDossier, type StudioEvidence, type StudioFact, type StudioFactGroup, type StudioPhoto, type StudioSellingPoint } from "./types";
 
 /**
@@ -70,13 +71,6 @@ function list(value: unknown, max = 12, length = 200) {
         : [];
 }
 
-function evidenceOf(value: unknown): StudioEvidence {
-    if (value === "visible") return "visible";
-    if (value === "inferred") return "inferred";
-    if (value === "confirmed") return "confirmed";
-    return "pending";
-}
-
 export function buildRecognitionPrompt(input: { photos: Pick<StudioPhoto, "view">[]; platformName: string; sellerNotes?: string }) {
     const manifest = input.photos.map((photo, index) => `图${index + 1}：${STUDIO_VIEW_LABEL[photo.view]}${photo.view === "tag" ? "（读取吊牌文字）" : ""}`).join("；");
     return [
@@ -87,15 +81,16 @@ export function buildRecognitionPrompt(input: { photos: Pick<StudioPhoto, "view"
         "",
         "逐项读取：品类；颜色（写名称，能判断时附近似色值 #RRGGBB）；形状与结构部件；材质；刻字、印字或标签原文（逐字照抄，看不清就放进 questions）；尺寸、容量、重量等参数；可见细节；包装与配件。",
         "每条信息标注 evidence：visible 表示图上直接可见或从吊牌、包装文字直接读出；inferred 表示根据外观推测，需要卖家确认；unknown 表示看不清或图片无法提供。",
-        "卖家补充里的信息标为 visible 并在 source 写「卖家」。不要编造品牌、参数、成分、认证、功效和价格。",
+        "直接可见的外观与印字用 source 标注具体图号。即使看见规格、材质或功效文字，也只作为待核对信息；不要把读图结果标为卖家已确认。卖家明确提供的原文在 source 写「卖家」，不要改写数值或条件。不编造品牌、参数、成分、认证、功效和价格。",
         "",
         "只输出下面这个 JSON，不要任何解释：",
         `{"name":"简短的商品称呼","category":"品类，如 保温杯","family":"${FAMILIES.join("|")}","summary":"一句话说清这是什么","facts":[{"group":"${GROUPS.join("|")}","label":"颜色","value":"哑光雾蓝 #6F8CA6","evidence":"visible","source":"图1"}],"invariants":["出图时绝不能改动的外观要点"],"questions":["需要卖家确认的问题"]}`,
     ].join("\n");
 }
 
-export function parseRecognition(raw: string, createId: StudioIdFactory, recognizedWith?: string): StudioDossier {
+export function parseRecognition(raw: string, createId: StudioIdFactory, recognizedWith?: string, sellerNotes = ""): StudioDossier {
     const data = extractStudioJson(raw);
+    const sellerLines = sellerNotes.split(/[\n；;]/).map((line) => line.normalize("NFKC").replace(/\s+/g, "").toLowerCase());
     const facts: StudioFact[] = (Array.isArray(data.facts) ? data.facts : [])
         .map((item): StudioFact | undefined => {
             if (!item || typeof item !== "object") return undefined;
@@ -104,7 +99,18 @@ export function parseRecognition(raw: string, createId: StudioIdFactory, recogni
             const value = text(record.value, 240);
             if (!label || !value) return undefined;
             const group = GROUPS.includes(record.group as StudioFactGroup) ? (record.group as StudioFactGroup) : "appearance";
-            return { id: createId(), group, label, value, evidence: evidenceOf(record.evidence), source: text(record.source, 40) || undefined };
+            const source = text(record.source, 40);
+            const valueKey = value.normalize("NFKC").replace(/\s+/g, "").toLowerCase();
+            const labelKey = label.normalize("NFKC").replace(/\s+/g, "").toLowerCase();
+            const sellerValue =
+                source === "卖家" &&
+                sellerLines.some((line) => {
+                    const [key, ...remainder] = line.split(/[:|]/);
+                    return key === labelKey && remainder.join(":") === valueKey;
+                });
+            const visible = record.evidence === "visible" && (!source || /^(?:图|照片)\s*[1-9]\d*/.test(source)) && !["material", "spec", "usage"].includes(group);
+            const evidence: StudioEvidence = sellerValue ? "visible" : visible ? "visible" : record.evidence === "inferred" ? "inferred" : "pending";
+            return { id: createId(), group, label, value, evidence, source: source === "卖家" && !sellerValue ? "模型建议，待卖家核对" : source || undefined };
         })
         .filter((fact): fact is StudioFact => Boolean(fact))
         .slice(0, MAX_FACTS);
@@ -150,8 +156,8 @@ export type StudioFillResult = { dossier: StudioDossier; sellingPoints: StudioSe
 /** 讲品牌字样、印字、logo 和型号的卖点：测试环境的儿童眼镜识别出「品牌字样在镜片」，策划把它做成了一个卖点。 */
 const IDENTITY_POINT = /字样|印字|印有|logo|标识|商标|型号|刻字/i;
 
-export function parseFill(raw: string, createId: StudioIdFactory, recognizedWith?: string): StudioFillResult {
-    const dossier = parseRecognition(raw, createId, recognizedWith);
+export function parseFill(raw: string, createId: StudioIdFactory, recognizedWith?: string, sellerNotes?: string): StudioFillResult {
+    const dossier = parseRecognition(raw, createId, recognizedWith, sellerNotes);
     const data = extractStudioJson(raw);
     const byLabel = new Map(dossier.facts.map((fact) => [fact.label.trim(), fact]));
     const sellingPoints: StudioSellingPoint[] = (Array.isArray(data.points) ? data.points : [])
@@ -160,14 +166,16 @@ export function parseFill(raw: string, createId: StudioIdFactory, recognizedWith
             const record = item as Record<string, unknown>;
             const title = text(record.title, 24);
             if (!title) return undefined;
+            const detail = text(record.detail, 60);
             const facts = list(record.facts, 6, 40)
                 .map((label) => byLabel.get(label))
                 .filter((fact): fact is StudioFact => Boolean(fact));
             // 只依据「文字与标识」类事实，或者标题就在讲字样和型号的，不收成卖点。
             if (IDENTITY_POINT.test(title) || (facts.length && facts.every((fact) => fact.group === "text"))) return undefined;
             // 卖点的证据等级取决于它依据的事实：全部可用才算可用，否则需要卖家确认后再启用。
-            const evidence: StudioEvidence = !facts.length ? "pending" : facts.every(studioFactUsable) ? (facts.some((fact) => fact.evidence === "confirmed") ? "confirmed" : "visible") : "inferred";
-            return { id: createId(), title, detail: text(record.detail, 60), evidence, factIds: facts.map((fact) => fact.id), enabled: evidence === "visible" || evidence === "confirmed" };
+            const sources = facts.filter(studioFactUsable).map((fact) => ({ id: fact.id, label: fact.label, text: `${fact.label} ${fact.value}`, appearanceOnly: fact.group === "text" }));
+            const evidence: StudioEvidence = !facts.length ? "pending" : sources.length === facts.length && !checkStudioClaim(`${title} ${detail}`, sources).issue ? "visible" : "inferred";
+            return { id: createId(), title, detail, evidence, factIds: facts.map((fact) => fact.id), enabled: evidence === "visible" };
         })
         .filter((point): point is StudioSellingPoint => Boolean(point))
         .slice(0, MAX_POINTS);

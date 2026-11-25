@@ -18,13 +18,21 @@ export function normalizeReferenceDraft(draft: EcommerceDraft): EcommerceDraft {
     return { ...draft, layoutReferenceId: sources[0].resourceId, ...(draft.referenceMode === "detail" ? { imageType: "detail" } : {}) };
 }
 
-// These are reading windows, not page boundaries. The vision model finds semantic screens.
-export function commerceReferenceViewRanges(width: number, height: number) {
+export function commerceReferenceViewCount(width: number, height: number) {
     if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) throw new Error("参考图尺寸无效，请重新上传");
-    if (height / width <= 2.5) return [];
-    const count = Math.ceil(height / (width * 2));
-    if (count > 24) throw new Error("参考长图过长，请拆为较短的详情页参考后分别策划");
-    return Array.from({ length: count }, (_, index) => ({ top: Math.max(0, index / count - 0.008), bottom: Math.min(1, (index + 1) / count + 0.008) }));
+    return height / width <= 2.5 ? 0 : Math.ceil(height / (width * 2));
+}
+
+// These are reading windows, not page boundaries. The vision model finds semantic screens.
+export function commerceReferenceViewRanges(width: number, height: number, sampleLimit?: number) {
+    const count = commerceReferenceViewCount(width, height);
+    if (sampleLimit === undefined && count > 24) throw new Error("参考长图过长，请拆为较短的详情页参考后分别策划");
+    const length = Math.min(count, sampleLimit ?? count);
+    const overlap = sampleLimit === undefined ? 0.008 : Math.min(0.008, 0.15 / count);
+    return Array.from({ length }, (_, slot) => {
+        const index = length === count ? slot : length === 1 ? Math.floor(count / 2) : Math.round((slot * (count - 1)) / (length - 1));
+        return { top: Math.max(0, index / count - overlap), bottom: Math.min(1, (index + 1) / count + overlap) };
+    });
 }
 
 export function commerceReferenceInstruction(draft: EcommerceDraft): string {

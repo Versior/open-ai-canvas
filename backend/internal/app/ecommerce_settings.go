@@ -17,8 +17,7 @@ import (
 
 const ecommerceSettingKey = "ecommerce_canvas"
 
-// 管理员指令进过 SystemPrompt 的电商任务：文本分析流，或图片 model-cast/pattern 能力。
-// 这类任务的请求体和上游回显都可能带管理员正文，日志与错误必须脱敏。
+// 电商分析和出图任务可能把后台指令或知识正文注入出站请求，日志与错误不能回显这些内容。
 func ecommercePrivateInstruction(metadata map[string]any) bool {
 	if metadata == nil {
 		return false
@@ -27,7 +26,7 @@ func ecommercePrivateInstruction(metadata map[string]any) bool {
 		return true
 	}
 	capability, _ := metadata["ecommerceCapability"].(string)
-	return capability == "model-cast" || capability == "pattern"
+	return capability == "model-cast" || capability == "pattern" || ecommerceStudioImageDesignRequested(metadata)
 }
 
 // Provider errors can echo system text. Keep routing status and cancellation
@@ -35,6 +34,29 @@ func ecommercePrivateInstruction(metadata map[string]any) bool {
 func privateEcommerceAnalysisError(err error) error {
 	if code, _ := ChannelSlotFailureDetails(err); code != "" {
 		return err
+	}
+	var pending providerStatePendingError
+	if errors.As(err, &pending) {
+		if pending.Stage != "" {
+			pending.Stage = "上游处理中"
+		}
+		if pending.Cause != nil {
+			pending.Cause = privateEcommerceAnalysisError(pending.Cause)
+		}
+		return pending
+	}
+	var terminal providerTaskTerminalError
+	if errors.As(err, &terminal) {
+		terminal.Message = "上游返回失败状态"
+		return terminal
+	}
+	var delivery *mediaRecoveryError
+	if errors.As(err, &delivery) {
+		safe := *delivery
+		if safe.cause != nil && !errors.Is(safe.cause, errMediaRecoveryBusy) {
+			safe.cause = privateEcommerceAnalysisError(safe.cause)
+		}
+		return &safe
 	}
 	var upstream providerHTTPError
 	if errors.As(err, &upstream) {
@@ -258,7 +280,11 @@ func (s *Service) applyEcommerceAnalysisInstruction(input *canvasGenerationInput
 		}
 		director := strings.TrimSpace(capability.DirectorPrompt)
 		if director == "" {
-			director = defaultEcommerceCapabilityPrompt(strings.TrimPrefix(id, "cap:"))
+			if ecommerceStudioContentPlan(input.Metadata) {
+				director = ecommerceStudioContentPlanPrompt
+			} else {
+				director = defaultEcommerceCapabilityPrompt(strings.TrimPrefix(id, "cap:"))
+			}
 		}
 		input.Config.SystemPrompt = director
 		// 生图台的商品档案与详情页策划和电商 Agent 共用知识库；只在 worker 的内存请求里追加，不进入任务记录。

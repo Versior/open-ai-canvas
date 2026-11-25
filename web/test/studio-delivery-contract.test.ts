@@ -33,6 +33,7 @@ function deliveryFixture() {
         headline,
         subline: "",
         lines: [],
+        copySource: "user",
         tweaks: [],
         sellingPointIds: [],
         attempts: [],
@@ -77,14 +78,17 @@ test("采用旧候选、改过表单及刷新后，验图与文件均以同一�
     product.brief.language = "ja";
     product.plans = [plan];
     const restored = normalizeStudioProduct(JSON.parse(JSON.stringify(product)))!;
-    const restoredShot = restored.plans[0].shots[0];
+    const restoredPlan = restored.plans[0];
+    const restoredShot = restoredPlan.shots[0];
     const submitted = restoredShot.attempts[0].input!.compiled;
+    expect(submitted.copySnapshot).toMatchObject({ source: "user", language: "en", headline: "Rim" });
     const check = buildStudioDesignCheckPrompt(restored, restoredShot, false, submitted);
     expect(check).toContain("目标语：英文");
     expect(check).toContain('["Rim"]');
     expect(check).not.toContain(shots[0].headline);
-    const report = reviewStudioDelivery(product, shots, measured, new Set(measured.keys()));
-    const files = await readZip(await exportStudioZip(product, plan, produced, "originals", report));
+    expect(check).not.toContain("日文");
+    const report = reviewStudioDelivery(restored, restoredPlan.shots, measured, new Set(measured.keys()));
+    const files = await readZip(await exportStudioZip(restored, restoredPlan, produced, "originals", report));
     const sheet = await files.get("文案.txt")!.text();
     expect(sheet).toContain("目标语言：English · 该候选提交定稿");
     expect(sheet).not.toContain(shots[0].headline);
@@ -92,5 +96,8 @@ test("采用旧候选、改过表单及刷新后，验图与文件均以同一�
     expect(sheet).toContain("Finish | Matte");
     const manifest = JSON.parse(await files.get("manifest.json")!.text());
     expect(manifest.shots[0].copy).toMatchObject({ source: "submitted", language: "en", headline: "Rim" });
-    expect(buildStudioDesignCheckPrompt(product, shots[0], false)).toContain("text 标 unknown");
+    const legacyCheck = buildStudioDesignCheckPrompt(restored, restoredShot, false);
+    expect(legacyCheck).toContain("无法确认是否要求有字或定稿是什么时标 unknown");
+    expect(legacyCheck).not.toContain("目标语：");
+    expect(legacyCheck).not.toContain(shots[0].headline);
 });

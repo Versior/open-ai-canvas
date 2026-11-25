@@ -20,7 +20,7 @@ function cup() {
     return product;
 }
 
-test("template keeps layout values after long photography instructions; only fact-ready roles enter both contracts", () => {
+test("template keeps responsibilities after long photography instructions; image model owns design", () => {
     const product = cup();
     const suite = studioSuiteFromTemplate(
         {
@@ -38,13 +38,14 @@ test("template keeps layout values after long photography instructions; only fac
     );
     product.brief = { ...product.brief, suite, outputType: "template-set" };
     const prompt = buildDetailPlanPrompt(product, studioTemplatePlanRoles(product, suite), { scope: "template" });
-    for (const text of ["主体占比：58%", "留白：铭牌周围留白", "文字位置：右上标题区域", "保留字阶"]) expect(prompt).toContain(text);
+    expect(prompt).not.toContain("主体占比：58%");
+    expect(prompt).not.toContain("留白：铭牌周围留白");
+    expect(prompt).not.toContain("文字位置：右上标题区域");
+    expect(prompt).not.toContain("保留字阶");
     expect(prompt).not.toContain("不要复制的来源文案");
     expect(prompt).not.toContain("建议 role：detail-spec");
     expect(prompt).toContain("这张不放文字");
-    const compact = buildDetailPlanPrompt(product, studioTemplatePlanRoles(product, suite), { scope: "template" }, Array.from(prompt).length - 300);
-    expect(compact).toContain("省略次要镜头");
-    for (const field of ["主体占比：58%", "留白：铭牌周围留白", "文字位置：右上标题区域", "保留字阶"]) expect(compact).toContain(field);
+    expect(() => buildDetailPlanPrompt(product, studioTemplatePlanRoles(product, suite), { scope: "template" }, Array.from(prompt).length - 1)).toThrow("未提交策划任务");
     expect(() => buildDetailPlanPrompt(product, studioTemplatePlanRoles(product, suite), { scope: "template" }, 800)).toThrow("未提交策划任务");
     expect(studioSuiteUse(suite.shots)).toContain("混合");
     expect(studioSuiteUse(suite.shots.slice(1))).toContain("全套无字");
@@ -87,13 +88,14 @@ test("optional proof reference is priced as a real slot and cannot evict the pro
     const sized = studioImageInput(product, { shot: narrowShot, textMode: "model", quality: "", resolution: "", fromForm: true }, "gpt-image-1", defaultConfig);
     expect(sized.request.aspectRatio).toBe("9:16");
     expect(sized.compiled.layoutGuide?.ratio).toBe(sized.request.aspectRatio);
-    expect(sized.compiled.prompt).toContain(`画幅 ${sized.request.aspectRatio}。`);
-    expect(sized.compiled.prompt).not.toContain("画幅 1:4。");
+    expect(sized.compiled.layers.find((layer) => layer.id === "planning-brief")?.text).toMatch(new RegExp(`画幅[：: ]+${sized.request.aspectRatio}`));
+    expect(sized.compiled.prompt).not.toMatch(/画幅[：: ]+1:4/);
     expect(narrowShot.ratio).toBe("1:4");
     expect(() => compileStudioPrompt({ ...input, maxReferences: 1 })).toThrow("没有额外参考图名额");
     product.brief.language = "en";
-    expect(() => compileStudioPrompt(input)).toThrow("所选语言");
-    expect(compileStudioPrompt({ ...input, shot: { ...shot, headline: "Cup rim" } }).prompt).toContain("不翻译、不改写");
+    expect(compileStudioPrompt(input).layers.find((layer) => layer.id === "copy")?.text).toContain("英文");
+    const lockedCopy = compileStudioPrompt({ ...input, shot: { ...shot, headline: "Cup rim", copySource: "user" } });
+    expect(lockedCopy.layers.find((layer) => layer.id === "copy")?.text).toMatch(/「Cup rim」[^。]*逐字/);
 });
 
 test("specification export retains keys, units, and conditions; altered unsupported performance is blocked", () => {

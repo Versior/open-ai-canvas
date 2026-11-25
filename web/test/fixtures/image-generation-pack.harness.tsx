@@ -315,6 +315,64 @@ test("电商生图台的新结果保留袋子，旧采用图不会被冒充新�
     expect(view.host.textContent).toContain("模型暂时不可用");
     await render({ ...shot, attempts: [{ ...running, status: "cancelled", outputs: [] }] });
     expect(view.host.querySelector('.es-tile-state[data-tone="neutral"]')?.textContent).toContain("已取消");
+    const saving = { ...shot, attempts: [{ ...running, status: "failed" as const, error: "下载结果失败", outputs: [] }] };
+    await view.render(
+        <MemoryRouter>
+            <ResultTile
+                product={product}
+                group={group}
+                shot={saving}
+                task={{ id: "task", type: "canvas_image", status: "failed", prompt: "", attempts: 1, createdAt: now, updatedAt: now, canRecoverMedia: true, mediaStage: "download" }}
+                blocked=""
+                onView={noop}
+                onDownload={noop}
+                onReference={noop}
+                onRerun={noop}
+                onSync={noop}
+            />
+        </MemoryRouter>,
+    );
+    expect(view.host.textContent).toContain("保存未完成");
+    expect(view.host.textContent).toContain("继续保存（不重新生成）");
+    expect([...view.host.querySelectorAll("button")].some((button) => button.textContent.trim() === "重新生成")).toBe(false);
+    await view.render(
+        <MemoryRouter>
+            <ResultTile
+                product={product}
+                group={group}
+                shot={saving}
+                task={{ id: "task", type: "canvas_image", status: "failed", prompt: "", attempts: 1, createdAt: now, updatedAt: now, stage: "submission_unknown" }}
+                blocked=""
+                onView={noop}
+                onDownload={noop}
+                onReference={noop}
+                onRerun={noop}
+                onSync={noop}
+            />
+        </MemoryRouter>,
+    );
+    expect(view.host.textContent).toContain("待核对");
+    expect(view.host.querySelector(".es-tile-state button")).toBeNull();
+    expect(view.host.querySelector('a[href="/tasks"]')).not.toBeNull();
+    await view.render(
+        <MemoryRouter>
+            <ResultTile
+                product={product}
+                group={{ ...group, shots: [shot, { ...shot, id: "second" }] }}
+                shot={{ ...shot, attempts: [running] }}
+                task={{ id: "task", type: "canvas_image", status: "running", prompt: "", attempts: 1, createdAt: now, updatedAt: now, mediaStage: "download", stage: "作品已生成，正在保存" }}
+                blocked=""
+                onView={noop}
+                onDownload={noop}
+                onReference={noop}
+                onRerun={noop}
+                onSync={noop}
+            />
+        </MemoryRouter>,
+    );
+    expect(view.host.querySelector(".image-generation-packet")).toBeNull();
+    expect(view.host.querySelector(".image-pack-progress")?.getAttribute("data-phase")).toBe("saving");
+    expect(view.host.textContent).toContain("作品已生成");
     await view.close();
 });
 

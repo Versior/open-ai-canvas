@@ -31,6 +31,32 @@ export type StudioShotSpec = {
     familyOverrides?: Partial<Record<StudioCategoryFamily, Partial<Pick<StudioShotSpec, "title" | "purpose" | "composition" | "set" | "avoid">>>>;
 };
 
+export const STUDIO_SHOT_PURPOSES: Record<StudioShotRole, { placement: string; focus: string; needsCopy?: true }> = {
+    "main-white": { placement: "平台白底商品图", focus: "完整展示真实售卖主体，只放商品；不加道具、边框或额外信息。" },
+    "main-selling": { placement: "搜索列表与商品页首图", focus: "缩略图上一眼认出完整商品，同时给一个有依据的点击理由。局部只能补充，不把手、道具或多个标签变成主角。", needsCopy: true },
+    "main-scene": { placement: "商品轮播场景图", focus: "让环境和实际使用状态解释商品适合什么场合，不是同一张摆拍换背景。" },
+    "main-detail": { placement: "商品轮播细节图", focus: "用一个确实可见的部位讲清结构、质感或做工，必要时才让整件商品帮助定位。" },
+    "main-angle": { placement: "商品轮播补充视角", focus: "从另一个有依据的角度帮助认清实物轮廓；不推测不可见部位。" },
+    "main-flatlay": { placement: "平铺陈列图", focus: "从上方看清真实商品的外形、边缘和部件关系。搭景不是随货清单，不添未知配件。" },
+    "detail-hero": { placement: "详情页首屏海报（商品主视觉）", focus: "这是完整商品主视觉，不是局部特写。让买家辨认商品，并用一个和商品相关的视觉主题给出继续阅读的理由；不要围绕一个小部位贴标签。", needsCopy: true },
+    "detail-selling": { placement: "单张商品卖点图（独立交付，不是详情页连续屏）", focus: "只讲一项有依据的核心利益。让实物、真实用法或可见差别证明它，不列同义卖点凑数。", needsCopy: true },
+    "detail-model": { placement: "商品模特展示图", focus: "看清真实佩戴、穿搭或操作关系。人的动作帮助理解商品，不挡关键外观，不为展示人而丢掉商品。" },
+    "detail-scene": { placement: "详情区使用场景图", focus: "看清商品、使用者与空间之间的真实关系，用具体动作或位置解释用途。" },
+    "detail-material": { placement: "详情区材质证据图", focus: "让可见纹理、透光或表面起伏解释质感，不从照片推断成分、性能或工艺名称。" },
+    "detail-closeup": { placement: "详情区局部说明图", focus: "放大能解答购买问题的真实细节，说明与实际部位相连，不复用主视觉的整件摆拍。" },
+    "detail-angles": { placement: "商品多角度对照图", focus: "不同角度各补一个外观信息；保证是同一件商品，不补画原图无法支持的结构。" },
+    "detail-spec": { placement: "详情区参数图", focus: "把已确认的参数和适用条件配对展示；没有确切值就解释可见的选购信息，不编数值、不做空参数表。", needsCopy: true },
+    "detail-size": { placement: "详情区尺寸图", focus: "明确量的是哪个边缘或部位，只使用已确认的数值和单位；没有尺寸资料就展示可见比例关系，不从照片换算。", needsCopy: true },
+    "detail-package": { placement: "详情区包装与随货说明", focus: "只展现卖家确认的包装和随货项目。没有确认清单就解释可见的商品本体，不把照片道具、数量或容器当作交付内容。", needsCopy: true },
+    "detail-seeding": { placement: "内容社区推荐图", focus: "用一个具体生活情境讲清商品为什么出现在这里；文案像真实体验描述，不捏造客户评价或使用效果。", needsCopy: true },
+    "detail-compare": { placement: "详情区对比图", focus: "比较有依据的不同选项、同一物件的状态或用法；对照条件一致，不捏造竞品、效果或数据。", needsCopy: true },
+    "detail-steps": { placement: "详情区使用步骤图", focus: "按真实使用顺序展示关键动作，让图与动作说明对应，不凭空扩写步骤或效果。", needsCopy: true },
+    "detail-collocation": { placement: "商品搭配展示图", focus: "用真实的组合关系说明怎么搭、一起用什么。保持售卖主体突出，搭配物不暗示赠送。" },
+    "detail-campaign": { placement: "活动页或投放主视觉", focus: "用完整商品和卖家明确给定的活动主题形成整体视觉；没有活动资料时只做商品主题，不编价格、日期、优惠或承诺。", needsCopy: true },
+    "detail-ugc": { placement: "真实生活随手拍", focus: "观察一个自然、可信的使用瞬间；保留生活感，不伪装成消费者评价或硬广海报。" },
+    "detail-closing": { placement: "详情页收束屏", focus: "解决一项剩余的选购疑虑，不复拍首屏或加空泛口号。", needsCopy: true },
+};
+
 const SHOT_SPECS: Record<StudioShotRole, StudioShotSpec> = {
     "main-white": {
         role: "main-white",
@@ -364,6 +390,14 @@ export function studioShotPromptKey(role: StudioShotRole, field: StudioShotPromp
 /** 内置的镜头规格，不含后台改动；后台编辑器用它显示默认写法。 */
 export function studioDefaultShotSpec(role: StudioShotRole): StudioShotSpec {
     return SHOT_SPECS[role];
+}
+
+export function studioShotPlatformRole(role: StudioShotRole, pageKind: StudioPlanKind | "single" = "single", screenIndex = 1): EcommerceImageRole {
+    if (role === "main-white") return "white";
+    if (pageKind === "main") return screenIndex === 1 ? "main" : "detail";
+    if (pageKind === "detail") return "detail";
+    if (role === "main-scene" || role === "main-detail" || role === "main-angle" || role === "main-flatlay") return "detail";
+    return SHOT_SPECS[role].platformRole;
 }
 
 /** 镜头规格：后台改过的字段替换内置写法，品类专用写法（如服装的尺码参考）仍然优先。 */

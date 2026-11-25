@@ -19,7 +19,7 @@ func TestStudioPlatformKnowledgeSurvivesVisualLimit(t *testing.T) {
 		}
 	}
 	ranked = append(ranked, model.EcommerceKnowledgeEntry{ID: "platform", KnowledgeType: "platform_rule"}, model.EcommerceKnowledgeEntry{ID: "scope", KnowledgeType: "creation_type_rule"})
-	selected := selectEcommerceStudioPlanKnowledge(ranked)
+	selected := selectEcommerceStudioPlanKnowledge(ranked, false)
 	ids := map[string]bool{}
 	for _, entry := range selected {
 		ids[entry.ID] = true
@@ -36,12 +36,12 @@ func TestStudioExpandedDesignKnowledgeReachesWorker(t *testing.T) {
 	svc, _, _, _ := ecommerceCreationTestService(t)
 	input := canvasGenerationInput{Mode: "text", Prompt: "策划儿童眼镜", Metadata: map[string]any{
 		"source": "ecommerce-studio", "ecommerceCapability": "detail-plan", "ecommerceAnalysisFlow": "cap:detail-plan",
-		"studioProductName": "儿童眼镜", "studioCategory": "眼镜", "studioPlatform": "taobao", "studioPlanKind": "detail", "studioStep": "plan", "studioPlanScope": "detail", "studioPlanCount": 4, "studioPlanRoles": []string{"detail-hero"},
+		"studioProductName": "儿童眼镜", "studioCategory": "眼镜", "studioPlatform": "taobao", "studioPlanKind": "detail", "studioStep": "plan", "studioPlanScope": "template", "studioTemplateId": "selected-design", "studioTemplateSource": "library", "studioPlanCount": 4, "studioPlanRoles": []string{"detail-hero"},
 	}}
 	if err := svc.applyEcommerceAnalysisInstruction(&input); err != nil {
 		t.Fatal(err)
 	}
-	for _, text := range []string{"商品、人群与背景色分别判断", "微距压边", "生活分镜", "灰色镜腿", "用户选择 4 屏", "4.5:1", "字块、主图轮廓与留白", "说明紧邻对应证据", "不固定标题与注解比例", "视觉策划：内容、证据与阅读路径"} {
+	for _, text := range []string{"商品、人群与背景色分别判断", "微距压边", "灰色镜腿", "视觉策划：内容、证据与阅读路径", "版式与字体：让字成为设计的一部分", "用户选择 4 屏", "purchaseQuestion、displayContent、evidence"} {
 		if !strings.Contains(input.Config.SystemPrompt, text) {
 			t.Fatalf("worker system prompt lost %q", text)
 		}
@@ -51,7 +51,7 @@ func TestStudioExpandedDesignKnowledgeReachesWorker(t *testing.T) {
 	}
 }
 
-func TestStudioSharedPosterMethodReachesDifferentProductWorkers(t *testing.T) {
+func TestStudioTemplatePosterMethodReachesDifferentProductWorkers(t *testing.T) {
 	catalog, err := ecommerceagent.ReadStudioDesignCatalog()
 	if err != nil {
 		t.Fatal(err)
@@ -66,23 +66,35 @@ func TestStudioSharedPosterMethodReachesDifferentProductWorkers(t *testing.T) {
 	for _, product := range []struct{ name, family string }{
 		{"儿童眼镜", "generic"}, {"机械键盘", "electronics"}, {"曲奇饼干", "food"}, {"护理精华", "beauty"}, {"衬衫", "apparel"}, {"陶瓷杯", "home"},
 	} {
-		for _, kind := range []string{"detail", "main", "single"} {
-			t.Run(product.name+"/"+kind, func(t *testing.T) {
-				input := canvasGenerationInput{Mode: "text", Prompt: "策划", Metadata: map[string]any{
-					"source": "ecommerce-studio", "ecommerceCapability": "detail-plan", "ecommerceAnalysisFlow": "cap:detail-plan",
-					"studioProductName": product.name, "studioCategory": product.name, "studioFamily": product.family,
-					"studioPlatform": "taobao", "studioPlanKind": kind, "studioPlanTargets": "poster", "studioStep": "plan", "studioPlanScope": kind, "studioPlanCount": map[string]int{"detail": 2, "main": 5, "single": 1}[kind], "studioPlanRoles": []string{"detail-hero"},
-				}}
-				if err := svc.applyEcommerceAnalysisInstruction(&input); err != nil {
-					t.Fatal(err)
+		t.Run(product.name, func(t *testing.T) {
+			input := canvasGenerationInput{Mode: "text", Prompt: "策划", Metadata: map[string]any{
+				"source": "ecommerce-studio", "ecommerceCapability": "detail-plan", "ecommerceAnalysisFlow": "cap:detail-plan",
+				"studioProductName": product.name, "studioCategory": product.name, "studioFamily": product.family, "studioPlatform": "taobao",
+				"studioPlanKind": "detail", "studioStep": "plan", "studioPlanScope": "template", "studioPlanCount": 2, "studioPlanRoles": []string{"detail-hero"},
+				"studioTemplateId": "selected-design", "studioTemplateSource": "library",
+			}}
+			if err := svc.applyEcommerceAnalysisInstruction(&input); err != nil {
+				t.Fatal(err)
+			}
+			for _, method := range []string{catalog.PosterDesign.Principles, catalog.PosterDesign.Hero, catalog.PosterDesign.Editorial, "不能只换背景"} {
+				if !strings.Contains(input.Config.SystemPrompt, method) {
+					t.Fatalf("template planning lost shared method %q", method)
 				}
-				for _, method := range []string{catalog.PosterDesign.Principles, catalog.PosterDesign.Hero, catalog.PosterDesign.Editorial, "标题中的实际词组", "不能只换背景"} {
-					if !strings.Contains(input.Config.SystemPrompt, method) {
-						t.Fatalf("worker lost shared method for %s/%s", product.name, kind)
-					}
+			}
+			ids, _ := input.Metadata[ecommercePlanningKnowledgeIDsKey].([]string)
+			for _, id := range []string{kb20MethodID, kb20LayoutID, kb20CopyID} {
+				if !slices.Contains(ids, id) {
+					t.Fatalf("injected knowledge %q missing from receipt: %v", id, ids)
 				}
-			})
-		}
+			}
+			if input.Metadata[ecommercePlanningKnowledgeVersionKey] != ecommerceagent.CreativeKnowledgeVersion {
+				t.Fatal("knowledge receipt is missing the creative knowledge version")
+			}
+			_, contract, found := strings.Cut(input.Config.SystemPrompt, "【本次策划合同，优先于上述示例方法】")
+			if !found || !strings.Contains(contract, "第 N 项对应模板第 N 项的用途") || !strings.Contains(contract, "不输出最终文案、字体、色值、坐标") || !strings.Contains(contract, "由图片模型整体设计图文") {
+				t.Fatalf("selected template usage or artwork ownership changed: %s", contract)
+			}
+		})
 	}
 }
 
@@ -211,7 +223,7 @@ func TestEcommerceStudioDossierUsesSharedKnowledge(t *testing.T) {
 	}
 }
 
-func TestEcommerceStudioDetailPlanUsesVisualKnowledge(t *testing.T) {
+func TestEcommerceStudioTemplateDetailPlanUsesVisualKnowledge(t *testing.T) {
 	svc, db, _, _ := ecommerceCreationTestService(t)
 	if err := db.Create(&model.EcommerceKnowledgeSource{ID: "ready", Name: "审核库", Status: "ready"}).Error; err != nil {
 		t.Fatal(err)
@@ -235,7 +247,8 @@ func TestEcommerceStudioDetailPlanUsesVisualKnowledge(t *testing.T) {
 	plan := task("detail-plan")
 	plan.Metadata["studioPlanKind"] = "detail"
 	plan.Metadata["studioStep"] = "plan"
-	plan.Metadata["studioPlanScope"] = "detail"
+	plan.Metadata["studioPlanScope"] = "template"
+	plan.Metadata["studioTemplateId"], plan.Metadata["studioTemplateSource"] = "selected-design", "library"
 	plan.Metadata["studioPlanCount"] = float64(4)
 	plan.Metadata["studioPlanRoles"] = []any{"detail-hero", "detail-selling"}
 	plan.Metadata["studioTextMode"] = "model"
@@ -243,7 +256,7 @@ func TestEcommerceStudioDetailPlanUsesVisualKnowledge(t *testing.T) {
 		t.Fatal(err)
 	}
 	prompt := plan.Config.SystemPrompt
-	if !strings.Contains(prompt, "用户选择 4 屏") || !strings.Contains(prompt, "JSON screens 正好 4 项") || !strings.Contains(prompt, "图片模型整体设计图文") || !strings.Contains(prompt, "designAnalysis") {
+	if !strings.Contains(prompt, "用户选择 4 屏") || !strings.Contains(prompt, "JSON screens 正好 4 项") || !strings.Contains(prompt, "图片模型整体设计图文") || !strings.Contains(prompt, "screenVariationPlan") {
 		t.Fatal("requested screen count and rendering contract must reach the actual worker system prompt")
 	}
 	if !strings.HasPrefix(prompt, defaultEcommerceCapabilityPrompt("detail-plan")) || plan.Prompt != "排详情页" {
@@ -256,6 +269,10 @@ func TestEcommerceStudioDetailPlanUsesVisualKnowledge(t *testing.T) {
 	}
 	if strings.Contains(prompt, "耳机行业趋势") {
 		t.Fatal("knowledge types outside the plan list reached the prompt")
+	}
+	ids, _ := plan.Metadata[ecommercePlanningKnowledgeIDsKey].([]string)
+	if !slices.Contains(ids, kb20MethodID) || !slices.Contains(ids, "耳机棚拍布光") || slices.Contains(ids, "耳机行业趋势") {
+		t.Fatalf("knowledge diagnostic does not match the actual injection: %v", ids)
 	}
 	// 知识段是一行 JSON；同类爆款套图参考排在它后面。
 	var knowledge []map[string]string
@@ -316,7 +333,7 @@ func TestEcommerceStudioPlanViralReferences(t *testing.T) {
 		}
 	}
 	prompt := ecommerceStudioViralReferencePrompt("保温杯", "一杯装下一整天", "home")
-	for _, text := range []string{"内置爆款套图库", "1.【同类】「" + refs[0].doc.Name, "视觉语法：", "色板 ", "逐屏：", "inspiration"} {
+	for _, text := range []string{"内置爆款套图库", "1.【同类】「" + refs[0].doc.Name, "视觉语法：", "色板 ", "逐屏：", "镜头 ", "主体占位 ", "留白 ", "布光 ", "inspiration"} {
 		if !strings.Contains(prompt, text) {
 			t.Fatalf("reference prompt is missing %q: %s", text, prompt)
 		}

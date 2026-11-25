@@ -1,11 +1,24 @@
 import { ecommerceRoleSpec } from "@/lib/ecommerce/ecommerce-platform-specs";
 import { IMAGE_RATIOS } from "@/lib/image-size-presets";
-import { studioShotSpec } from "./shot-specs";
-import { normalizeStudioDetailPlan } from "./detail-plan";
+import { studioDefaultShotSpec, studioShotPlatformRole } from "./shot-specs";
+import { normalizeStudioDetailPlan, STUDIO_DETAIL_SCREEN_DEFAULT } from "./detail-plan";
 import { normalizeStudioPlanPrep } from "./plan-prep";
 import { studioPromptText } from "./prompt-overrides";
 import { normalizeStudioSuite } from "./suites";
-import type { StudioModelCast, StudioModelPick, StudioBrief, StudioLanguage, StudioMarket, StudioOutputType, StudioPlanKind, StudioProduct, StudioSellingPoint, StudioShotRole, StudioShooting } from "./types";
+import {
+    STUDIO_SINGLE_PLAN_MAX_SHOTS,
+    type StudioModelCast,
+    type StudioModelPick,
+    type StudioBrief,
+    type StudioLanguage,
+    type StudioMarket,
+    type StudioOutputType,
+    type StudioPlanKind,
+    type StudioProduct,
+    type StudioSellingPoint,
+    type StudioShotRole,
+    type StudioShooting,
+} from "./types";
 
 /**
  * 生图表单：出图类型、市场、语言、拍法这些选项的定义，以及表单字段的读取规则。
@@ -106,7 +119,7 @@ export function createStudioBrief(): StudioBrief {
         extra: "",
         sameLayout: false,
         count: 1,
-        detailScreens: 10,
+        detailScreens: STUDIO_DETAIL_SCREEN_DEFAULT,
         quality: "",
         resolution: "",
         ratio: "auto",
@@ -170,7 +183,7 @@ export function normalizeStudioModelCast(value: unknown): StudioModelCast | unde
 }
 
 function shotKeys(value: unknown) {
-    return Array.isArray(value) ? [...new Set(value.filter((item): item is string => typeof item === "string" && SHOT_KEY_PATTERN.test(item)))].slice(0, 40) : [];
+    return Array.isArray(value) ? [...new Set(value.filter((item): item is string => typeof item === "string" && SHOT_KEY_PATTERN.test(item)))].slice(0, STUDIO_SINGLE_PLAN_MAX_SHOTS) : [];
 }
 
 /** 单张类型按类型表的顺序排好、去重，不认识的丢掉。 */
@@ -192,12 +205,16 @@ export function normalizeStudioBrief(value: unknown): StudioBrief {
     const base = createStudioBrief();
     if (!value || typeof value !== "object" || Array.isArray(value)) return base;
     const record = value as Record<string, unknown>;
+    const output = outputTypeOf(record, base.outputType);
+    const outputType = output.outputType;
     const count = Number(record.count);
-    const suite = normalizeStudioSuite(record.suite);
+    // 模板套图是唯一会携带模板快照和模板策划的类型；历史记录可能在切换
+    // 出图类型前留下这些字段，读回时主动丢掉，避免旧模板污染新的策划和出图。
+    const suite = outputType === "template-set" ? normalizeStudioSuite(record.suite) : undefined;
     const detailPlan = normalizeStudioDetailPlan(record.detailPlan);
     const mainPlan = normalizeStudioDetailPlan(record.mainPlan);
     const singlePlan = normalizeStudioDetailPlan(record.singlePlan);
-    const templatePlan = normalizeStudioDetailPlan(record.templatePlan);
+    const templatePlan = suite && outputType === "template-set" ? normalizeStudioDetailPlan(record.templatePlan) : undefined;
     const prep = normalizeStudioPlanPrep(record.prep);
     const planNote = text(record.planNote, STUDIO_PLAN_NOTE_MAX).trim();
     const model = normalizeStudioModelCast(record.model);
@@ -205,7 +222,7 @@ export function normalizeStudioBrief(value: unknown): StudioBrief {
         brand: text(record.brand, 40),
         textMode: "model",
         productType: text(record.productType, 40),
-        ...outputTypeOf(record, base.outputType),
+        ...output,
         market: MARKET_IDS.has(record.market as StudioMarket) ? (record.market as StudioMarket) : base.market,
         language: LANGUAGE_IDS.has(record.language as StudioLanguage) ? (record.language as StudioLanguage) : base.language,
         shooting: SHOOTING_IDS.has(record.shooting as StudioShooting) ? (record.shooting as StudioShooting) : base.shooting,
@@ -250,7 +267,7 @@ export function studioSingleTypes(brief: Pick<StudioBrief, "outputType" | "mix">
 
 /** 换出图类型时镜头不同，清掉套图的顺序和勾选；多选列表只在 mix 时保留。 */
 function withOutputType(brief: StudioBrief, outputType: StudioOutputType, mix?: StudioOutputType[]): StudioBrief {
-    const { mix: _previous, ...rest } = brief;
+    const { mix: _previous, suite: _suite, templatePlan: _templatePlan, ...rest } = brief;
     return { ...rest, outputType, ...(mix ? { mix } : {}), shotOrder: [], shotSkip: [] };
 }
 
@@ -258,14 +275,15 @@ function withOutputType(brief: StudioBrief, outputType: StudioOutputType, mix?: 
 export function toggleStudioSingleType(brief: StudioBrief, id: StudioOutputType): StudioBrief {
     if (!SINGLE_IDS.includes(id)) return brief;
     const current = studioSingleTypes(brief).map((item) => item.id);
-    const next = current.includes(id) ? (current.length > 1 ? current.filter((item) => item !== id) : current) : [...current, id];
+    if (current.length === 1 && current[0] === id) return brief;
+    const next = current.includes(id) ? current.filter((item) => item !== id) : [...current, id];
     const ordered = singleTypes(next);
     return ordered.length > 1 ? withOutputType(brief, "mix", ordered) : withOutputType(brief, ordered[0]);
 }
 
 /** 选一种套图：套图只能单选，选中后不再同时出单张类型。 */
 export function pickStudioSetType(brief: StudioBrief, id: StudioOutputType): StudioBrief {
-    return studioOutputSpec(id).set ? withOutputType(brief, id) : brief;
+    return id !== brief.outputType && studioOutputSpec(id).set ? withOutputType(brief, id) : brief;
 }
 
 export function studioMarket(id: StudioMarket) {
@@ -382,7 +400,7 @@ export function studioNearestRatio(width: number, height: number, candidates: st
 
 /** 「自动」比例：主图与白底图跟平台主图规格，其余按竖版 3:4。 */
 export function studioDefaultRatio(role: StudioShotRole, product: StudioProduct) {
-    const spec = studioShotSpec(role, product.dossier?.family || "generic");
+    const spec = studioDefaultShotSpec(role);
     if (spec.platformRole === "main" || spec.platformRole === "white") return ecommerceRoleSpec(product.platform, spec.platformRole)?.ratio || "1:1";
     return "3:4";
 }
@@ -397,7 +415,8 @@ export function studioRunRatio(role: StudioShotRole, product: StudioProduct) {
 }
 
 /** 平台首图不许加字时（京东、抖音、亚马逊等），卖点主图的文字就不写进图里。 */
-export function studioPlatformForbidsText(product: StudioProduct, role: StudioShotRole) {
-    const spec = studioShotSpec(role, product.dossier?.family || "generic");
-    return spec.platformRole === "main" && Boolean(ecommerceRoleSpec(product.platform, "main")?.noText);
+export function studioPlatformForbidsText(product: StudioProduct, role: StudioShotRole, pageKind?: StudioPlanKind | "single", screenIndex?: number) {
+    const placement = studioShotPlatformRole(role, pageKind, screenIndex);
+    const spec = ecommerceRoleSpec(product.platform, placement);
+    return placement === "white" || Boolean(spec?.whiteBackground || spec?.noText);
 }

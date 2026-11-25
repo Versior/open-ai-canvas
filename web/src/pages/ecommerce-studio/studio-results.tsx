@@ -3,17 +3,18 @@ import { saveAs } from "file-saver";
 import { CircleStop, Download, Ellipsis, ImageOff, ImagePlus, Maximize2, RefreshCw, Rows3, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
-import { getActiveUserScope } from "@/lib/user-scope";
+import { assertCurrentUserSession, captureUserSession, getActiveUserScope } from "@/lib/user-scope";
 import { workspacePath } from "@/lib/workspace-routes";
 import { RelativeTime } from "@/components/ui/product/relative-time";
 import { TaskSettlement } from "@/components/generation-cost-notice";
 import { ImageGenerationPack } from "@/components/image-pack/image-generation-pack";
-import { ImagePackNoticeArtwork } from "@/components/image-pack/image-pack-notice-artwork";
 import { ImagePackProgress } from "@/components/image-pack/image-pack-progress";
 import { ecommercePlatform } from "@/lib/ecommerce/ecommerce-platform-specs";
 import { studioDisplayName } from "@/lib/ecommerce-studio/brief";
-import { studioAttemptActive, studioAttemptNeedsReview, studioPlanOf, studioShotLatestAttempt, studioShotOutputs, studioShotPreview } from "@/lib/ecommerce-studio/product";
+import { studioImageSetupBlock } from "@/lib/ecommerce-studio/generation-input";
+import { studioAttemptActive, studioAttemptNeedsReview, studioPlanOf, studioShotApproved, studioShotLatestAttempt, studioShotOutputs, studioShotPreview } from "@/lib/ecommerce-studio/product";
 import { studioRunTitle } from "@/lib/ecommerce-studio/runs";
+import { studioGroupProgress, studioShotDisplay } from "@/lib/ecommerce-studio/task-display";
 import { STUDIO_PLAN_META } from "@/lib/ecommerce-studio/shot-specs";
 import type { StudioAttemptStatus, StudioGenerationSource, StudioOutput, StudioPlan, StudioPlanKind, StudioProduct, StudioShot, StudioTextMode } from "@/lib/ecommerce-studio/types";
 import { configuredModelDisplayName } from "@/lib/model-selection";
@@ -21,12 +22,14 @@ import { studioShotHasCopy } from "@/lib/ecommerce-studio/prompt-compiler";
 import { studioShotSpec } from "@/lib/ecommerce-studio/shot-specs";
 import { downloadBrowserMedia } from "@/services/browser-download";
 import { resourceStorageKey } from "@/services/api/resources";
+import { queryGenerationTask, recoverGenerationTaskMedia, subscribeGenerationTasks, type GenerationTask } from "@/services/api/task-center";
 import { useEffectiveConfig } from "@/stores/use-config-store";
 import { bindStudioLongImage, composeStudioShots, downloadStudioComposed, exportStudioZip, releaseComposed, studioOutputNeedsLegacyTypeset, type StudioArchiveKind } from "./studio-delivery";
 import { inspectStudioDelivery } from "./studio-delivery-review";
 import type { StudioDeliveryReview } from "@/lib/ecommerce-studio/delivery-review";
 import { ratioStyle, studioImageUrl } from "./studio-parts";
-import { studioShotPending, type StudioRunner, type StudioShotRef } from "./use-studio-runner";
+import { patchStudioShotAt, studioShotPending, type StudioRunner, type StudioShotRef } from "./use-studio-runner";
+import { useStudioStore } from "./use-studio-store";
 import "./studio-delivery.css";
 
 type Edit = (updater: (product: StudioProduct) => StudioProduct, options?: { immediate?: boolean }) => void;
@@ -41,6 +44,7 @@ export type StudioShotGroup = {
     textMode: StudioTextMode;
     shots: StudioShot[];
     fromAgent: boolean;
+    plannedDetail?: true;
     styleId?: StudioPlan["styleId"];
     tone?: StudioPlan["tone"];
     source?: StudioGenerationSource;
@@ -74,9 +78,16 @@ export function studioShotGroups(product: StudioProduct): StudioShotGroup[] {
         tone: run.suite?.tone,
         shots: run.shots,
         fromAgent: false,
+        ...(run.type === "detail-set" && run.kind === "detail" && run.textMode === "model" && run.shots.some((shot) => shot.screenIndex !== undefined || shot.purchaseQuestion?.trim()) ? { plannedDetail: true as const } : {}),
         source: run.source,
     }));
     return [...plans, ...runs].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export function studioDetailResultTitle(group: StudioShotGroup, shot: StudioShot, index: number) {
+    if (!group.plannedDetail) return undefined;
+    const question = shot.purchaseQuestion?.trim();
+    return `第 ${index + 1} 屏${question ? ` · ${question}` : ""}`;
 }
 
 function downloadName(product: StudioProduct, shot: StudioShot, index: number) {
@@ -92,7 +103,7 @@ async function downloadOutputs(items: { output: StudioOutput; fileName: string }
 }
 
 /** 列表也展示同一份排版成品；仅在进入视口后读取原图、加载字库。 */
-function StudioResultArtwork({ product, group, shot, output, full = false }: { product: StudioProduct; group: StudioShotGroup; shot: StudioShot; output: StudioOutput; full?: boolean }) {
+function StudioResultArtwork({ product, group, shot, output, full = false, title = shot.title }: { product: StudioProduct; group: StudioShotGroup; shot: StudioShot; output: StudioOutput; full?: boolean; title?: string }) {
     const ref = useRef<HTMLSpanElement>(null);
     const [visible, setVisible] = useState(false);
     const [preview, setPreview] = useState<{ key: string; url?: string; error?: string }>();
@@ -123,7 +134,7 @@ function StudioResultArtwork({ product, group, shot, output, full = false }: { p
                 setPreview({ key, url: result[0]?.url });
             })
             .catch((error: unknown) => {
-                if (!controller.signal.aborted) setPreview({ key, error: error instanceof Error ? error.message : "排版预览失败" });
+                if (!controller.signal.aborted) setPreview({ key, error: error instanceof Error ? error.message : "成品预览失败" });
             });
         return () => {
             controller.abort();
@@ -133,9 +144,9 @@ function StudioResultArtwork({ product, group, shot, output, full = false }: { p
     return (
         <span ref={ref} className="es-result-artwork">
             {!overlay ? (
-                <img src={studioImageUrl(output.resourceId, !full)} alt={shot.title} loading="lazy" />
+                <img src={studioImageUrl(output.resourceId, !full)} alt={title} loading="lazy" />
             ) : preview?.key === key && preview.url ? (
-                <img src={preview.url} alt={`${shot.title} · 程序排版成品`} />
+                <img src={preview.url} alt={`${title} · 成品预览`} />
             ) : preview?.key === key && preview.error ? (
                 <span role="alert">{preview.error}</span>
             ) : (
@@ -150,28 +161,39 @@ export function ResultTile({
     group,
     shot,
     caption,
+    detailTitle,
     blocked,
     onView,
     onDownload,
     onReference,
     onRerun,
     onSync,
+    task,
+    acting = false,
+    showContext = false,
 }: {
     product: StudioProduct;
     group: StudioShotGroup;
     shot: StudioShot;
     caption?: string;
+    detailTitle?: string;
     blocked: string;
     onView: () => void;
     onDownload: () => void;
     onReference: () => void;
     onRerun: () => void;
     onSync: () => void;
+    task?: GenerationTask;
+    acting?: boolean;
+    /** 详情页结果需要让用户知道每屏承担的购买任务；主图套图保持紧凑。 */
+    showContext?: boolean;
 }) {
     const latest = studioShotLatestAttempt(shot);
     const preview = studioShotPreview(shot);
     const active = Boolean(latest && studioAttemptActive(latest));
     const review = latest && studioAttemptNeedsReview(latest);
+    const display = studioShotDisplay(shot, task);
+    const screenPurpose = showContext && !detailTitle ? shot.purchaseQuestion?.trim() : "";
     const syncAction = review ? (
         <Link to={workspacePath("/tasks")}>到任务中心核对</Link>
     ) : latest?.error ? (
@@ -182,24 +204,24 @@ export function ResultTile({
     const failed = latest && (latest.status === "failed" || latest.status === "cancelled") && !active;
     const status = latest?.status || "idle";
     return (
-        <figure className="es-tile-wrap">
+        <figure className="es-tile-wrap" id={`studio-shot-${group.key}-${shot.id}`} data-shot-id={shot.id}>
             {/* 出好的图按实际宽高显示：模型给的比例和要求的不一样时也不裁掉。 */}
             <div className="es-tile" style={ratioStyle(preview?.width && preview.height ? `${preview.width}:${preview.height}` : shot.ratio)} data-state={preview ? "done" : active ? "active" : failed ? "failed" : "idle"}>
                 <ImageGenerationPack
                     pending={active && !review}
-                    succeeded={status === "succeeded" && Boolean(latest?.outputs.some((output) => output.resourceId === preview?.resourceId))}
-                    label={<ImagePackProgress task={{ status: status === "queued" ? "queued" : "running", createdAt: latest?.createdAt }} phase={status === "submitting" ? "submitting" : undefined} />}
+                    disabled={group.shots.length > 1}
+                    succeeded={studioShotApproved(shot) && status === "succeeded" && Boolean(latest?.outputs.some((output) => output.resourceId === preview?.resourceId))}
+                    label={<ImagePackProgress task={task || { status: status === "queued" ? "queued" : "running", createdAt: latest?.createdAt }} phase={status === "submitting" ? "submitting" : undefined} />}
                     pendingActions={syncAction}
                 >
                     {preview ? (
-                        <button type="button" data-image-pack-result className="es-tile-image" onClick={onView} aria-label={`查看${shot.title}`}>
-                            <StudioResultArtwork product={product} group={group} shot={shot} output={preview} />
+                        <button type="button" data-image-pack-result className="es-tile-image" onClick={onView} aria-label={`查看${detailTitle || shot.title}`}>
+                            <StudioResultArtwork product={product} group={group} shot={shot} output={preview} title={detailTitle} />
                         </button>
                     ) : null}
                     {!preview && active ? (
                         <div className="es-tile-state">
-                            {!review && <Spin size="small" />}
-                            <span>{review ? "回执待核对" : STATUS_LABEL[status]}</span>
+                            {review ? <span>回执待核对</span> : <ImagePackProgress task={task || { status: status === "queued" ? "queued" : "running", createdAt: latest?.createdAt }} phase={status === "submitting" ? "submitting" : undefined} />}
                             {latest?.error && (
                                 <span className="es-tile-error" role="status">
                                     {latest.error}
@@ -209,16 +231,25 @@ export function ResultTile({
                         </div>
                     ) : null}
                     {!preview && !active && failed ? (
-                        <div className="es-tile-state image-pack-notice" data-tone={status === "cancelled" ? "neutral" : "error"}>
-                            <ImagePackNoticeArtwork icon={status === "cancelled" ? CircleStop : ImageOff} tone={status === "cancelled" ? "neutral" : "error"} />
-                            <strong>{STATUS_LABEL[status]}</strong>
-                            <span className="es-tile-error" title={latest?.error}>
-                                {latest?.error || "调整设置后可以重新生成"}
+                        <div className="es-tile-state image-pack-notice" data-tone={status === "cancelled" ? "neutral" : display.state === "recover" || display.state === "review" ? "warning" : "error"}>
+                            <span className="es-tile-failure-icon" aria-hidden>
+                                {status === "cancelled" ? <CircleStop size={24} /> : <ImageOff size={24} />}
                             </span>
+                            <strong>{display.label}</strong>
+                            <span className="es-tile-error" title={display.detail}>
+                                {display.detail || "调整设置后可以重新生成"}
+                            </span>
+                            {latest?.taskId ? (
+                                <Link className="es-tile-task-link" to={workspacePath("/tasks")}>
+                                    核对原任务
+                                </Link>
+                            ) : null}
                             <Tooltip title={blocked || undefined}>
-                                <Button size="small" icon={<RefreshCw size={14} aria-hidden />} disabled={Boolean(blocked)} onClick={onRerun}>
-                                    重新生成
-                                </Button>
+                                {display.state !== "review" ? (
+                                    <Button size="small" icon={<RefreshCw size={14} aria-hidden />} loading={acting} disabled={Boolean(blocked)} onClick={onRerun}>
+                                        {display.state === "recover" ? "继续保存（不重新生成）" : "重新生成"}
+                                    </Button>
+                                ) : null}
                             </Tooltip>
                         </div>
                     ) : null}
@@ -257,14 +288,20 @@ export function ResultTile({
                             </button>
                         </Tooltip>
                         <Tooltip title={blocked || "再出一张"}>
-                            <button type="button" className="es-media-btn" aria-label="再出一张" disabled={Boolean(blocked) || active} onClick={onRerun}>
+                            <button type="button" className="es-media-btn" aria-label="再出一张" disabled={Boolean(blocked) || active || acting} onClick={onRerun}>
                                 <RefreshCw size={14} />
                             </button>
                         </Tooltip>
                     </div>
                 ) : null}
             </div>
-            {caption ? <figcaption className="es-tile-caption">{caption}</figcaption> : null}
+            {detailTitle || caption || showContext ? (
+                <figcaption className="es-tile-caption" title={detailTitle || caption}>
+                    {detailTitle ? <strong>{detailTitle}</strong> : caption || shot.title}
+                    {screenPurpose ? <span className="es-tile-context">{screenPurpose}</span> : null}
+                    {display.state !== "done" ? <span>{display.label}</span> : null}
+                </figcaption>
+            ) : null}
         </figure>
     );
 }
@@ -272,7 +309,6 @@ export function ResultTile({
 function GroupCard({
     product,
     group,
-    blocked,
     imageModel,
     runner,
     edit,
@@ -281,7 +317,6 @@ function GroupCard({
 }: {
     product: StudioProduct;
     group: StudioShotGroup;
-    blocked: string;
     imageModel: string;
     runner: StudioRunner;
     edit: Edit;
@@ -289,9 +324,13 @@ function GroupCard({
     onReference: (output: StudioOutput) => void;
 }) {
     const { message, modal } = App.useApp();
+    const blocked = studioImageSetupBlock(product, imageModel);
     const config = useEffectiveConfig();
     const [exporting, setExporting] = useState<StudioArchiveKind | "long" | "review">();
     const [reading, setReading] = useState(false);
+    const [acting, setActing] = useState<string[]>([]);
+    const [observation, setObservation] = useState(0);
+    const [taskSnapshot, setTaskSnapshot] = useState<{ scope: string; items: Record<string, GenerationTask> }>({ scope: getActiveUserScope(), items: {} });
     const [reviewResult, setReviewResult] = useState<{ signature: string; report: StudioDeliveryReview }>();
     const exportController = useRef<AbortController | undefined>(undefined);
     const scope = getActiveUserScope();
@@ -304,9 +343,20 @@ function GroupCard({
         [scope, product.id, group.key],
     );
     const shots = group.shots;
+    const taskIds = JSON.stringify([
+        ...new Set(
+            shots.flatMap((shot) => {
+                const attempt = studioShotLatestAttempt(shot);
+                return attempt?.taskId ? [attempt.taskId] : [];
+            }),
+        ),
+    ]);
+    useEffect(() => subscribeGenerationTasks(JSON.parse(taskIds) as string[], (task) => setTaskSnapshot((current) => ({ scope, items: { ...(current.scope === scope ? current.items : {}), [task.id]: task } }))), [scope, taskIds, observation]);
+    const tasks = taskSnapshot.scope === scope ? taskSnapshot.items : {};
+    const progress = studioGroupProgress(shots, tasks);
     const done = shots.filter((shot) => studioShotPreview(shot)).length;
     const complete = done > 0 && done === shots.length;
-    const active = shots.filter((shot) => shot.attempts.some(studioAttemptActive)).length;
+    const active = progress.active;
     const failed = shots.filter((shot) => {
         const latest = studioShotLatestAttempt(shot);
         return !studioShotPreview(shot) && latest && (latest.status === "failed" || latest.status === "cancelled");
@@ -317,13 +367,49 @@ function GroupCard({
     const platform = ecommercePlatform(product.platform)?.name;
     const isSet = Boolean(group.kind);
 
-    const rerun = async (shotIds: string[]) => {
+    const rerun = async (shotIds: string[], intent: "new" | "resume" = "resume") => {
         if (blocked) return void message.warning(blocked);
+        if (acting.length) return;
+        setActing(shotIds);
         try {
-            const count = await runner.rerun(product.id, group.ref, shotIds, imageModel);
-            if (!count) message.info("这些图正在生成，等它们完成");
+            const session = captureUserSession();
+            const regenerate: string[] = [];
+            let recovered = 0;
+            let checked = 0;
+            for (const shot of shots.filter((item) => shotIds.includes(item.id))) {
+                const attempt = studioShotLatestAttempt(shot);
+                const task = attempt?.taskId ? await queryGenerationTask(attempt.taskId, { signal: session.signal }) : undefined;
+                assertCurrentUserSession(session);
+                const display = studioShotDisplay(shot, task);
+                if (display.state === "review" || (attempt && studioAttemptNeedsReview(attempt))) {
+                    checked += 1;
+                    continue;
+                }
+                if (task && (task.status === "queued" || task.status === "running" || (task.status === "succeeded" && intent === "resume") || (task.status === "failed" && task.canRecoverMedia))) {
+                    const next = task.canRecoverMedia && task.status === "failed" ? await recoverGenerationTaskMedia(task.id) : task;
+                    assertCurrentUserSession(session);
+                    setTaskSnapshot((current) => ({ scope, items: { ...(current.scope === scope ? current.items : {}), [next.id]: next } }));
+                    edit(
+                        (current) =>
+                            patchStudioShotAt(current, group.ref, shot.id, (value) => ({
+                                ...value,
+                                attempts: value.attempts.map((item) => (item.id === attempt?.id ? { ...item, status: next.status === "succeeded" ? "running" : next.status, error: undefined, completedAt: undefined } : item)),
+                            })),
+                        { immediate: true },
+                    );
+                    const current = useStudioStore.getState().products.find((item) => item.id === product.id);
+                    if (current) runner.resume(current);
+                    recovered += 1;
+                } else regenerate.push(shot.id);
+            }
+            if (regenerate.length) await runner.rerun(product.id, group.ref, regenerate, imageModel);
+            if (recovered) setObservation((value) => value + 1);
+            if (recovered) message.success(`已接回 ${recovered} 个原任务，不会重新生成`);
+            if (checked) message.warning("有原任务费用待核对，未重复提交");
         } catch (error) {
             message.error(error instanceof Error ? error.message : "提交失败");
+        } finally {
+            setActing([]);
         }
     };
 
@@ -339,7 +425,7 @@ function GroupCard({
         try {
             composed = await composeStudioShots(product, plan, controller.signal);
             if (!composed.length) throw new Error("这一组还没有出好的图");
-            const checked = await inspectStudioDelivery(product, plan, composed, controller.signal);
+            const checked = await inspectStudioDelivery(product, shots, composed, group.kind ?? "single", controller.signal);
             assertCurrent();
             setReviewResult({ signature, report: checked });
             if (mode === "review") return;
@@ -399,7 +485,7 @@ function GroupCard({
         void downloadOutputs(items).catch((error) => message.error(error instanceof Error ? error.message : "下载失败"));
     };
 
-    const status = active ? `进行中 ${active}` : failed ? `${failed} 张失败` : done === shots.length ? "已完成" : `已出 ${done}/${shots.length}`;
+    const unit = group.kind === "detail" ? "屏" : "张";
     return (
         <article className="es-group">
             <TaskSettlement ids={shots.flatMap((shot) => shot.attempts.flatMap((attempt) => (attempt.taskId ? [attempt.taskId] : [])))} />
@@ -407,38 +493,38 @@ function GroupCard({
                 <div className="es-group-title">
                     <strong>{group.title}</strong>
                     <span className="es-group-meta">
-                        {[`${shots.length} ${group.kind === "detail" ? "屏" : "张"}`, ratios.length === 1 ? ratios[0] : "", platform || "", model ? configuredModelDisplayName(config, model) : ""].filter(Boolean).join(" · ")}
+                        {[`${shots.length} ${unit}`, ratios.length === 1 ? ratios[0] : "", platform || "", model ? configuredModelDisplayName(config, model) : ""].filter(Boolean).join(" · ")}
                         {" · "}
                         <RelativeTime value={group.createdAt} />
                     </span>
                 </div>
                 <div className="es-group-actions">
-                    <span className="es-group-status" data-tone={failed && !active ? "warning" : undefined}>
-                        {status}
-                    </span>
+                    {complete && !active && !progress.recover && !progress.review ? <span className="es-group-status">已保存</span> : null}
                     {pending.length || failed ? (
                         <Tooltip title={blocked || undefined}>
-                            <Button size="small" disabled={Boolean(blocked)} onClick={() => rerun(shots.filter((shot) => !studioShotPreview(shot)).map((shot) => shot.id))}>
-                                {pending.length && !failed ? `生成 ${pending.length} 张` : "重试失败的"}
+                            <Button size="small" loading={Boolean(acting.length)} disabled={Boolean(blocked)} onClick={() => rerun(shots.filter((shot) => !studioShotPreview(shot)).map((shot) => shot.id))}>
+                                {progress.recover ? "恢复未完成的" : pending.length && !failed ? `生成 ${pending.length} ${unit}` : "处理未完成的"}
                             </Button>
                         </Tooltip>
+                    ) : null}
+                    {group.kind === "detail" && done > 0 ? (
+                        <Button size="small" aria-pressed={reading} onClick={() => setReading((value) => !value)}>
+                            {reading ? "收起整页" : "预览整页"}
+                        </Button>
                     ) : null}
                     {isSet ? (
                         <Button size="small" icon={<Download size={13} />} loading={exporting === "complete"} disabled={!complete || Boolean(exporting)} onClick={() => void exportSet("complete")}>
                             下载完整文件包
                         </Button>
                     ) : null}
-                    <Button size="small" loading={exporting === "review"} disabled={!done || Boolean(exporting)} onClick={() => void exportSet("review")}>
-                        文件与文案检查
-                    </Button>
                     <Dropdown
                         trigger={["click"]}
                         menu={{
                             items: [
-                                ...(!isSet ? [{ key: "download", icon: <Download size={14} />, label: "全部下载", disabled: !done }] : []),
+                                { key: "review", label: "文件与文案诊断", disabled: !done || Boolean(exporting) },
+                                ...(!isSet ? [{ key: "download", icon: <Download size={14} />, label: "全部下载", disabled: !complete }] : []),
                                 ...(group.kind === "detail"
                                     ? [
-                                          { key: "reading", label: reading ? "收起整页预览" : "整页阅读预览（标出缺屏）" },
                                           { key: "long", icon: <Rows3 size={14} />, label: "只下载完整原长图（不切片）", disabled: !complete || Boolean(exporting) },
                                           { key: "originals", label: "下载完整原始分屏（不切片）", disabled: !complete || Boolean(exporting) },
                                       ]
@@ -447,9 +533,9 @@ function GroupCard({
                                 { key: "remove", icon: <Trash2 size={14} />, label: "删除记录", danger: true },
                             ],
                             onClick: ({ key }) => {
+                                if (key === "review") void exportSet("review");
                                 if (key === "download") downloadAll();
                                 if (key === "long") void exportSet("long");
-                                if (key === "reading") setReading((value) => !value);
                                 if (key === "originals" || key === "draft") void exportSet(key);
                                 if (key === "remove") remove();
                             },
@@ -461,17 +547,55 @@ function GroupCard({
                     </Dropdown>
                 </div>
             </header>
+            {(!complete || active > 0 || progress.recover > 0 || progress.review > 0) && shots.length > 1 ? (
+                <section className="es-group-progress" aria-label="逐屏生成进度" aria-live="polite">
+                    <div className="es-group-progress-head">
+                        <strong>
+                            已保存 {done} / {progress.total} {unit}
+                        </strong>
+                        <span>
+                            {[
+                                progress.active ? `${progress.active} 进行中` : "",
+                                progress.pending ? `${progress.pending} 待生成` : "",
+                                progress.recover ? `${progress.recover} 待保存` : "",
+                                progress.review ? `${progress.review} 待核对` : "",
+                                progress.failed ? `${progress.failed} 未生成` : "",
+                            ]
+                                .filter(Boolean)
+                                .join(" · ")}
+                        </span>
+                    </div>
+                    <div className="es-screen-track" aria-label="每屏状态">
+                        {progress.screens.map((screen, index) => {
+                            const detailTitle = studioDetailResultTitle(group, screen.shot, index);
+                            return (
+                                <a
+                                    key={screen.shot.id}
+                                    href={`#studio-shot-${group.key}-${screen.shot.id}`}
+                                    data-state={screen.state}
+                                    aria-label={`${detailTitle || `第 ${index + 1} ${unit} ${screen.shot.title}`} · ${screen.label}`}
+                                    title={`${detailTitle || screen.shot.title} · ${screen.label}`}
+                                >
+                                    {index + 1}
+                                    <span>{screen.label}</span>
+                                </a>
+                            );
+                        })}
+                    </div>
+                </section>
+            ) : null}
             {isSet && done > 0 && !complete ? <p className="es-delivery-note">缺第 {shots.flatMap((shot, index) => (studioShotPreview(shot) ? [] : [index + 1])).join("、")} 张。补齐后可下载完整文件；更多操作可导出分屏草稿。</p> : null}
             {group.kind === "detail" && reading ? (
                 <section className="es-delivery-reading" aria-label="消费者整页阅读预览">
                     <strong>{complete ? "整页阅读预览" : `草稿预览 · ${done}/${shots.length} 屏`}</strong>
                     {shots.map((shot, index) => {
                         const output = studioShotPreview(shot);
+                        const detailTitle = studioDetailResultTitle(group, shot, index);
                         return output ? (
-                            <StudioResultArtwork key={shot.id} product={product} group={group} shot={shot} output={output} full />
+                            <StudioResultArtwork key={shot.id} product={product} group={group} shot={shot} output={output} title={detailTitle} full />
                         ) : (
                             <div key={shot.id} className="es-delivery-missing">
-                                第 {index + 1} 屏缺图 · {shot.title}
+                                {detailTitle ? `${detailTitle} · 缺图` : `第 ${index + 1} 屏缺图 · ${shot.title}`}
                             </div>
                         );
                     })}
@@ -482,7 +606,7 @@ function GroupCard({
                     <summary>
                         文件{review.fileSet === "complete" ? "齐全" : "未齐"} · {review.delivered}/{review.total} 张 · {review.issues.length} 项提醒
                     </summary>
-                    <p>这里只测文件并检查策划文案；图中实字、商品事实与平台上架资格未核对。</p>
+                    <p>检查文件和策划文案，不识别图片里的实字。</p>
                     <ul>
                         {review.issues.map((issue, index) => (
                             <li key={index}>
@@ -501,7 +625,11 @@ function GroupCard({
                         group={group}
                         shot={shot}
                         caption={isSet ? `${String(index + 1).padStart(2, "0")} ${shot.title}` : undefined}
+                        detailTitle={studioDetailResultTitle(group, shot, index)}
+                        showContext={group.kind === "detail"}
                         blocked={blocked}
+                        task={tasks[studioShotLatestAttempt(shot)?.taskId || ""]}
+                        acting={acting.includes(shot.id)}
                         onView={() => onView({ groupKey: group.key, shotId: shot.id })}
                         onDownload={() => {
                             const preview = studioShotPreview(shot);
@@ -515,7 +643,7 @@ function GroupCard({
                             const preview = studioShotPreview(shot);
                             if (preview) onReference(preview);
                         }}
-                        onRerun={() => rerun([shot.id])}
+                        onRerun={() => rerun([shot.id], studioShotPreview(shot) ? "new" : "resume")}
                         onSync={() => runner.resume(product)}
                     />
                 ))}
@@ -524,7 +652,7 @@ function GroupCard({
     );
 }
 
-/** 助手排好镜头后交来的出图请求：这里就是审批单，用户点确认才提交任务。 */
+/** 助手排好页面后交来的出图请求；生成是一次明确的计费动作，页面设计本身不需要额外审批。 */
 function AgentRequestCard({ product, blocked, onConfirm, onDismiss }: { product: StudioProduct; blocked: string; onConfirm: (shotIds: string[]) => void; onDismiss: () => void }) {
     const request = product.pendingGeneration!;
     const shots = (studioPlanOf(product, request.kind)?.shots || []).filter((shot) => request.shotIds.includes(shot.id));
@@ -533,15 +661,15 @@ function AgentRequestCard({ product, blocked, onConfirm, onDismiss }: { product:
         <section className="es-request" aria-label="助手的出图请求">
             <div className="es-request-text">
                 <strong>
-                    助手排好了{STUDIO_PLAN_META[request.kind].title}，请你确认出图 {runnable.length} 张
+                    页面设计已准备好 · 生成 {runnable.length} 张{STUDIO_PLAN_META[request.kind].title}
                 </strong>
-                <span>{request.note || (shots.length ? shots.map((shot) => shot.title).join("、") : "这些镜头已不在方案里，可以忽略这条请求。")}</span>
+                <span>{request.note || (shots.length ? shots.map((shot) => shot.title).join("、") : "这些页面已不在方案里，可以忽略这条请求。")}</span>
             </div>
             <div className="es-request-actions">
                 <Button onClick={onDismiss}>暂不生成</Button>
                 <Tooltip title={blocked || "用左侧选中的图片模型逐张提交，按模型计费"}>
                     <Button type="primary" disabled={!runnable.length || Boolean(blocked)} onClick={() => onConfirm(runnable.map((shot) => shot.id))}>
-                        确认生成 {runnable.length} 张
+                        生成 {runnable.length} 张
                     </Button>
                 </Tooltip>
             </div>
@@ -554,7 +682,6 @@ export function StudioResults({
     edit,
     runner,
     imageModel,
-    blocked,
     onView,
     onReference,
 }: {
@@ -562,7 +689,6 @@ export function StudioResults({
     edit: Edit;
     runner: StudioRunner;
     imageModel: string;
-    blocked: string;
     onView: (target: StudioViewerTarget) => void;
     onReference: (output: StudioOutput) => void;
 }) {
@@ -574,7 +700,7 @@ export function StudioResults({
     const clearRequest = (id: string) => edit((current) => ({ ...current, pendingGeneration: current.pendingGeneration?.id === id ? undefined : current.pendingGeneration }), { immediate: true });
     return (
         <section className="es-results" aria-label="生成记录">
-            <header className="es-results-head">
+            <header className="es-workspace-head">
                 <h2>生成记录</h2>
                 {total ? <span>{total} 张</span> : null}
             </header>
@@ -582,7 +708,7 @@ export function StudioResults({
                 {request ? (
                     <AgentRequestCard
                         product={product}
-                        blocked={blocked}
+                        blocked={studioImageSetupBlock(product, imageModel)}
                         onDismiss={() => clearRequest(request.id)}
                         onConfirm={async (shotIds) => {
                             try {
@@ -595,12 +721,12 @@ export function StudioResults({
                     />
                 ) : null}
                 {groups.map((group) => (
-                    <GroupCard key={group.key} product={group.source ? { ...product, ...group.source } : product} group={group} blocked={blocked} imageModel={imageModel} runner={runner} edit={edit} onView={onView} onReference={onReference} />
+                    <GroupCard key={group.key} product={group.source ? { ...product, ...group.source } : product} group={group} imageModel={imageModel} runner={runner} edit={edit} onView={onView} onReference={onReference} />
                 ))}
                 {!groups.length && !request ? (
                     <div className="es-empty">
                         <strong>还没有生成记录</strong>
-                        <span>上传商品图、填好信息后点「生成商品图」，出好的图会按组出现在这里。</span>
+                        <span>从页面设计提交出图后，这里会显示各张的进度、候选和交付检查。</span>
                     </div>
                 ) : null}
             </div>

@@ -9,8 +9,10 @@ import (
 	"strings"
 	"testing"
 	"time"
+
 	"yingce/backend/internal/kernel"
 	"yingce/backend/internal/model"
+	"yingce/backend/internal/protocol"
 )
 
 func TestEcommercePlannerDefaultsAndOverrides(t *testing.T) {
@@ -200,6 +202,25 @@ func TestEcommercePrivateErrorsKeepStatusWithoutEchoedInstructions(t *testing.T)
 	}
 	if !errors.Is(privateEcommerceAnalysisError(context.Canceled), context.Canceled) {
 		t.Fatal("cancellation lost")
+	}
+}
+
+func TestEcommercePrivateImageErrorsPreserveProviderProgressAndDelivery(t *testing.T) {
+	const privateText = "private design instructions"
+	upstream := providerHTTPError{StatusCode: 503, Body: privateText, RetryAfter: time.Second}
+	var pending providerStatePendingError
+	if err := privateEcommerceAnalysisError(detachedProtocolPending("task-1", privateText, 25)); !errors.As(err, &pending) || !pending.Detached || pending.TaskID != "task-1" || pending.PollDelay != 30*time.Second || strings.Contains(pending.Stage, privateText) {
+		t.Fatalf("private pending signal was lost or exposed: %#v", err)
+	}
+	var terminal providerTaskTerminalError
+	if err := privateEcommerceAnalysisError(providerTaskTerminalError{TaskID: "task-1", Status: protocol.StatusCancelled, Message: privateText}); !errors.As(err, &terminal) || terminal.Status != protocol.StatusCancelled || strings.Contains(terminal.Message, privateText) {
+		t.Fatalf("private terminal signal was lost or exposed: %#v", err)
+	}
+	var delivery *mediaRecoveryError
+	var safeHTTP providerHTTPError
+	err := privateEcommerceAnalysisError(&mediaRecoveryError{stage: "download", retryable: true, cause: upstream})
+	if !errors.As(err, &delivery) || !delivery.retryable || delivery.stage != "download" || !errors.As(err, &safeHTTP) || safeHTTP.RetryAfter != time.Second || safeHTTP.Body != "" {
+		t.Fatalf("private delivery signal was lost or exposed: %#v", err)
 	}
 }
 

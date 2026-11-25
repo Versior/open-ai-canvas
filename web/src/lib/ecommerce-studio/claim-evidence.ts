@@ -1,16 +1,20 @@
 import { studioCleanNotes } from "./brief";
 import { studioAnsweredAsks, studioAskAnswer } from "./plan-prep";
 import { studioCopyPair } from "./typography";
-import { studioFactUsable, type StudioProduct, type StudioShot } from "./types";
+import { studioFactUsable, type StudioFact, type StudioProduct, type StudioShot } from "./types";
 
 export type StudioClaimSource = { id: string; label: string; text: string; appearanceOnly?: boolean; value?: string };
+
+export function studioFactSupportsArtwork(fact: StudioFact) {
+    return studioFactUsable(fact) && (fact.group !== "package" || fact.evidence === "confirmed");
+}
 
 export function studioClaimSources(product: StudioProduct): StudioClaimSource[] {
     const sources: StudioClaimSource[] = [];
     const add = (id: string, label: string, text: string, appearanceOnly = false, value?: string) => {
         if (text.trim()) sources.push({ id, label, text: text.trim(), appearanceOnly, value });
     };
-    for (const fact of product.dossier?.facts || []) if (studioFactUsable(fact)) add(`fact:${fact.id}`, fact.label, `${fact.label} ${fact.value}`, false, fact.value);
+    for (const fact of product.dossier?.facts || []) if (studioFactSupportsArtwork(fact)) add(`fact:${fact.id}`, fact.label, `${fact.label} ${fact.value}`, false, fact.value);
     studioCleanNotes(product.sellerNotes)
         .split(/[\n；;]/)
         .forEach((line, index) => {
@@ -85,6 +89,12 @@ const metrics: Record<string, [string, RegExp][]> = {
         ["毛重", /毛重|含包装重/g],
         ["重量", /重量|重约|净重|杯重|自重|重(?=\s*[:：]?\s*$)/g],
     ],
+    w: [
+        ["峰值功率", /(?:峰值|最大)\s*功率/g],
+        ["输入功率", /输入\s*功率/g],
+        ["输出功率", /输出\s*功率/g],
+        ["功率", /(?:额定\s*)?功率/g],
+    ],
     pct: [
         ["抑菌", /抑菌|抗菌/g],
         ["过滤", /过滤/g],
@@ -111,6 +121,11 @@ const englishClaimTokens: [RegExp, string][] = [
     [/\b(?:load capacity|load bearing)\b/g, "承重"],
     [/\b(?:net weight|weighs?|weight)\b/g, "重量"],
     [/\bcapacity\b/g, "容量"],
+    [/\b(?:rated power|power rating)\b/g, "额定功率"],
+    [/\b(?:peak|maximum|max\.?)[ -]+power\b/g, "峰值功率"],
+    [/\binput power\b/g, "输入功率"],
+    [/\boutput power\b/g, "输出功率"],
+    [/\bpower\b/g, "功率"],
     [/\broom temperature\b/g, "室温"],
     [/\b(?:sealed|lid closed)\b/g, "密闭"],
     [/\bfully charged\b/g, "满电"],
@@ -205,6 +220,7 @@ const specLabels = [
     ["保温", "保温时长", "保温时间", "heat retention"],
     ["保冷", "保冷时长", "保冷时间", "cold retention"],
     ["续航", "续航时长", "battery life"],
+    ["额定功率", "功率", "rated power", "power rating", "power"],
 ];
 const specKeys = new Map(specLabels.flatMap((names) => names.map((name) => [compact(name), names[0]] as const)));
 const specToken = (value: string) => compact(value).replace(/[.!！。]+$/u, "");
@@ -296,7 +312,7 @@ export function checkStudioClaim(value: string, sources: StudioClaimSource[], bl
         const rest = sentence.replace(quantityPattern, " ");
         for (const match of rest.matchAll(/[a-z]*\d+(?:\.\d+)?[a-z]*/gi)) {
             const token = match[0];
-            if (/^\d/.test(token) && /(?:保温|保冷|续航|承重|重量|高度|宽度|长度|容量|厚度|直径)[ :：约达为]*(?:≥|≤)?\s*$/.test(rest.slice(0, match.index))) return { refs: [...refs], issue: `「${token}」缺少可核对的指标单位` };
+            if (/^\d/.test(token) && /(?:保温|保冷|续航|承重|重量|高度|宽度|长度|容量|厚度|直径|功率)[ :：约达为]*(?:≥|≤)?\s*$/.test(rest.slice(0, match.index))) return { refs: [...refs], issue: `「${token}」缺少可核对的指标单位` };
             const source = sources.find((entry) => [...normalize(entry.text).matchAll(/[a-z]*\d+(?:\.\d+)?[a-z]*/gi)].some((number) => number[0] === token));
             if (!source) return { refs: [...refs], issue: `「${token}」没有可核对的原文依据` };
             refs.add(source.id);

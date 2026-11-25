@@ -2,15 +2,15 @@ import { App, Button, Input } from "antd";
 import { Copy, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { studioPromptOverridesRevision, subscribeStudioPromptOverrides } from "@/lib/ecommerce-studio/prompt-overrides";
-import { studioPlatformForbidsText } from "@/lib/ecommerce-studio/brief";
 import { reviewStudioCopy, studioFactCopyOptions } from "@/lib/ecommerce-studio/art-direction";
 import { studioScreenCopyBudget, studioScreenCopyIssue } from "@/lib/ecommerce-studio/detail-plan";
-import { STUDIO_TWEAKS, studioShotSpec } from "@/lib/ecommerce-studio/shot-specs";
-import { STUDIO_SHOT_ADJUST_MAX, type StudioProduct, type StudioShot } from "@/lib/ecommerce-studio/types";
+import { compileStudioShot, type StudioLocatedShot } from "@/lib/ecommerce-studio/generation-input";
+import { studioImageTextContext } from "@/lib/ecommerce-studio/prompt-compiler";
+import { STUDIO_TWEAKS } from "@/lib/ecommerce-studio/shot-specs";
+import { STUDIO_SHOT_ADJUST_MAX, type StudioCopySource, type StudioProduct, type StudioShot } from "@/lib/ecommerce-studio/types";
 import { useEffectiveConfig } from "@/stores/use-config-store";
-import { compileStudioShot, locateStudioShot, type StudioShotRef } from "./use-studio-runner";
 
-export type StudioShotPatch = Pick<StudioShot, "tweaks" | "headline" | "subline" | "lines" | "adjust">;
+export type StudioShotPatch = Pick<StudioShot, "tweaks" | "headline" | "subline" | "lines" | "adjust"> & { copySource?: StudioCopySource };
 
 const LAYER_SOURCE_HINT = "每层标出来源；超出模型字数上限时，先裁掉质感、品类、风格这些修饰层。";
 
@@ -24,8 +24,7 @@ function sameList(a: string[], b: string[]) {
  */
 export function StudioShotTuner({
     product,
-    shotRef,
-    shot,
+    located,
     imageModel,
     blocked,
     active,
@@ -35,8 +34,7 @@ export function StudioShotTuner({
     revisionResourceId,
 }: {
     product: StudioProduct;
-    shotRef: StudioShotRef;
-    shot: StudioShot;
+    located: StudioLocatedShot;
     imageModel: string;
     blocked: string;
     active: boolean;
@@ -48,10 +46,16 @@ export function StudioShotTuner({
     const { message } = App.useApp();
     const config = useEffectiveConfig();
     const promptRevision = useSyncExternalStore(subscribeStudioPromptOverrides, studioPromptOverridesRevision);
+    const { shot } = located;
+    const source = located.source ?? product;
+    const editableCopy = Boolean(onApplyCopy || shot.copySource === "user");
+    const initialHeadline = editableCopy ? shot.headline : "";
+    const initialSubline = editableCopy ? shot.subline : "";
+    const initialLines = editableCopy ? shot.lines : [];
     const [tweaks, setTweaks] = useState(shot.tweaks);
-    const [headline, setHeadline] = useState(shot.headline);
-    const [subline, setSubline] = useState(shot.subline);
-    const [lines, setLines] = useState(shot.lines.join("\n"));
+    const [headline, setHeadline] = useState(initialHeadline);
+    const [subline, setSubline] = useState(initialSubline);
+    const [lines, setLines] = useState(initialLines.join("\n"));
     const [adjust, setAdjust] = useState(shot.adjust || "");
     useEffect(() => {
         if (!reviewRevision) return;
@@ -62,33 +66,27 @@ export function StudioShotTuner({
         setAdjust(reviewRevision);
     }, [reviewRevision]);
     const [promptOpen, setPromptOpen] = useState(false);
-    const spec = studioShotSpec(shot.role, product.dossier?.family || "generic");
-    const copyAllowed = spec.copySlot !== "none" && product.brief.language !== "none" && !studioPlatformForbidsText(product, shot.role);
-    // 详情页策划的屏文案不按角色的版位走，主标题、副标题和要点都可以改。
-    const planned = Boolean(shot.visual?.trim());
-
-    const patch = useMemo<StudioShotPatch>(
-        () => ({
-            tweaks,
-            headline: headline.trim(),
-            subline: subline.trim(),
-            lines: lines
-                .split("\n")
-                .map((line) => line.trim())
-                .filter(Boolean),
-            adjust: adjust.trim().slice(0, STUDIO_SHOT_ADJUST_MAX),
-        }),
-        [adjust, headline, lines, subline, tweaks],
-    );
+    const copyAllowed = !studioImageTextContext(source, { ...shot, adjust }, located.pageKind).noText;
+    const copyLines = lines
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
+    const copyChanged = copyAllowed && (headline.trim() !== initialHeadline || subline.trim() !== initialSubline || !sameList(copyLines, initialLines));
+    const patch: StudioShotPatch = {
+        tweaks,
+        headline: copyChanged ? headline.trim() : shot.headline,
+        subline: copyChanged ? subline.trim() : shot.subline,
+        lines: copyChanged ? copyLines : shot.lines,
+        adjust: adjust.trim().slice(0, STUDIO_SHOT_ADJUST_MAX),
+        copySource: copyChanged ? "user" : shot.copySource,
+    };
     const changed = !sameList(patch.tweaks, shot.tweaks) || patch.headline !== shot.headline || patch.subline !== shot.subline || !sameList(patch.lines, shot.lines) || patch.adjust !== (shot.adjust || "");
     const copyBudget = studioScreenCopyBudget(shot.role);
-    const copyIssue = copyAllowed ? studioScreenCopyIssue({ ...shot, ...patch }) : undefined;
+    const copyIssue = copyAllowed && (onApplyCopy || patch.copySource === "user") ? studioScreenCopyIssue({ ...shot, ...patch }) : undefined;
 
     const preview = useMemo(() => {
         if (!promptOpen) return undefined;
         if (!imageModel) return { error: "先在左侧选择图片模型" };
-        const located = locateStudioShot(product, shotRef, shot.id);
-        if (!located) return { error: "这张图已不在记录里" };
         const latest = located.shot.attempts.at(-1);
         if (!changed && latest?.input && ["submitting", "queued", "running"].includes(latest.status)) return { compiled: latest.input.compiled };
         try {
@@ -96,7 +94,7 @@ export function StudioShotTuner({
         } catch (error) {
             return { error: error instanceof Error ? error.message : "提示词编译失败" };
         }
-    }, [config, imageModel, patch, product, promptOpen, shot.id, shotRef, revisionResourceId, changed, promptRevision]);
+    }, [config, imageModel, patch, product, promptOpen, located, revisionResourceId, changed, promptRevision]);
 
     const toggle = (id: string) => setTweaks((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
 
@@ -127,13 +125,13 @@ export function StudioShotTuner({
             </label>
             {copyAllowed ? (
                 <div className="es-tuner-copy">
-                    {reviewStudioCopy({ ...patch, role: shot.role }).map((issue) => (
+                    {reviewStudioCopy({ headline, subline, lines: copyLines, role: shot.role }).map((issue) => (
                         <p key={issue.code} className="es-prompt-note" data-tone="warning">
                             {issue.message}
                         </p>
                     ))}
                     <div className="es-chips" aria-label="用已确认卖点替换文案">
-                        {studioFactCopyOptions(product).map((copy) => (
+                        {studioFactCopyOptions({ ...product, ...located.source }).map((copy) => (
                             <button
                                 key={copy.headline}
                                 type="button"
@@ -149,20 +147,16 @@ export function StudioShotTuner({
                     </div>
                     <label className="es-tuner-field">
                         <span>图上主标题</span>
-                        <Input placeholder="留空则不写" value={headline} maxLength={30} onChange={(event) => setHeadline(event.target.value)} />
+                        <Input placeholder={onApplyCopy ? undefined : "留空由图片模型撰写"} value={headline} maxLength={30} onChange={(event) => setHeadline(event.target.value)} />
                     </label>
-                    {spec.copySlot === "headline-subline" || planned || onApplyCopy ? (
-                        <label className="es-tuner-field">
-                            <span>副标题</span>
-                            <Input placeholder="留空则不写" value={subline} maxLength={40} onChange={(event) => setSubline(event.target.value)} />
-                        </label>
-                    ) : null}
-                    {spec.copySlot === "points" || planned || onApplyCopy ? (
-                        <label className="es-tuner-field">
-                            <span>要点（每行一条，最多 {copyBudget.lines} 条）</span>
-                            <Input.TextArea value={lines} autoSize={{ minRows: 2, maxRows: 6 }} maxLength={300} onChange={(event) => setLines(event.target.value)} />
-                        </label>
-                    ) : null}
+                    <label className="es-tuner-field">
+                        <span>副标题</span>
+                        <Input value={subline} maxLength={40} onChange={(event) => setSubline(event.target.value)} />
+                    </label>
+                    <label className="es-tuner-field">
+                        <span>要点（最多 {copyBudget.lines} 条，每行一条）</span>
+                        <Input.TextArea value={lines} autoSize={{ minRows: 2, maxRows: 6 }} maxLength={300} onChange={(event) => setLines(event.target.value)} />
+                    </label>
                 </div>
             ) : null}
             {copyIssue ? (

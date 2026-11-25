@@ -43,7 +43,7 @@ test("run source and compiled input survive reload without channel credentials",
     const reloaded = normalizeStudioProduct(JSON.parse(JSON.stringify(product)))!;
     const after = compileStudioShot(reloaded, locateStudioShot(reloaded, ref, shot.id)!, "gpt-image-2", defaultConfig).compiled;
     expect(after.prompt).toBe(before);
-    expect(after.layers.find((layer) => layer.id === "market")?.text).toContain("中文");
+    expect(after.layers.find((layer) => layer.id === "copy")?.text).toContain("简体中文");
     expect(reloaded.runs[0].shots[3].attempts[0].input?.compiled.prompt).toBe(before);
     expect(JSON.stringify(reloaded)).not.toContain("FAKE_TEST_CREDENTIAL");
     expect(reloaded.name).toBe("改后的名字");

@@ -29,7 +29,7 @@ type ecommerceAutoSkillPromptReference struct {
 // applyEcommerceAutoSkills enriches ordinary ecommerce text tasks with a small,
 // immutable set of visible skill references. It never installs a marketplace skill.
 func (s *Service) applyEcommerceAutoSkills(userID string, input *canvasGenerationInput) error {
-	if input == nil || input.Mode != "text" || input.Metadata == nil {
+	if input == nil || input.Mode != "text" || input.Metadata == nil || ecommerceStudioContentPlan(input.Metadata) {
 		return nil
 	}
 	flow, marked := input.Metadata["ecommerceAnalysisFlow"].(string)

@@ -23,6 +23,17 @@ test("new integrated candidates in an old overlay group are never typeset again"
     expect(studioOutputNeedsLegacyTypeset({ textMode: "overlay" }, shot, output)).toBe(true);
 });
 
+test("new content-brief screens stay one-pass even when the model is weak at text", () => {
+    const product = createStudioProduct("product");
+    const run = createStudioRun(product, () => "id");
+    const shot = run.shots[0];
+    shot.visual = "展示商品真实轮廓与可见细节";
+    shot.purchaseQuestion = "买家能否确认商品外观";
+    const output = { resourceId: "generated-artwork", url: "" };
+    shot.attempts = [{ id: "legacy-missing-mode", model: "flux-1.1-pro", status: "succeeded", tweaks: [], createdAt: "", outputs: [output] }];
+    expect(studioOutputNeedsLegacyTypeset({ textMode: "overlay" }, shot, output)).toBe(false);
+});
+
 test("historical studio run keeps its typesetting style after the product style changes", () => {
     const product = createStudioProduct("product");
     product.style = "noir";

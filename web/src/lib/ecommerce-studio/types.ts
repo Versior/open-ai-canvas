@@ -7,6 +7,7 @@ import type { StudioCompiledPrompt } from "./prompt-compiler";
  * 图片一律以 resourceId 字段引用已上传资源，孤儿清理据此识别"仍被引用"。
  */
 export const STUDIO_PRODUCT_SCHEMA = 1;
+export const STUDIO_SINGLE_PLAN_MAX_SHOTS = 72;
 
 /** 证据等级：图片可见 / 合理推断 / 待确认 / 卖家已确认。只有可见与已确认能进入出图提示词。 */
 export type StudioEvidence = "visible" | "inferred" | "pending" | "confirmed";
@@ -95,6 +96,9 @@ export type StudioPhoto = {
     addedAt: string;
 };
 
+/** 图内文案的来源：用户明确写下的内容才锁定，AI 策划内容只是可调整的建议。 */
+export type StudioCopySource = "user" | "assistant";
+
 export type StudioFact = {
     id: string;
     group: StudioFactGroup;
@@ -143,6 +147,21 @@ export type StudioOutput = {
 };
 
 export type StudioAttemptStatus = "submitting" | "queued" | "running" | "succeeded" | "failed" | "cancelled";
+export type StudioVisualReviewStatus = "pending" | "running" | "passed" | "failed" | "unknown";
+export type StudioVisualReviewFinding = {
+    area: "text" | "composition" | "product" | "design";
+    status: "pass" | "fail" | "unknown";
+    evidence: string;
+    correction: string;
+};
+export type StudioVisualReview = {
+    status: StudioVisualReviewStatus;
+    taskId?: string;
+    findings?: StudioVisualReviewFinding[];
+    revision?: string;
+    error?: string;
+    checkedAt?: string;
+};
 
 export type StudioAttempt = {
     id: string;
@@ -160,6 +179,8 @@ export type StudioAttempt = {
     createdAt: string;
     completedAt?: string;
     error?: string;
+    /** 图片任务成功后异步执行的视觉验收；缺失表示历史候选，按旧行为兼容。 */
+    visualReview?: StudioVisualReview;
     outputs: StudioOutput[];
 };
 
@@ -167,11 +188,18 @@ export type StudioShot = {
     id: string;
     role: StudioShotRole;
     title: string;
+    /** 套图实际生成的顺序；只给图片模型说明用途，不是版式坐标。 */
+    screenIndex?: number;
+    screenCount?: number;
+    /** 用户选中的模板对本屏明确要求无字。 */
+    noText?: true;
     ratio: string;
     headline: string;
     subline: string;
     /** 详情页卖点屏、参数屏等多行内容。 */
     lines: string[];
+    /** 详情策划生成的文案默认是 assistant；用户在清单里改过后标为 user。 */
+    copySource?: StudioCopySource;
     sellingPointIds: string[];
     /** 微调标签，只影响这张图的镜头规格层。 */
     tweaks: string[];
@@ -179,7 +207,23 @@ export type StudioShot = {
     duty?: string;
     /** 详情页策划给这一屏写的目的与画面；有它时代替镜头规格的构图、光线和背景。 */
     visual?: string;
-    /** 详情页策划给这一屏选的版式，决定要点文字怎么排（图标标签、引线标签等）。 */
+    /** 新版内容 brief：分析模型只说明购买问题，不写成品文案或固定排版。 */
+    purchaseQuestion?: string;
+    /** 新版内容 brief：图片模型必须看见的商品状态、动作、部位或场景。 */
+    displayContent?: string;
+    /** 普通详情：不看文案也能与其他屏区分的画面主体、状态或实物关系。 */
+    visualBeat?: string;
+    /** 新版内容 brief：图片模型的停留入口和主次关系。 */
+    visualFocus?: string;
+    /** 仅补充必要的商品状态、场景或证据，不是成品文案或排版指令。 */
+    imagePrompt?: string;
+    /** 图片模型应避免的事实或画面误读。 */
+    negativePrompt?: string;
+    /** 分析模型仅在确有必要时建议的单屏画幅。 */
+    aspectRatio?: string;
+    /** 本屏引用的商品依据编号，出图时在当前生成快照里取原文；空数组表示只画形态或场景。 */
+    evidenceRefs?: StudioPlannedScreen["evidenceRefs"];
+    /** 详情页策划给这一屏选的版式，作为内容组织建议；默认不锁定图片模型的具体排版。 */
     layout?: StudioDetailLayoutId;
     composition?: StudioCompositionId;
     /** 可选栏目小标题，使用选定图文语言，不带屏序号。 */
@@ -202,7 +246,8 @@ export type StudioSuiteShot = { title: string; duty: string; layout?: StudioSuit
 
 /**
  * 「详情页策划」给这件商品排的一屏。role 对到最接近的镜头规格（平台规则、模特设定沿用）；
- * visual 写到能直接出图，文案只用表单里的标题、卖点和已确认的事实。
+ * visual 写到能直接出图；headline、subline、lines 和 eyebrow 只是策划建议。
+ * 图片模型默认自行决定文案、艺术字与图文关系，只有 copySource=user 才锁定文字。
  */
 export type StudioPlannedScreen = {
     role: StudioShotRole;
@@ -211,6 +256,15 @@ export type StudioPlannedScreen = {
     purpose: string;
     /** 具体画面：场景、商品摆放与角度、人物、道具、色调、光线和文字位置。 */
     visual: string;
+    /** 新版内容 brief 字段；旧 purpose/visual/elements 仍保留用于历史任务恢复。 */
+    purchaseQuestion?: string;
+    displayContent?: string;
+    visualBeat?: string;
+    visualFocus?: string;
+    /** 可选的图片模型补充提示，不承载成品文案或固定排版。 */
+    imagePrompt?: string;
+    negativePrompt?: string;
+    aspectRatio?: string;
     /** 版式：海报大字、图标卖点、引线标注、细节拼格等。 */
     layout: StudioDetailLayoutId;
     composition?: StudioCompositionId;
@@ -221,6 +275,8 @@ export type StudioPlannedScreen = {
     headline: string;
     subline: string;
     lines: string[];
+    /** AI 策划的文字是建议，用户明确改过后才锁定为 user。 */
+    copySource?: StudioCopySource;
     /** 经商品资料核对的依据主题与来源标识；有量化宣称时可追溯到对应原文。 */
     facts: string[];
     evidenceRefs?: string[];
@@ -248,6 +304,25 @@ export type StudioArtDirection = {
     screenVariationPlan?: string;
     referenceDna?: string;
     avoid?: string[];
+};
+
+/**
+ * 详情策划实际读取过的知识库凭证。只保存版本和条目 ID，绝不把知识正文
+ * 写进商品档案、图片提示词或导出文件。
+ */
+export type StudioKnowledgeReceipt = {
+    source: "ecommerce-studio";
+    capability: "detail-plan";
+    version?: string;
+    ids: string[];
+};
+/** 详情页屏数诊断：请求数量可以大于当前商品证据真正能支撑的数量。 */
+export type StudioDetailPlanCapacity = {
+    requestedScreens: number;
+    suggestedScreens: number;
+    maxScreens: number;
+    reasons: string[];
+    missingEvidence: string[];
 };
 /** 出图策划：按商品与用户选定数量排的一组图。 */
 export type StudioDetailPlan = {
@@ -277,12 +352,18 @@ export type StudioDetailPlan = {
     inspiration?: string;
     /** 图片模型执行的整组艺术导演方案；旧策划没有此字段时继续使用兼容路径。 */
     artDirection?: StudioArtDirection;
+    /** 本轮策划由后台知识库检索出的版本与条目 ID，不含知识正文。 */
+    knowledgeReceipt?: StudioKnowledgeReceipt;
     /** 单张图策划：策划时选中的类型和数量。 */
     targets?: StudioPlanTarget[];
     /** 模板套图策划：按哪套模板排的；换了模板策划就不再适用。 */
     suiteId?: string;
     /** 详情页策划时用户选择的屏数；修改屏数后须重新策划。 */
     requestedScreens?: number;
+    /** 资料不足时建议的实际屏数；少于 requestedScreens 不代表策划失败。 */
+    suggestedScreens?: number;
+    /** 资料不足时保留给用户看的证据诊断。 */
+    capacityDiagnostics?: StudioDetailPlanCapacity;
     screens: StudioPlannedScreen[];
 };
 
@@ -403,7 +484,18 @@ export type StudioRun = {
     /** 商品与表单在点生成时的快照，后续编辑只影响新的一组。 */
     source?: StudioGenerationSource;
     /** 模板套图或策划：名字与整套视觉规范，在点生成那一刻定下来；策划另带设计调性和创意主线。 */
-    suite?: { id: string; name: string; style: string; designAnalysis?: string; tone?: StudioDesignToneId; concept?: string; motifs?: string[]; artDirection?: StudioArtDirection };
+    suite?: {
+        id: string;
+        name: string;
+        style: string;
+        designAnalysis?: string;
+        tone?: StudioDesignToneId;
+        concept?: string;
+        motifs?: string[];
+        artDirection?: StudioArtDirection;
+        /** 生成这组图时采用的后台策划知识凭证，不含知识正文。 */
+        knowledgeReceipt?: StudioKnowledgeReceipt;
+    };
     shots: StudioShot[];
 };
 
@@ -433,6 +525,8 @@ export type StudioPlanReceipt = {
     message?: string;
     review?: StudioPlanReviewedScreen[];
     issues?: { index?: number; field: string; message: string }[];
+    /** 后台策划任务实际采用的知识库版本与条目 ID，不包含知识正文。 */
+    knowledgeReceipt?: StudioKnowledgeReceipt;
 };
 
 export type StudioProduct = {

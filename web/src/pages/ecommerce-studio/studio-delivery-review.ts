@@ -1,10 +1,10 @@
 import { reviewStudioDelivery, studioEdgeAudit, type StudioDeliveryMeasure } from "@/lib/ecommerce-studio/delivery-review";
 import { studioCandidateCopy } from "@/lib/ecommerce-studio/delivery-copy";
-import type { StudioPlan, StudioProduct } from "@/lib/ecommerce-studio/types";
+import type { StudioPlanKind, StudioProduct, StudioShot } from "@/lib/ecommerce-studio/types";
 import type { StudioComposedShot } from "./studio-delivery";
 
 /** 对实际交付文件测尺寸、大小和边缘色；不依赖模型返回的尺寸元数据。 */
-export async function inspectStudioDelivery(product: StudioProduct, plan: StudioPlan, shots: StudioComposedShot[], signal?: AbortSignal) {
+export async function inspectStudioDelivery(product: StudioProduct, planned: StudioShot[], shots: StudioComposedShot[], pageKind: StudioPlanKind | "single", signal?: AbortSignal) {
     const measurements = new Map<string, StudioDeliveryMeasure>();
     for (const item of shots) {
         if (signal?.aborted) throw new DOMException("检查已停止", "AbortError");
@@ -27,9 +27,9 @@ export async function inspectStudioDelivery(product: StudioProduct, plan: Studio
         }
     }
     const delivered = new Map(shots.map((item) => [item.shot.id, item]));
-    const checkedShots = plan.shots.map((shot) => {
+    const checkedShots = planned.map((shot) => {
         const item = delivered.get(shot.id);
         return item ? { ...shot, ...studioCandidateCopy(shot, item.output, product.brief.language, item.composed) } : shot;
     });
-    return reviewStudioDelivery(product, checkedShots, measurements, new Set(delivered.keys()));
+    return reviewStudioDelivery(product, checkedShots, measurements, new Set(delivered.keys()), pageKind);
 }

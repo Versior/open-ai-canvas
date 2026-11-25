@@ -65,7 +65,7 @@ test("text reconnect queries the same task with the last event sequence and dedu
         });
     }) as typeof fetch;
     const result = await waitForGenerationTask(running.id, {
-        initialTask: running,
+        initialTask: { ...running, textDraft: "hello" },
         useTextEvents: true,
         intervalMs: 1,
         timeoutMs: 1000,
@@ -75,6 +75,16 @@ test("text reconnect queries the same task with the last event sequence and dedu
     expect(urls).toEqual(["/api/tasks/existing-task/text-events", "/api/tasks/existing-task/text-events?after=1"]);
     expect(texts).toEqual(["hello", "hello world"]);
     expect(queries).toEqual(["/tasks/existing-task"]);
+});
+
+test("a terminal text task returns without reopening an event stream", async () => {
+    globalThis.fetch = (async () => {
+        throw new Error("terminal task must not reconnect SSE");
+    }) as typeof fetch;
+    expect(await waitForGenerationTask(terminal.id, { initialTask: terminal, useTextEvents: true })).toBe(terminal);
+    const failed = { ...running, status: "failed" as const, error: "上游失败" };
+    const error = await waitForGenerationTask(failed.id, { initialTask: failed, useTextEvents: true }).catch((value: unknown) => value);
+    expect(isGenerationTaskTerminalError(error)).toBe(true);
 });
 
 test("polling stops after five network failures but can resume the original task without creation", async () => {

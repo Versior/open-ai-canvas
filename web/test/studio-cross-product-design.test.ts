@@ -42,7 +42,7 @@ const examples: Example[] = [
         family: "food",
         composition: "diagonal",
         headline: "饼干纹理",
-        photo: "一枚完整饼干沿对角线放大，可见烘烤表面近景作次级层，不添加未确认的原料",
+        photo: "展示一枚饼干的完整轮廓与可见的烘烤纹理",
         variants: [
             { style: "vivid", tone: "hot-seller", system: "暖橙 #F36E32、奶白字 #FFF4DF、深棕辅助 #4F2E21", type: "饼干为厚实圆黑大字，纹理小字缩进，长短字块顺着饼干对角边界" },
             { style: "oriental", tone: "oriental", system: "玉绿 #294A40、米白字 #F4E8CC、赭红强调 #AA4935", type: "饼干为竖向中宋大字，纹理为横向细黑小字，留白与饼干弧边相接" },
@@ -85,24 +85,26 @@ const examples: Example[] = [
 
 for (const example of examples)
     for (const variant of example.variants) {
-        test(`${example.name}／${variant.style}：排字与摄影构成经过解析、存储、生成快照和重试仍保留`, () => {
+        test(`${example.name}／${variant.style}：商品内容和明确质感保留，不执行策划拟定的排字模板`, () => {
             let product = createStudioProduct("cross-product");
             product.name = example.name;
             product.style = variant.style;
             product.photos = [{ id: "truth", resourceId: `truth-${example.name}`, view: "front", truth: true, url: "", addedAt: "" }];
             product.brief = { ...product.brief, productType: example.name, outputType: "detail-set", detailScreens: 2 };
-            product.dossier = { name: example.name, category: example.name, family: example.family, summary: example.photo, facts: [], invariants: [`保留${example.name}的实际结构与本色`], questions: [] };
+            product.dossier = { name: example.name, category: example.name, family: example.family, summary: "", facts: [], invariants: [`保留${example.name}的实际结构与本色`], questions: [] };
             const roles = studioDetailPlanRoles(product);
             expect(buildDirectionsPrompt(product, "detail")).toContain(catalog.posterDesign.hero);
-            expect(buildDetailPlanPrompt(product, roles)).toContain(catalog.posterDesign.principles);
-            const visual = `${example.name}主视觉：${example.photo}。${variant.type}。背景与文字系统：${variant.system}。先读核心词，再辨认商品，最后看近景证据。`;
+            const planningPrompt = buildDetailPlanPrompt(product, roles);
+            for (const field of ["purchaseQuestion", "displayContent", "evidence"]) expect(planningPrompt).toContain(`"${field}":`);
+            expect(planningPrompt).not.toContain(catalog.posterDesign.principles);
+            const question = `从哪里能看清${example.name}的真实形态`;
             product.brief.detailPlan = parseDetailPlan(
                 JSON.stringify({
                     style: variant.system,
                     tone: variant.tone,
                     designAnalysis: `${example.name}的可见形态决定摄影景别，${variant.type}`,
                     screens: [
-                        { role: "detail-hero", layout: "poster", composition: example.composition, title: "形态识别", purpose: "识别商品的可见外观", visual, elements: variant.type, headline: example.headline },
+                        { role: "detail-hero", layout: "poster", composition: example.composition, title: "形态识别", purchaseQuestion: question, displayContent: example.photo, elements: variant.type, headline: example.headline },
                         { role: "detail-closing", layout: "closing", composition: "bottom", visual: "完整商品与短说明", headline: example.headline },
                     ],
                 }),
@@ -117,10 +119,16 @@ for (const example of examples)
             const ref = { runId: run.id };
             const shot = run.shots[0];
             const input = studioImageInput(product, locateStudioShot(product, ref, shot.id)!, "gpt-image-2", defaultConfig);
-            expect(input.compiled.prompt).toContain(visual);
-            expect(input.compiled.prompt).toContain(variant.type);
-            expect(input.compiled.prompt).toContain(variant.system);
-            expect(input.compiled.prompt).toContain(`「${example.headline}」`);
+            expect(run.styleId).toBe(variant.style);
+            expect(input.compiled.prompt).toContain("第 1/2 屏");
+            expect(input.compiled.prompt).toContain(question);
+            expect(input.compiled.prompt).toContain(example.photo);
+            expect(input.compiled.prompt).not.toContain(variant.type);
+            expect(input.compiled.prompt).not.toContain(variant.system);
+            const copy = input.compiled.layers.find((layer) => layer.id === "copy")?.text;
+            expect(copy).toMatch(/必须[^。\n]*可读[^。\n]*简体中文/);
+            expect(copy).toMatch(/图片模型[^。\n]*排版[^。\n]*艺术字/);
+            expect(input.compiled.prompt).not.toContain(`「${example.headline}」`);
             expect(input.compiled.references.map((photo) => photo.resourceId)).toEqual([`truth-${example.name}`]);
             expect(input.compiled.layoutGuide).toBeUndefined();
             expect(studioImageInputCount(input)).toBe(1);
@@ -135,9 +143,9 @@ for (const example of examples)
             expect(located.shot.attempts[0].input?.compiled.prompt).toBe(input.compiled.prompt);
             expect(compileStudioShot(restored, located, "gpt-image-2", defaultConfig).compiled.prompt).toBe(input.compiled.prompt);
             const check = buildStudioDesignCheckPrompt(restored, located.shot, true, input.compiled);
-            expect(check).toContain(variant.system);
-            expect(check).toContain(variant.type);
-            expect(check).toContain("不能只因配色匹配、没有错字就判设计通过");
+            expect(check).toContain(example.photo);
+            expect(check).not.toContain(variant.type);
+            expect(check).toContain("检查对比、留白、分组、字阶和手机端可读性");
         });
     }
 
@@ -154,9 +162,10 @@ test("实际换质感使旧策划与旧选中方向失效，历史生成仍保�
     product.style = "fresh";
     product.photos = [{ id: "truth", resourceId: "cup", view: "front", truth: true, url: "", addedAt: "" }];
     product.brief = { ...product.brief, outputType: "detail-set", detailScreens: 2 };
+    const legacyStyle = "淡蓝 #C9DFEE 与海军蓝字 #203E57";
     const plan = parseDetailPlan(
         JSON.stringify({
-            style: "淡蓝 #C9DFEE 与海军蓝字 #203E57",
+            style: legacyStyle,
             screens: [
                 { role: "detail-hero", layout: "poster", composition: "left", visual: "左侧杯口小词，弧面大字下沉缩进；右侧完整杯形与杯口近景", headline: "杯口弧面" },
                 { role: "detail-closing", layout: "closing", composition: "bottom", visual: "完整商品与短说明", headline: "杯口弧面" },
@@ -179,7 +188,10 @@ test("实际换质感使旧策划与旧选中方向失效，历史生成仍保�
     expect(studioActivePlan(changed)).toBeUndefined();
     for (const field of ["detailPlan", "mainPlan", "singlePlan", "templatePlan"] as const) expect(changed.brief[field]).toBeUndefined();
     expect(changed.brief.prep?.picked).toBeUndefined();
-    expect(changed.runs[0].suite?.style).toBe(plan.style);
+    expect(changed.runs[0].source?.style).toBe("fresh");
+    expect(changed.runs[0].styleId).toBe("fresh");
+    expect(before).toContain("用户选择的质感「");
+    expect(before).not.toContain(legacyStyle);
     expect(compileStudioShot(changed, locateStudioShot(changed, ref, run.shots[0].id)!, "gpt-image-2", defaultConfig).compiled.prompt).toBe(before);
     expect(studioActivePlan(studioChangeStyle(changed, "fresh"))).toBeUndefined();
 });

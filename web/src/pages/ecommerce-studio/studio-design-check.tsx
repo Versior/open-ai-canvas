@@ -1,10 +1,10 @@
 import { Button } from "antd";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { create } from "zustand";
 import { ModelPicker } from "@/components/model-picker";
 import { buildEcommerceAnalysisGeneration } from "@/lib/ecommerce/ecommerce-analysis-generation";
 import { createClientUUID } from "@/lib/client-id";
-import { buildStudioDesignCheckPrompt, parseStudioDesignCheck, STUDIO_DESIGN_CHECK_LABELS } from "@/lib/ecommerce-studio/design-check";
+import { buildStudioDesignCheckPrompt, parseStudioDesignCheck, STUDIO_DESIGN_CHECK_LABELS, type StudioDesignCheck } from "@/lib/ecommerce-studio/design-check";
 import { readStudioCheckSession, saveStudioCheckSession, type StudioCheckState } from "@/lib/ecommerce-studio/design-check-session";
 import { studioReferencePhotos } from "@/lib/ecommerce-studio/prompt-compiler";
 import type { StudioOutput, StudioProduct, StudioShot } from "@/lib/ecommerce-studio/types";
@@ -18,7 +18,7 @@ import { useStudioModel } from "./studio-parts";
 // 关闭大图后仍跟踪同一个任务；查询失败只继续查询，不能再次扣费创建任务。
 const useChecks = create<{ items: Record<string, StudioCheckState> }>(() => ({ items: {} }));
 
-export function StudioArtworkCheck({ product, shot, output, onRevision }: { product: StudioProduct; shot: StudioShot; output: StudioOutput; onRevision: (revision: string) => void }) {
+export function StudioArtworkCheck({ product, shot, output, onRevision, onReview }: { product: StudioProduct; shot: StudioShot; output: StudioOutput; onRevision: (revision: string) => void; onReview?: (result: StudioDesignCheck) => void }) {
     const config = useEffectiveConfig();
     const { value: defaultModel, models } = useStudioModel("text");
     const [pickerOpen, setPickerOpen] = useState(false);
@@ -39,9 +39,17 @@ export function StudioArtworkCheck({ product, shot, output, onRevision }: { prod
     try {
         restored = live ? undefined : readStudioCheckSession(scope, key);
     } catch (error) {
-        restoreError = error instanceof Error ? error.message : "无法读取成品检查记录，请到任务中心核对";
+        restoreError = error instanceof Error ? error.message : "无法读取成品诊断记录，请到任务中心核对";
     }
     const check = live || restored;
+    const persistedReview = useRef<string | undefined>(undefined);
+    useEffect(() => {
+        if (!check?.result || !onReview) return;
+        const key = `${output.resourceId}:${JSON.stringify(check.result)}`;
+        if (persistedReview.current === key) return;
+        persistedReview.current = key;
+        onReview(check.result);
+    }, [check?.result, onReview, output.resourceId]);
     const update = (patch: Partial<StudioCheckState>) => {
         const next = { ...(useChecks.getState().items[key] || restored), ...patch } as StudioCheckState;
         // 先更新内存以保留返回的 taskId；存储失败仍报错，不悄悄新建检查。
@@ -82,9 +90,12 @@ export function StudioArtworkCheck({ product, shot, output, onRevision }: { prod
             }
             completed = true;
             if (getActiveUserScope() !== scope) return;
-            update({ result: parseStudioDesignCheck(text), running: false });
+            const result = parseStudioDesignCheck(text);
+            update({ result, running: false });
+            persistedReview.current = `${output.resourceId}:${JSON.stringify(result)}`;
+            onReview?.(result);
         } catch (error) {
-            const patch = { running: false, error: error instanceof Error ? error.message : "AI 检查失败", ...(completed || isGenerationTaskTerminalError(error) ? { taskId: undefined, operationId: createClientUUID() } : {}) };
+            const patch = { running: false, error: error instanceof Error ? error.message : "AI 诊断失败", ...(completed || isGenerationTaskTerminalError(error) ? { taskId: undefined, operationId: createClientUUID() } : {}) };
             useChecks.setState((state) => ({ items: { ...state.items, [key]: { ...state.items[key], ...patch } } }));
             try {
                 saveStudioCheckSession(scope, key, useChecks.getState().items[key]);
@@ -96,13 +107,13 @@ export function StudioArtworkCheck({ product, shot, output, onRevision }: { prod
         }
     };
     return (
-        <section className="es-artwork-check" aria-label="AI 成品检查">
+        <section className="es-artwork-check" aria-label="AI 成品诊断">
             <div className="es-viewer-actions">
                 <Button loading={check?.running} disabled={Boolean(check?.result || restoreError)} onClick={() => void run()}>
-                    {check?.result ? "已检查这张图" : check?.running ? "正在检查成品" : check?.taskId ? "继续查询检查结果" : "AI 检查成品"}
+                    {check?.result ? "已诊断这张图" : check?.running ? "正在诊断成品" : check?.taskId ? "继续查询诊断结果" : "AI 成品诊断"}
                 </Button>
                 <Button type="text" size="small" onClick={() => setPickerOpen(!pickerOpen)}>
-                    检查模型
+                    诊断模型
                 </Button>
             </div>
             {pickerOpen ? (
@@ -124,10 +135,10 @@ export function StudioArtworkCheck({ product, shot, output, onRevision }: { prod
                     className="creation-model-picker es-model-picker"
                     showSelectedPrice={false}
                     showOptionPrices
-                    placeholder="选择能看图的检查模型"
+                    placeholder="选择能看图的诊断模型"
                 />
             ) : null}
-            {!check?.result ? <p className="es-viewer-meta">按所选看图模型计费。检查实际文字、图文位置与商品外观。</p> : null}
+            {!check?.result ? <p className="es-viewer-meta">按所选看图模型计费。诊断实际文字、图文位置与商品外观，不会阻塞生成或导出。</p> : null}
             {check?.error ? <p role="alert">{check.error}</p> : null}
             {restoreError ? <p role="alert">{restoreError}</p> : null}
             {check?.result ? (
@@ -146,7 +157,7 @@ export function StudioArtworkCheck({ product, shot, output, onRevision }: { prod
                         <p>{check.result.observedText.join(" / ") || "未识别到可读文字"}</p>
                     </details>
                     {check.result.revision ? <Button onClick={() => onRevision(check.result!.revision)}>带入修正要求</Button> : null}
-                    <p className="es-viewer-meta">AI 判断供复核，不代表平台审核通过。</p>
+                    <p className="es-viewer-meta">AI 诊断仅供参考，不代表平台审核通过，也不会替代任务回执与费用状态。</p>
                 </>
             ) : null}
         </section>

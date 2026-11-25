@@ -6,6 +6,7 @@ const guestWorkspacePaths = new Set([
     "/projects",
     "/video-replication",
     "/studio",
+    "/ecommerce-studio",
     "/ecommerce",
     "/interior",
     "/packaging",

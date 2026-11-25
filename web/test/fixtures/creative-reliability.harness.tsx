@@ -257,15 +257,13 @@ const attempt = () => useStudioStore.getState().products[0].runs[0].shots[0].att
 test("same-account planning uses account identity instead of the detail/main business scope", async () => {
     const product = studioProduct();
     product.brief.outputType = "detail-set";
+    product.brief.detailScreens = 10;
     analysisText = JSON.stringify({
         screens: Array.from({ length: 10 }, (_, index) => ({
             role: index === 0 ? "detail-hero" : index === 9 ? "detail-closing" : "detail-scene",
             title: "商品展示",
-            headline: "清晰外观",
-            subline: "",
-            lines: [],
-            visual: "展示商品真实外观",
-            layout: "editorial",
+            purchaseQuestion: "商品的外观是什么样？",
+            displayContent: "展示商品真实外观",
         })),
     });
     for (let login = 0; login < 2; login++) {

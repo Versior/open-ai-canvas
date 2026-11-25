@@ -1,8 +1,9 @@
 import { canonicalize } from "json-canonicalize";
+import { STUDIO_DETAIL_CONTRACT } from "./detail-plan";
 import { normalizeStudioPlanPrep } from "./plan-prep";
 import type { StudioGenerationSource, StudioModelPick, StudioPhoto } from "./types";
 
-/** 策划身份只包含创作输入；保存时间、出图结果和逐屏编辑不会使策划失效。 */
+/** 策划身份包含创作输入及适用的规则版本；保存时间、出图结果和逐屏编辑不会使策划失效。 */
 export function studioPlanInputSignature(product: StudioGenerationSource): string {
     const { brief, dossier } = product;
     const photos = (items: StudioPhoto[]) => items.map(({ id, resourceId, view, truth }) => [id, resourceId, view, truth]);
@@ -10,6 +11,7 @@ export function studioPlanInputSignature(product: StudioGenerationSource): strin
     const prep = normalizeStudioPlanPrep(brief.prep);
     return canonicalize({
         version: 1,
+        ...(brief.outputType === "detail-set" ? { studioDetailContract: STUDIO_DETAIL_CONTRACT } : {}),
         name: product.name,
         platform: product.platform,
         style: product.style,

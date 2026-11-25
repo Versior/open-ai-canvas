@@ -18,4 +18,8 @@ describe("guest workspace route access", () => {
         expect(isGuestWorkspacePath("/skills/private-id/edit")).toBe(false);
         expect(isGuestWorkspacePath("/settings")).toBe(false);
     });
+
+    test("the old Studio path can reach the same guest landing as /studio", () => {
+        expect(isGuestWorkspacePath("/ecommerce-studio")).toBe(isGuestWorkspacePath("/studio"));
+    });
 });

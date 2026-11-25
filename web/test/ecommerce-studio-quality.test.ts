@@ -102,14 +102,14 @@ test("historical runs keep the original planned product when the live product ch
     expect(after.compiled.references[0].resourceId).toBe("product-front");
 });
 
-test("legacy runs retain their saved style when their old plan has no input signature", () => {
+test("legacy runs retain their explicit seller style when their old plan has no input signature", () => {
     let product = plannedProduct();
     product.name = "陶瓷杯";
+    product.style = "candy";
     product.brief.audience = "日常办公";
     product.brief.shooting = "auto";
     product.brief.detailPlan = parseDetailPlan(
         JSON.stringify({
-            styleId: "candy",
             screens: [
                 { role: "detail-hero", visual: "桌上杯身", headline: "快乐日常" },
                 { role: "detail-closing", visual: "侧面杯身", headline: "杯中色彩" },
@@ -124,6 +124,7 @@ test("legacy runs retain their saved style when their old plan has no input sign
     product = appendStudioRun(product, run);
     const ref = { runId: run.id };
     const before = studioImageInput(product, locateStudioShot(product, ref, run.shots[0].id)!, "gpt-image", defaultConfig).compiled.prompt;
+    expect(before).toContain("用户选择的质感「童趣糖果」");
     delete product.runs[0].source!.brief.detailPlan!.inputSignature;
     const reloaded = normalizeStudioProduct(product)!;
     expect(studioImageInput(reloaded, locateStudioShot(reloaded, ref, run.shots[0].id)!, "gpt-image", defaultConfig).compiled.prompt).toBe(before);
@@ -149,16 +150,16 @@ test("product image execution isolates global text system instructions", () => {
     expect(input.compiled.prompt).toContain("8岁儿童");
 });
 
-test("planning and persistence retain the end of a detailed visual blueprint", () => {
+test("planning and persistence retain the end of a detailed display brief", () => {
     const product = plannedProduct();
-    const visual = "主体与自然窗光、镜框细节、摄影层次。".repeat(28) + "末尾要求：右下角保留阅读场景，只有一位儿童。";
-    const screens = product.brief.detailPlan!.screens.map((screen, index) => (index ? screen : { ...screen, visual }));
+    const displayContent = "儿童佩戴眼镜，眼镜前框与镜腿清晰，镜架与脸部接触处需要看得见。".repeat(16) + "眼镜佩戴时镜腿与耳侧的接触清晰可见。";
+    const screens = product.brief.detailPlan!.screens.map((screen, index) => (index ? screen : { ...screen, displayContent }));
     product.brief.detailPlan = parseDetailPlan(JSON.stringify({ screens }), product, studioDetailPlanRoles(product), { id: "long-plan", model: "planner", createdAt: "" }).plan;
     const reloaded = normalizeStudioProduct(product)!;
     const run = createStudioRun(reloaded, () => "shot");
-    expect(reloaded.brief.detailPlan!.screens[0].visual).toBe(visual);
-    expect(run.shots[0].visual).toContain("末尾要求");
-    expect(compileStudioPrompt({ product: reloaded, brief: reloaded.brief, shot: run.shots[0], model: "gpt-image", maxChars: 8000 }).prompt).toContain("末尾要求");
+    expect(reloaded.brief.detailPlan!.screens[0].displayContent).toBe(displayContent);
+    expect(run.shots[0].displayContent).toBe(displayContent);
+    expect(compileStudioPrompt({ product: reloaded, brief: reloaded.brief, shot: run.shots[0], model: "gpt-image", maxChars: 8000 }).prompt).toContain("眼镜佩戴时镜腿与耳侧的接触清晰可见");
 });
 
 test("reference capacity reports omitted product views and never silently removes quality", () => {
@@ -169,8 +170,9 @@ test("reference capacity reports omitted product views and never silently remove
     expect(compiled.referenceNotice).toContain("商品图");
     try {
         const tight = compileStudioPrompt({ product, brief: product.brief, shot: run.shots[0], model: "gpt-image", maxReferences: 1, maxChars: compiled.prompt.length - 1 });
-        expect(tight.layers.some((layer) => layer.id === "quality")).toBe(true);
-        expect(tight.trimmed).not.toContain("quality");
+        expect(tight.layers[0].id).toBe("copy");
+        expect(tight.layers[0].text).toContain("完成最终设计");
+        expect(tight.trimmed).not.toContain("copy");
         expect(tight.trimmed).not.toContain("audience");
     } catch (error) {
         expect((error as Error).message).toContain("模型上限");
@@ -197,9 +199,9 @@ test("planning uses available capacity, reads label photos and covers distinct v
     );
 });
 
-test("overlong model blueprints fail explicitly instead of silently losing the ending", () => {
+test("overlong display briefs fail explicitly instead of silently losing the ending", () => {
     const product = plannedProduct();
-    const screens = product.brief.detailPlan!.screens.map((screen) => ({ ...screen, visual: "画".repeat(STUDIO_DETAIL_PLAN_LIMITS.visual + 1) }));
+    const screens = product.brief.detailPlan!.screens.map((screen) => ({ ...screen, displayContent: "画".repeat(STUDIO_DETAIL_PLAN_LIMITS.visual + 1) }));
     expect(() => parseDetailPlan(JSON.stringify({ screens }), product, studioDetailPlanRoles(product), { id: "too-long", model: "planner", createdAt: "" })).toThrow("超过上限");
 });
 

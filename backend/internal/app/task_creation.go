@@ -55,6 +55,9 @@ func (s *Service) createGenerationTask(userID string, req CreateTaskRequest, sub
 		return nil, err
 	}
 	if metadata, ok := normalizedInput["metadata"].(map[string]any); ok {
+		if err := validateStudioDetailSubmission(taskType, prompt, normalizedInput, metadata); err != nil {
+			return nil, err
+		}
 		if _, marked := metadata["ecommerceCapability"]; marked {
 			encoded, err := json.Marshal(normalizedInput)
 			if err != nil {

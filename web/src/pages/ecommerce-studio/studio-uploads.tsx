@@ -17,6 +17,18 @@ const LIMITS: Record<StudioUploadKind, number> = { photos: 8, references: 3 };
 const LABELS: Record<StudioUploadKind, string> = { photos: "商品图", references: "参考图" };
 const VIEW_ITEMS = (Object.keys(STUDIO_VIEW_LABEL) as StudioPhotoView[]).map((view) => ({ key: view, label: view === "tag" ? "吊牌（只读文字）" : STUDIO_VIEW_LABEL[view] }));
 
+export function studioReferenceUploadStatus(count: number, pending = 0) {
+    if (pending > 0 && count === 0) return "设计参考上传中…";
+    if (count > 0) return `${count}/${LIMITS.references} · 用于迁移构图、字阶与配色（受模型参考图名额限制）`;
+    return "可选。不上传时，图片模型根据商品原图与本屏任务自主设计。";
+}
+
+function studioReferenceUploadLabel(count: number, pending = 0) {
+    if (pending > 0 && count === 0) return "上传中";
+    if (count > 0) return `${count}/${LIMITS.references}`;
+    return "可选";
+}
+
 export type StudioPhotoPatch = Partial<Pick<StudioPhoto, "view" | "truth">>;
 
 /** 素材库里选的图没有尺寸记录：读一次原图拿宽高，同款版式要按它定画幅。 */
@@ -151,7 +163,7 @@ export function StudioUploadBox({
         >
             <header className="es-upload-head">
                 <strong>{label}</strong>
-                <span>{items.length ? `${items.length}/${LIMITS[kind]}` : hint}</span>
+                <span title={kind === "references" ? studioReferenceUploadStatus(items.length, pending) : hint}>{kind === "references" ? studioReferenceUploadLabel(items.length, pending) : items.length ? `${items.length}/${LIMITS[kind]}` : hint}</span>
             </header>
             <div className="es-upload-row">
                 {items.map((photo) => {

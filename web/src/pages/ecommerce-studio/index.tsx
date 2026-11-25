@@ -1,19 +1,22 @@
 import { App, Button, Skeleton } from "antd";
 import { RotateCw, Shirt, Clapperboard } from "lucide-react";
 import { nanoid } from "nanoid";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { createCreativeJob } from "@/lib/remake/creative";
 import { createProductVideo } from "@/pages/video-replication/replace/use-product-video-store";
 import { remakeProductFromStudio } from "@/pages/video-replication/remake/remake-product-picker";
 import { WorkspacePage } from "@/components/layout/workspace-page";
-import { SegmentedControl } from "@/components/ui/base/segmented-control";
+import { SegmentedControl, type SegmentedOption } from "@/components/ui/base/segmented-control";
 import { EmptyState } from "@/components/ui/product/empty-state/empty-state";
 import { studioDisplayName } from "@/lib/ecommerce-studio/brief";
-import { studioReferencePhotos } from "@/lib/ecommerce-studio/prompt-compiler";
+import { studioImageSetupBlock } from "@/lib/ecommerce-studio/generation-input";
+import { studioPlanInputSignature } from "@/lib/ecommerce-studio/plan-input";
+import { studioPlanScopeOf } from "@/lib/ecommerce-studio/runs";
 import { loadStudioPromptConfig } from "./studio-prompt-config";
-import { createStudioProduct, studioOutputCount } from "@/lib/ecommerce-studio/product";
+import { createStudioProduct } from "@/lib/ecommerce-studio/product";
 import type { StudioOutput, StudioProduct, StudioShot } from "@/lib/ecommerce-studio/types";
+import type { StudioDesignCheck } from "@/lib/ecommerce-studio/design-check";
 import { downloadBrowserMedia } from "@/services/browser-download";
 import { resourceStorageKey } from "@/services/api/resources";
 import { StudioForm } from "./studio-form";
@@ -34,9 +37,29 @@ type Edit = (updater: (product: StudioProduct) => StudioProduct, options?: { imm
 
 const newProductId = () => `p_${nanoid(12)}`;
 const MAX_REFERENCES = 3;
+type StudioStage = "form" | "plan" | "results";
+const desktopViews: SegmentedOption<Exclude<StudioStage, "form">>[] = [
+    { value: "plan", label: "页面设计" },
+    { value: "results", label: "生成记录" },
+];
+const mobileViews: SegmentedOption<StudioStage>[] = [{ value: "form", label: "商品与设置" }, ...desktopViews];
+
+function studioPendingPlanView(product?: StudioProduct) {
+    const receipt = product?.planReceipt;
+    if (product && receipt?.state === "submitted" && receipt.taskId && receipt.scope === studioPlanScopeOf(product) && receipt.inputSignature === studioPlanInputSignature(product)) return "plan";
+}
+
+function studioSelection(params: URLSearchParams, productId?: string | null, view?: StudioStage) {
+    const next = new URLSearchParams(params);
+    if (productId) next.set("product", productId);
+    else next.delete("product");
+    if (view) next.set("view", view);
+    else next.delete("view");
+    return next;
+}
 
 /**
- * 电商生图台：左边填表，右边看生成记录。当前商品写在 ?product= 里，刷新和回退都能回到原处。
+ * 电商生图台：商品与视图由 URL 记录，刷新和回退都能回到原处。
  * 新建的商品先只在本页，第一次加图或填写时才写到服务器，不留下空商品。
  */
 export default function EcommerceStudioPage() {
@@ -47,6 +70,8 @@ export default function EcommerceStudioPage() {
     const navigate = useNavigate();
     const [openingVideo, setOpeningVideo] = useState(false);
     const requested = params.get("product") || "";
+    const requestedView = params.get("view");
+    const explicitView = requestedView === "form" || requestedView === "plan" || requestedView === "results" ? requestedView : undefined;
     const status = useStudioStore((state) => state.status);
     const error = useStudioStore((state) => state.error);
     const load = useStudioStore((state) => state.load);
@@ -54,7 +79,6 @@ export default function EcommerceStudioPage() {
     const upsert = useStudioStore((state) => state.upsert);
     const update = useStudioStore((state) => state.update);
     const [draft, setDraft] = useState(() => createStudioProduct(newProductId()));
-    const [tab, setTab] = useState<"form" | "results">("form");
     const [viewer, setViewer] = useState<StudioViewerTarget>();
     const [fashionOpen, setFashionOpen] = useState(false);
     const runner = useStudioRunner();
@@ -84,16 +108,34 @@ export default function EcommerceStudioPage() {
     const ready = !userId || status === "ready";
     const stored = userId ? products.find((item) => item.id === requested) || (!requested ? products[0] : undefined) : undefined;
     const product = stored || (!requested || requested === draft.id ? draft : undefined);
+    const productId = product?.id;
+    const view = explicitView ?? studioPendingPlanView(stored);
+    const tab = view ?? "form";
+    const activeRoute = useRef<{ productId: string | undefined; params: URLSearchParams } | undefined>(undefined);
+
+    useLayoutEffect(() => {
+        activeRoute.current = { productId, params };
+        return () => {
+            activeRoute.current = undefined;
+        };
+    }, [params, productId]);
+
+    const setTab = (next: StudioStage) => {
+        const current = activeRoute.current;
+        if (!current || current.productId !== productId || current.params.get("view") === next) return;
+        setParams(studioSelection(current.params, current.params.get("product") || stored?.id, next), { replace: true });
+    };
 
     // 地址里没写商品时钉住当前这个，免得别的商品更新后排到最前、页面跟着跳。
     useEffect(() => {
         if (!userId || !ready) return;
-        if (!requested && stored) setParams({ product: stored.id }, { replace: true });
-        else if (requested && !stored && requested !== draft.id) {
+        if (requested && !stored && requested !== draft.id) {
             message.warning("这个商品不存在或已被删除");
-            setParams(products[0] ? { product: products[0].id } : {}, { replace: true });
+            setParams(studioSelection(params, products[0]?.id, explicitView ?? studioPendingPlanView(products[0])), { replace: true });
+        } else if (stored && (!requested || (!explicitView && view === "plan"))) {
+            setParams(studioSelection(params, stored.id, view), { replace: true });
         }
-    }, [draft.id, message, products, ready, requested, setParams, stored, userId]);
+    }, [draft.id, explicitView, message, params, products, ready, requested, setParams, stored, userId, view]);
 
     useEffect(() => {
         if (!stored || resumed.current === stored.id) return;
@@ -105,12 +147,9 @@ export default function EcommerceStudioPage() {
 
     const ensure = useCallback(() => {
         if (!product) throw new Error("商品还没有加载出来");
-        if (!useStudioStore.getState().products.some((item) => item.id === product.id)) {
-            upsert(product, { immediate: true });
-            setParams({ product: product.id }, { replace: true });
-        }
+        if (!useStudioStore.getState().products.some((item) => item.id === product.id)) upsert(product, { immediate: true });
         return product.id;
-    }, [product, setParams, upsert]);
+    }, [product, upsert]);
 
     const edit = useCallback<Edit>(
         (updater, options) => {
@@ -127,13 +166,11 @@ export default function EcommerceStudioPage() {
     const create = () => {
         const next = createStudioProduct(newProductId());
         setDraft(next);
-        setParams({ product: next.id });
-        setTab("form");
+        setParams(studioSelection(params, next.id, "form"));
         setViewer(undefined);
     };
 
     const groups = useMemo(() => (product ? studioShotGroups(product) : []), [product]);
-    const blocked = !product?.photos.length ? "先上传商品图" : !studioReferencePhotos(product.photos).length ? "至少点亮一张商品图的星标，出图以它为外观依据" : !image.value ? "先选择图片模型" : "";
 
     const addReference = (output: StudioOutput) => {
         if (!product) return;
@@ -166,6 +203,7 @@ export default function EcommerceStudioPage() {
     const tune = async (group: StudioShotGroup, shot: StudioShot, patch: StudioShotPatch, revisionResourceId?: string) => {
         if (!requireLogin()) return;
         if (!product) return;
+        const blocked = studioImageSetupBlock(group.source ?? product, image.value);
         if (blocked) return void message.warning(blocked);
         try {
             edit((current) => patchStudioShotAt(current, group.ref, shot.id, (value) => ({ ...value, ...patch })), { immediate: true });
@@ -175,7 +213,24 @@ export default function EcommerceStudioPage() {
         }
     };
 
-    const outputs = product ? studioOutputCount(product) : 0;
+    const openProductVideo = async () => {
+        if (!requireLogin() || openingVideo) return;
+        setOpeningVideo(true);
+        try {
+            const id = ensure();
+            await useStudioStore.getState().flush(id);
+            const saved = useStudioStore.getState().products.find((item) => item.id === id);
+            if (!saved) throw new Error("商品未保存");
+            const video = createCreativeJob(nanoid(12), remakeProductFromStudio(saved));
+            await createProductVideo(video);
+            navigate(`/video-replication?remake=${encodeURIComponent(video.id)}`);
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "新建商品视频失败");
+        } finally {
+            setOpeningVideo(false);
+        }
+    };
+
     const loading = !product && (status === "idle" || status === "loading");
 
     return (
@@ -201,57 +256,40 @@ export default function EcommerceStudioPage() {
                             product={product}
                             saved={Boolean(stored)}
                             onSwitch={(id) => {
-                                setParams({ product: id });
+                                if (id === product.id) return;
+                                setParams(studioSelection(params, id, studioPendingPlanView(products.find((item) => item.id === id)) ?? tab));
                                 setViewer(undefined);
                             }}
                             onCreate={create}
-                            onDeleted={() => setParams({}, { replace: true })}
-                        />
-                        <div className="es-tabs">
-                            <Button
-                                icon={<Clapperboard size={15} />}
-                                loading={openingVideo}
-                                disabled={Boolean(userId) && !product.photos.length}
-                                onClick={() => {
-                                    if (!requireLogin()) return;
-                                    if (openingVideo) return;
-                                    setOpeningVideo(true);
-                                    void (async () => {
-                                        try {
-                                            const id = ensure();
-                                            await useStudioStore.getState().flush(id);
-                                            const saved = useStudioStore.getState().products.find((item) => item.id === id);
-                                            if (!saved) throw new Error("商品未保存");
-                                            const video = createCreativeJob(nanoid(12), remakeProductFromStudio(saved));
-                                            await createProductVideo(video);
-                                            navigate(`/video-replication?remake=${encodeURIComponent(video.id)}`);
-                                        } catch (error) {
-                                            message.error(error instanceof Error ? error.message : "新建商品视频失败");
-                                        } finally {
-                                            setOpeningVideo(false);
-                                        }
-                                    })();
-                                }}
-                            >
-                                商品视频策划
-                            </Button>
-                            <Button icon={<Shirt size={15} />} onClick={() => setFashionOpen(true)}>
-                                换装 · 换脸 · 印花
-                            </Button>
-                            <SegmentedControl<"form" | "results">
-                                block
-                                ariaLabel="切换生图表单与生成记录"
-                                value={tab}
-                                onChange={setTab}
-                                options={[
-                                    { value: "form", label: "生图" },
-                                    { value: "results", label: outputs ? `生成记录 ${outputs}` : "生成记录" },
-                                ]}
-                            />
-                        </div>
+                            onDeleted={() => setParams(studioSelection(params), { replace: true })}
+                            tools={[
+                                {
+                                    key: "video",
+                                    icon: <Clapperboard size={15} aria-hidden />,
+                                    label: openingVideo ? "打开商品视频策划中…" : "商品视频策划",
+                                    disabled: openingVideo || (Boolean(userId) && !product.photos.length),
+                                    onClick: () => void openProductVideo(),
+                                },
+                                { key: "fashion", icon: <Shirt size={15} aria-hidden />, label: "换装 · 换脸 · 印花", onClick: () => setFashionOpen(true) },
+                            ]}
+                        >
+                            <SegmentedControl<Exclude<StudioStage, "form">> block className="es-tabs es-tabs-desktop" ariaLabel="右侧工作区" value={tab === "results" ? "results" : "plan"} onChange={setTab} options={desktopViews} />
+                            <SegmentedControl<StudioStage> block className="es-tabs es-tabs-mobile" ariaLabel="电商生图台工作阶段" value={tab} onChange={setTab} options={mobileViews} />
+                        </StudioHeader>
                         <div className="es-body">
-                            <StudioForm key={product.id} product={product} edit={edit} ensure={ensure} runner={runner} onGenerated={() => setTab("results")} />
-                            <StudioResults product={product} edit={edit} runner={runner} imageModel={image.value} blocked={blocked} onView={setViewer} onReference={addReference} />
+                            <StudioForm
+                                key={product.id}
+                                product={product}
+                                edit={edit}
+                                ensure={ensure}
+                                runner={runner}
+                                onOutputChange={() => {
+                                    if (tab === "results") setTab("plan");
+                                }}
+                                onPlanning={() => setTab("plan")}
+                                onGenerated={() => setTab("results")}
+                            />
+                            <StudioResults product={product} edit={edit} runner={runner} imageModel={image.value} onView={setViewer} onReference={addReference} />
                         </div>
                     </>
                 )}
@@ -260,15 +298,38 @@ export default function EcommerceStudioPage() {
                 product={product}
                 groups={groups}
                 target={viewer}
-                blocked={blocked}
                 imageModel={image.value}
                 onChange={setViewer}
                 onClose={() => setViewer(undefined)}
                 onDownload={download}
                 onReference={addReference}
                 onTune={tune}
-                onApplyCopy={(group, shot, patch) => edit((current) => patchStudioShotAt(current, group.ref, shot.id, (value) => ({ ...value, headline: patch.headline, subline: patch.subline, lines: patch.lines })), { immediate: true })}
+                onApplyCopy={(group, shot, patch) =>
+                    edit((current) => patchStudioShotAt(current, group.ref, shot.id, (value) => ({ ...value, headline: patch.headline, subline: patch.subline, lines: patch.lines, copySource: "user" })), { immediate: true })
+                }
                 onAdopt={(group, shot, output) => edit((current) => patchStudioShotAt(current, group.ref, shot.id, (value) => ({ ...value, adopted: output })), { immediate: true })}
+                onReview={(group, shot, output, result: StudioDesignCheck) =>
+                    edit(
+                        (current) =>
+                            patchStudioShotAt(current, group.ref, shot.id, (value) => ({
+                                ...value,
+                                attempts: value.attempts.map((attempt) =>
+                                    attempt.outputs.some((item) => item.resourceId === output.resourceId)
+                                        ? {
+                                              ...attempt,
+                                              visualReview: {
+                                                  status: result.findings.some((finding) => finding.status === "fail") ? "failed" : result.findings.some((finding) => finding.status === "unknown") ? "unknown" : "passed",
+                                                  findings: result.findings,
+                                                  revision: result.revision || undefined,
+                                                  checkedAt: new Date().toISOString(),
+                                              },
+                                          }
+                                        : attempt,
+                                ),
+                            })),
+                        { immediate: true },
+                    )
+                }
             />
             {fashionOpen ? (
                 <FashionWorkbench

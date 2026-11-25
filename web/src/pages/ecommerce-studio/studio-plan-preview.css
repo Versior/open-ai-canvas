@@ -1,13 +1,10 @@
 .es-proof-view {
     color: var(--user-ink);
 }
-.es-proof-view header p,
-.es-proof-annotation {
+.es-proof-view-note,
+.es-proof-brief-body {
     font-size: 13px;
     line-height: 1.5;
-}
-.es-proof-view header button + button {
-    margin-inline-start: 6px;
 }
 .es-proof-scroll {
     margin-top: 12px;
@@ -20,95 +17,55 @@
     background: var(--user-surface-muted);
 }
 .es-proof-item {
-    container-type: inline-size;
+    padding: 14px;
+    border-block: 1px solid var(--user-border);
+    background: var(--user-surface);
 }
-.es-proof-sheet {
-    position: relative;
-    isolation: isolate;
-    min-width: 0;
-    overflow: hidden;
-    background: var(--paper);
-    color: var(--ink);
+.es-proof-item + .es-proof-item {
+    border-top: 8px solid var(--user-surface-muted);
 }
-.es-proof-photo {
-    position: absolute;
-    display: grid;
-    place-items: center;
-}
-.es-proof-photo img,
-.es-proof-spec-photo img {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-}
-.es-proof-photo span {
-    background: var(--paper);
-    font-size: 14px;
-}
-.es-proof-copy {
-    position: absolute;
+.es-proof-brief-head {
     display: flex;
-    flex-direction: column;
-    gap: 0.38em;
-    padding: 2px;
-    background: var(--paper);
+    align-items: center;
+    gap: 10px;
+    color: var(--user-ink);
+}
+.es-proof-brief-head > span {
+    font-variant-numeric: tabular-nums;
+    color: var(--user-ink-secondary);
+}
+.es-proof-brief-head > strong {
+    min-width: 0;
     overflow-wrap: anywhere;
 }
-.es-proof-copy h4 {
-    margin: 0;
-    font-family: var(--headline-font);
-    font-weight: var(--headline-weight);
-    font-size: clamp(23px, 7.4cqw, 32px);
-    line-height: 1.2;
-    white-space: pre-line;
+.es-proof-brief-head em {
+    margin-inline-start: auto;
+    color: var(--user-ink-secondary);
+    font-size: 12px;
+    font-style: normal;
 }
-.es-proof-copy p,
-.es-proof-copy dd,
-.es-proof-copy dt {
-    margin: 0;
-    font-size: 15px;
-    line-height: 1.5;
-    white-space: pre-line;
-}
-.es-proof-copy small {
-    font-size: 13px;
-    line-height: 1.4;
-}
-.es-proof-quantity {
-    white-space: nowrap;
-}
-.es-proof-overflow {
-    margin: 0;
-    padding: 6px 10px;
-    color: var(--user-ink);
-    background: var(--user-surface-muted);
-    border-block: 1px solid currentColor;
-    font-size: 13px;
-}
-.es-proof-copy dl {
-    margin: 0;
-}
-.es-proof-copy dl > div {
-    padding-block: 3px;
-}
-.es-proof-sheet[data-spec] .es-proof-copy {
-    position: relative;
-    padding: 6%;
-}
-.es-proof-sheet[data-spec] dl > div {
+.es-proof-brief-body {
     display: grid;
-    grid-template-columns: minmax(0, 34%) 1fr;
-    column-gap: 12px;
-    padding: 9px 0;
-    border-top: 1px solid currentColor;
+    gap: 8px;
+    margin-top: 12px;
 }
-.es-proof-sheet[data-spec] dt:only-child {
-    grid-column: 1 / -1;
+.es-proof-brief-body p {
+    display: grid;
+    grid-template-columns: 64px 1fr;
+    gap: 8px;
+    margin: 0;
+    overflow-wrap: anywhere;
 }
-.es-proof-spec-photo {
-    height: 116px;
-    margin: 12px 0;
-    text-align: center;
+.es-proof-brief-body > .es-proof-brief-content {
+    display: block;
+}
+.es-proof-brief-body strong {
+    color: var(--user-ink-secondary);
+    font-weight: 500;
+}
+.es-proof-view-note {
+    margin: 0 0 10px;
+    color: var(--user-ink-secondary);
 }
 .es-proof-annotation {
     position: relative;

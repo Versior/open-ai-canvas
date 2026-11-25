@@ -662,7 +662,17 @@ describe("真实电商页面生命周期", () => {
             await useStudioStore.getState().load(true);
             function StudioHarness() {
                 const current = useStudioStore((state) => state.products[0]);
-                return <StudioForm product={current} edit={(change, options) => useStudioStore.getState().update(current.id, change, options)} ensure={() => current.id} runner={useStudioRunner()} onGenerated={() => undefined} />;
+                return (
+                    <StudioForm
+                        product={current}
+                        edit={(change, options) => useStudioStore.getState().update(current.id, change, options)}
+                        ensure={() => current.id}
+                        runner={useStudioRunner()}
+                        onOutputChange={() => undefined}
+                        onPlanning={() => undefined}
+                        onGenerated={() => undefined}
+                    />
+                );
             }
             host = document.createElement("div");
             document.body.append(host);
@@ -675,12 +685,12 @@ describe("真实电商页面生命周期", () => {
                 ),
             );
             const cost = host.querySelector(".es-form-foot .es-estimate")?.textContent || "";
-            expect(cost.includes("商品识别 ×1：1 积分")).toBe(action === "全新商品分析");
-            expect(cost).toContain("策划 ×1：1 积分");
+            expect(cost.includes("识别：1 积分")).toBe(action === "全新商品分析");
+            expect(cost).toContain("策划：1 积分");
             expect(cost).toContain("出图 ×1");
-            await press(action === "已有档案提问" ? "AI 问我几个问题" : "AI 分析商品");
+            await press(action === "已有档案提问" ? "生成补充问题" : "AI 分析商品");
             await useStudioStore.getState().flush(product.id);
-            const expected = action === "全新商品分析" ? ["recognize", "ask"] : [action === "已有档案提问" ? "ask" : "recognize"];
+            const expected = [action === "已有档案提问" ? "ask" : "recognize"];
             expect(steps).toEqual(expected);
             expect(writes.length).toBe(expected.length * 2);
             if (expected.includes("recognize")) expect(writes.at(-1)?.dossier?.name).toBe("新识别的水杯");
@@ -691,8 +701,9 @@ describe("真实电商页面生命周期", () => {
         const product = createStudioProduct("receipt-studio");
         product.photos.push({ id: "cup", resourceId: "cup", url: "", view: "front", truth: true, addedAt: "" });
         product.brief.count = 3;
+        product.brief.useProofLayout = true;
         const run = createStudioRun(product, () => crypto.randomUUID());
-        Object.assign(run.shots[2], { role: "main-selling", composition: "left", ratio: "1:1", headline: "方便携带" });
+        Object.assign(run.shots[2], { role: "main-selling", composition: "left", ratio: "1:1", headline: "日常水杯", copySource: "user", visual: "展示杯身和杯口" });
         product.runs.push(run);
         const attempt = { id: "legacy", status: "submitting" as const, model: "test::image", tweaks: [], createdAt: product.createdAt, outputs: [] };
         run.shots[0].attempts.push(attempt);
@@ -708,7 +719,15 @@ describe("真实电商页面生命周期", () => {
         spyOn(studioGeneration, "buildStudioImageGeneration").mockImplementation((current, model) => ({ ...current, model }));
         const done = (id: string) => ({ ...runningTask(id), type: "canvas_image", status: "succeeded" as const, resultJson: JSON.stringify({ images: [{ storageKey: "resource:output", url: "/result" }] }) });
         const watch = spyOn(taskApi, "waitForGenerationTask").mockImplementation(async (id) => done(id));
-        const drawing = spyOn(dom.HTMLCanvasElement.prototype, "getContext").mockReturnValue({ fillRect() {} } as CanvasRenderingContext2D);
+        const drawing = spyOn(dom.HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+            fillRect() {},
+            fillText() {},
+            measureText: (text: string) => ({ width: text.length * 16 }),
+            beginPath() {},
+            moveTo() {},
+            lineTo() {},
+            stroke() {},
+        } as unknown as CanvasRenderingContext2D);
         const upload = spyOn(resourceApi, "uploadResourceFile").mockResolvedValue(uploadedImage("layout-res"));
         spyOn(dom.HTMLCanvasElement.prototype, "toBlob").mockImplementation((callback) => callback(new Blob(["layout"], { type: "image/png" })));
         const submits: CreateTaskInput[] = [];
@@ -754,7 +773,7 @@ describe("真实电商页面生命周期", () => {
         expect(submits[0]).toMatchObject({ idempotencyKey: pending.id, input: { prompt: pending.input!.compiled.prompt, referenceImages: [{ storageKey: "resource:cup" }, { storageKey: "resource:layout-res" }] } });
         expect(current().runs[0].shots[2].attempts[0].taskId).toBe("new-task");
         expect(upload).toHaveBeenCalledTimes(1);
-        expect(drawing).toHaveBeenCalledTimes(1);
+        expect(drawing).toHaveBeenCalledTimes(2);
         expect(current().runs[0].shots[0].attempts[0].taskId).toBeUndefined();
     });
     test("发送后从对话反复拖图复用原资源，连续导入不清空对话且刷新保留已发送快照", async () => {

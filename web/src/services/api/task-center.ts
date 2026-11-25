@@ -555,12 +555,14 @@ async function waitForGenerationTaskTextEvents(id: string, options: WaitForGener
     let lastEventId = 0;
     // Agent subscriptions replay from cursor 0; an existing draft must not be
     // prepended to the same persisted deltas when reopening a conversation.
-    let fullText = options.textEventsSource === "agent" ? "" : lastTask?.textDraft || "";
+    let fullText = "";
     let lastStreamError: unknown;
     if (!lastTask) {
         lastTask = await queryGenerationTask(id, { signal: options.signal });
         options.onTaskUpdate?.(lastTask);
     }
+    if (lastTask.status === "succeeded") return lastTask;
+    if (lastTask.status === "failed" || lastTask.status === "cancelled") throw terminalTaskError(lastTask);
     const timeoutMs = options.timeoutMs || taskWaitTimeoutMs(lastTask);
     while (Date.now() - startedAt < timeoutMs) {
         assertCurrentUserSession(session);

@@ -1,10 +1,10 @@
 import { App, Button, Input, Popover, Tooltip } from "antd";
 import { useRequireLogin } from "@/hooks/use-require-login";
 import { useUserStore } from "@/stores/use-user-store";
-import { ChevronDown, LayoutTemplate, ListChecks, RotateCcw, ScanSearch } from "lucide-react";
-import { useMemo, useState, useSyncExternalStore, type ClipboardEvent, type ReactNode } from "react";
+import { ArrowRight, Check, ChevronDown, Images, LayoutTemplate, ListChecks, RotateCcw, Rows3, ScanSearch } from "lucide-react";
+import { useMemo, useRef, useState, useSyncExternalStore, type ClipboardEvent, type ReactNode } from "react";
 import { studioPromptOverridesRevision, subscribeStudioPromptOverrides } from "@/lib/ecommerce-studio/prompt-overrides";
-import { studioImageInput } from "@/lib/ecommerce-studio/generation-input";
+import { studioImageInput, studioImageReferenceSummary, studioLocateRunShot, type StudioImageReferenceSummary } from "@/lib/ecommerce-studio/generation-input";
 import { Checkbox } from "@/components/ui/base/checkbox";
 import { Select } from "@/components/ui/base/select";
 import { ECOMMERCE_PLATFORMS, ecommercePlatform, type EcommercePlatformId } from "@/lib/ecommerce/ecommerce-platform-specs";
@@ -20,8 +20,6 @@ import {
     STUDIO_SHOOTINGS,
     STUDIO_SINGLE_TYPES,
     studioMarket,
-    studioOutputSpec,
-    studioPlatformForbidsText,
     studioRunRatio,
     studioRatioValid,
     studioInfoPoints,
@@ -31,18 +29,18 @@ import {
     toggleStudioSingleType,
 } from "@/lib/ecommerce-studio/brief";
 import { studioCopyIssues } from "@/lib/ecommerce-studio/dossier-tasks";
-import { studioChannelDesign } from "@/lib/ecommerce-studio/art-direction";
+import { studioClaimSources } from "@/lib/ecommerce-studio/claim-evidence";
 import { studioEffectiveQuality, studioEffectiveResolution, studioImageRequest, studioQualityOptions, studioRatioOptions, studioResolutionOptions, type StudioImageRequest } from "@/lib/ecommerce-studio/image-options";
 import { studioModelAdapter, studioReferencePhotos } from "@/lib/ecommerce-studio/prompt-compiler";
 import { studioPlanningImages } from "@/lib/ecommerce-studio/reference-selection";
 import { studioChangeStyle } from "@/lib/ecommerce-studio/product";
-import { patchStudioDetailPlanScreen, STUDIO_DESIGN_TONES, STUDIO_DETAIL_PLAN_LIMITS, STUDIO_DETAIL_SCREEN_OPTIONS, studioDetailScreenCount, studioScreenCopyIssue, STUDIO_PLAN_FIELD, STUDIO_PLAN_SCOPES } from "@/lib/ecommerce-studio/detail-plan";
-import { studioAnsweredAsks, studioPickedDirection } from "@/lib/ecommerce-studio/plan-prep";
+import { patchStudioDetailPlanScreen, STUDIO_DETAIL_PLAN_LIMITS, STUDIO_DETAIL_SCREEN_OPTIONS, studioDetailScreenCount, studioScreenCopyIssue, STUDIO_PLAN_FIELD, STUDIO_PLAN_SCOPES } from "@/lib/ecommerce-studio/detail-plan";
+import { studioPickedDirection } from "@/lib/ecommerce-studio/plan-prep";
 import { createStudioRun, moveStudioSetEntry, studioActivePlan, studioEntryRatio, studioPlanScopeOf, studioRevisionPlan, studioSetEntries, studioSetKind, toggleStudioSetEntry } from "@/lib/ecommerce-studio/runs";
 import { previewStudioDetailGeometry } from "@/lib/ecommerce-studio/delivery-geometry";
 import { studioSuiteUse } from "@/lib/ecommerce-studio/suites";
 import { studioPlanInputSignature } from "@/lib/ecommerce-studio/plan-input";
-import { STUDIO_STYLES, studioProductStyle } from "@/lib/ecommerce-studio/shot-specs";
+import { STUDIO_STYLES } from "@/lib/ecommerce-studio/shot-specs";
 import type { StudioBrief, StudioLanguage, StudioMarket, StudioOutputType, StudioProduct, StudioShooting, StudioStyleId } from "@/lib/ecommerce-studio/types";
 import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
 import { configuredModelDisplayName } from "@/lib/model-selection";
@@ -50,14 +48,17 @@ import { StudioDossierCard } from "./studio-dossier";
 import { StudioModelCastSection } from "./studio-model-cast";
 import { StudioModelPicker, useStudioModel } from "./studio-parts";
 import { StudioPlanPrepPanel, studioPrepStep } from "./studio-plan-prep";
+import { StudioPlanDirectionCard } from "./studio-plan-direction";
 import { StudioPlanPreview } from "./studio-plan-preview";
 import { StudioPlanReceiptPanel } from "./studio-plan-receipt";
+import { StudioPlanProgressPanel } from "./studio-plan-progress";
 import { StudioShotList, type StudioPlannedScreenPatch } from "./studio-shot-list";
 import { StudioSuitePicker } from "./studio-suite-picker";
 import { StudioUploadBox, useStudioUploads } from "./studio-uploads";
 import { studioImageFiles } from "./studio-upload";
+import { useStudioStore } from "./use-studio-store";
 import { useStudioEstimate, useStudioTextEstimate } from "./use-studio-estimate";
-import { commerceReferenceViewRanges } from "@/pages/ecommerce/reference-plan";
+import { commerceReferenceViewCount } from "@/pages/ecommerce/reference-plan";
 import { useStudioAnalysis, type StudioRunner } from "./use-studio-runner";
 
 type Edit = (updater: (product: StudioProduct) => StudioProduct, options?: { immediate?: boolean }) => void;
@@ -65,9 +66,14 @@ type Edit = (updater: (product: StudioProduct) => StudioProduct, options?: { imm
 const PLATFORM_OPTIONS = ECOMMERCE_PLATFORMS.map((platform) => ({ value: platform.id, label: platform.name }));
 const MARKET_OPTIONS = STUDIO_MARKETS.map((item) => ({ value: item.id, label: item.label }));
 const LANGUAGE_OPTIONS = STUDIO_LANGUAGES.map((item) => ({ value: item.id, label: item.label }));
-const STYLE_OPTIONS = [{ value: "auto", label: "按商品推荐", title: "策划详情页时由策划挑；不策划时按品类挑" }, ...STUDIO_STYLES.map((style) => ({ value: style.id, label: style.name, title: style.mood }))];
+const STYLE_OPTIONS = [{ value: "auto", label: "由图片模型设计" }, ...STUDIO_STYLES.map((style) => ({ value: style.id, label: style.name, title: style.mood }))];
 const SHOOTING_OPTIONS = STUDIO_SHOOTINGS.map((item) => ({ value: item.id, label: item.label }));
 const INFO_PLACEHOLDER = "每行一条卖点或商品信息，例如：\n316 不锈钢内胆：长效保温 12 小时\n一键弹盖，单手就能打开\n容量 500ml，重约 280g";
+const SINGLE_TYPE_GROUPS = [
+    { id: "listing", label: "商品展示", types: ["main", "white", "scene", "selling", "closeup", "angles"] },
+    { id: "story", label: "场景与营销", types: ["model", "poster", "campaign", "seeding", "ugc", "collocation", "flatlay"] },
+    { id: "info", label: "选购与使用", types: ["compare", "steps", "size", "spec", "package"] },
+] as const;
 
 function Field({ label, span, hint, children, htmlFor }: { label: string; span: 2 | 3 | 6; hint?: ReactNode; children: ReactNode; htmlFor?: string }) {
     return (
@@ -162,7 +168,23 @@ function FillModelPopover({ imageCount, purpose = "识别" }: { imageCount: numb
     );
 }
 
-export function StudioForm({ product, edit, ensure, runner, onGenerated }: { product: StudioProduct; edit: Edit; ensure: () => string; runner: StudioRunner; onGenerated: () => void }) {
+export function StudioForm({
+    product,
+    edit,
+    ensure,
+    runner,
+    onOutputChange,
+    onPlanning,
+    onGenerated,
+}: {
+    product: StudioProduct;
+    edit: Edit;
+    ensure: () => string;
+    runner: StudioRunner;
+    onOutputChange: () => void;
+    onPlanning: () => void;
+    onGenerated: () => void;
+}) {
     const requireLogin = useRequireLogin();
     const user = useUserStore((state) => state.user);
     const { message, modal } = App.useApp();
@@ -170,6 +192,7 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
     const text = useStudioModel("text");
     const uploads = useStudioUploads(ensure);
     const running = useStudioAnalysis((state) => state.running[product.id]);
+    const saveFailed = useStudioStore((state) => state.saveStates[product.id] === "error");
     const filling = running === "fill";
     const planning = running === "plan";
     const asking = running === "ask";
@@ -179,7 +202,6 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
     const scope = studioPlanScopeOf(product);
     const activePlan = studioActivePlan(product);
     const scopeMeta = scope ? STUDIO_PLAN_SCOPES[scope] : undefined;
-    const spec = studioOutputSpec(brief.outputType);
     const profile = image.value ? modelCapabilityConfigFor(image.config, image.value).image : undefined;
     const qualityOptions = useMemo(() => studioQualityOptions(profile), [profile]);
     const quality = studioEffectiveQuality(profile, brief.quality);
@@ -190,13 +212,19 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
     const [customRatioOpen, setCustomRatioOpen] = useState(false);
     const customRatio = customRatioOpen || (brief.ratio !== "auto" && !ratioOptions.includes(brief.ratio));
     const [pickerOpen, setPickerOpen] = useState(false);
+    const [expandedPlanId, setExpandedPlanId] = useState<string>();
+    const planScroll = useRef<HTMLDivElement>(null);
+    const generating = useRef(false);
+    const [starting, setStarting] = useState(false);
     const setKind = studioSetKind(product);
     const singles = studioSingleTypes(brief);
     const entries = useMemo(() => studioSetEntries(product), [product]);
+    const planSignature = useMemo(() => studioPlanInputSignature(product), [product]);
+    const claimSources = useMemo(() => (activePlan || scope === "detail" ? studioClaimSources(product) : []), [activePlan, product, scope]);
     const included = entries.filter((entry) => entry.included);
     const unit = setKind === "detail" ? "屏" : "张";
     // 单张类型可以多选，数量是每种出几张；单张图策划过时按策划清单里勾选的张数。
-    const images = setKind || (scope === "single" && activePlan) ? included.length : singles.length * brief.count;
+    const images = scope === "detail" && !activePlan ? studioDetailScreenCount(brief) : setKind || (scope === "single" && activePlan) ? included.length : singles.length * brief.count;
     const truthCount = studioReferencePhotos(product.photos, 8).length;
     // 有模特的图才用模特设定：选了模特图、模特拍法，或者套图清单里有上身效果。
     const castRelevant = singles.some((item) => item.id === "model") || brief.shooting === "model" || entries.some((entry) => entry.included && entry.role === "detail-model");
@@ -209,27 +237,34 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
         try {
             let index = 0;
             const run = createStudioRun(product, () => `estimate-${++index}`);
-            for (const shot of run.shots)
-                inputs.push(studioImageInput(product, { shot, textMode: run.textMode, quality: run.quality, resolution: run.resolution || "", fromForm: true, styleId: run.styleId, source: run.source, suite: run.suite }, image.value, image.config));
+            for (const [index] of run.shots.entries()) inputs.push(studioImageInput(product, studioLocateRunShot(run, index), image.value, image.config));
             return { inputs, complete: true };
         } catch {
             return { inputs: inputs.slice(0, 1), complete: false };
         }
     }, [product, image.value, image.config, promptRevision]);
+    const referenceSummary = useMemo<StudioImageReferenceSummary | undefined>(() => {
+        const first = estimateSpec.inputs[0];
+        return first ? studioImageReferenceSummary(first) : undefined;
+    }, [estimateSpec.inputs]);
+    const referenceSummaryVaries = useMemo(() => {
+        if (estimateSpec.inputs.length < 2) return false;
+        const first = studioImageReferenceSummary(estimateSpec.inputs[0]);
+        return estimateSpec.inputs.slice(1).some((input) => studioImageReferenceSummary(input).total !== first.total);
+    }, [estimateSpec.inputs]);
     const estimate = useStudioEstimate({ model: image.value, inputs: estimateSpec.inputs });
     const suggestion = studioSuggestion(product);
     const issues = useMemo(() => studioCopyIssues(studioInfoPoints(product.sellerNotes), { headline: studioTitleOf(product), subhead: "", listingTitle: "", bullets: [] }), [product]);
     const adapter = studioModelAdapter(image.value);
     const platform = ecommercePlatform(product.platform);
-    const noTextOnMain = singles.some((item) => item.role && studioPlatformForbidsText(product, item.role));
-    const noTextNote = noTextOnMain ? `${platform?.name || "这个平台"}首图不加文字，标题不会写进图里` : "";
-    const typeHint = singles.length > 1 ? [`${singles.map((item) => item.label).join("、")}，每种 ${brief.count} 张，共 ${images} 张`, noTextNote].filter(Boolean).join("；") : noTextNote || spec.hint;
     const uploading = uploads.pending.photos + uploads.pending.references > 0;
     const suiteMissing = brief.outputType === "template-set" && !brief.suite;
     // 详情页必须先按用户选定屏数策划；主图套图没有可用文本模型时仍可按品类清单出。
     // 单张图和模板套图可以直接出，也可以先策划；模板套图按模板的张数策划。
-    const planScreens =
+    const requestedPlanScreens =
         scope === "detail" ? studioDetailScreenCount(brief) : scope === "single" ? singles.length * Math.max(1, Math.min(4, brief.count)) : scope === "template" ? brief.suite?.shots.length || 0 : scopeMeta?.screens || STUDIO_DETAIL_PLAN_LIMITS.screens;
+    // 用户选定的屏数是策划与出图契约；资料容量只做提醒，不得静默把 6 屏改成 4 屏。
+    const planScreens = requestedPlanScreens;
     const planUnit = scope === "template" ? unit : scopeMeta?.unit || "张";
     const geometry =
         setKind === "detail" && (included.length || scope === "detail")
@@ -241,16 +276,24 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
               )
             : undefined;
     const planMissing = !activePlan && (scope === "detail" || (scope === "main" && Boolean(text.value)));
+    const planningAvailable = Boolean(scope && !activePlan && text.value);
+    const detailNeedsPlan = !activePlan && (scope === "detail" || (setKind === "detail" && planningAvailable));
+    const planBeforeGenerate = planningAvailable && !detailNeedsPlan;
     const planField = scope ? STUDIO_PLAN_FIELD[scope] : "detailPlan";
     const storedPlan = studioRevisionPlan(product);
-    const planOutdated = Boolean(storedPlan && !activePlan);
-    const planningImages = studioPlanningImages(product, modelCapabilityConfigFor(text.config, text.value).text?.references.maxImages ?? 2);
-    const planTone = activePlan?.tone ? STUDIO_DESIGN_TONES[activePlan.tone].label : "";
+    const planOutdated = !activePlan && Boolean(storedPlan || (scope === "detail" && brief.detailPlan));
+    const planCapacity = modelCapabilityConfigFor(text.config, text.value).text?.references.maxImages ?? 2;
+    const planningImages = studioPlanningImages(product, planCapacity);
     // 明确不收图的文本模型识别不了商品：「AI 分析并策划」跳过识别，直接按表单和档案的文字策划。
     const textSeesPhotos = !text.value || modelCapabilityConfigFor(text.config, text.value).text?.references.maxImages !== 0;
     const analysisBlock = !product.photos.length ? "先上传商品图，再分析或策划" : !truthCount ? "请点亮至少一张非吊牌商品图的星标，再分析或策划" : !text.value ? "请先选择文本模型" : "";
-    const canTryFirst = Boolean(activePlan && images > 1 && (scope === "detail" || scope === "template"));
-    const copyProblem = included.map((entry) => ({ entry, issue: entry.copy ? studioScreenCopyIssue({ ...entry.copy, role: entry.role, eyebrow: entry.eyebrow, noText: entry.noText }) : undefined })).find((item) => item.issue);
+    const planningBlock = uploading ? "图片上传中，请稍候" : analysisBlock;
+    const canTryFirst = Boolean(images > 1 && activePlan && (scope === "detail" || scope === "template"));
+    const copyChecks = included.map((entry) => ({
+        entry,
+        issue: brief.language !== "none" && entry.copySource === "user" && entry.copy ? studioScreenCopyIssue({ ...entry.copy, role: entry.role, eyebrow: entry.eyebrow, noText: entry.noText, copySource: entry.copySource }) : undefined,
+    }));
+    const copyProblem = copyChecks.find((item) => item.issue);
     const setupBlock = !product.photos.length
         ? "先上传商品图"
         : !truthCount
@@ -261,47 +304,36 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
               ? "图片上传中，请稍候"
               : suiteMissing
                 ? "先选择一套模板"
-                : planMissing
-                  ? `先策划这 ${planScreens} ${planUnit}`
-                  : (setKind || (scope === "single" && activePlan)) && !included.length
-                    ? "镜头清单里至少留一张"
+                : scope === "detail" && !activePlan && !text.value
+                  ? "请选择策划模型"
+                  : !planningAvailable && (setKind || (scope === "single" && activePlan)) && !included.length
+                    ? "页面清单里至少留一张"
                     : "";
     const copyBlock = copyProblem ? `${copyProblem.entry.title}：${copyProblem.issue}` : "";
     const blocked = setupBlock || copyBlock;
-    const firstBlocked = setupBlock || (copyProblem?.entry === included[0] ? copyBlock : "");
+    const firstBlocked = setupBlock || (copyProblem && copyProblem.entry === included[0] ? copyBlock : "");
+    const primaryBlock = detailNeedsPlan ? planningBlock : blocked;
     const setLabel = brief.outputType === "template-set" ? "模板套图" : setKind === "detail" ? "详情页" : "主图套图";
-    // 质感选「按商品推荐」：详情页由策划挑，其他出图类型按品类挑。
-    const styleHint =
-        product.style !== "auto"
-            ? ""
-            : activePlan?.styleId
-              ? `策划挑了「${studioProductStyle(product, activePlan?.styleId).name}」`
-              : scope && text.value
-                ? `策划时按这件商品挑，没策划时按品类用「${studioProductStyle(product, activePlan?.styleId).name}」`
-                : `按品类用「${studioProductStyle(product, activePlan?.styleId).name}」`;
 
     const editBrief = (patch: Partial<StudioBrief>) => edit((current) => ({ ...current, brief: { ...current.brief, ...patch } }));
+    const pickOutput = (pick: (brief: StudioBrief) => StudioBrief) => {
+        if (pick(brief) === brief) return;
+        edit((current) => ({ ...current, brief: pick(current.brief) }));
+        onOutputChange();
+    };
     const pickSet = (id: StudioOutputType) => {
-        edit((current) => ({ ...current, brief: pickStudioSetType(current.brief, id) }));
+        pickOutput((current) => pickStudioSetType(current, id));
         if (id === "template-set" && !brief.suite) setPickerOpen(true);
     };
 
-    /** 识别商品。quiet 时是「AI 分析并策划」的第一步：不弹替换确认，卖家写过的内容保留。返回是否成功。 */
+    /** quiet 时是「AI 分析并策划」的第一步，只提示档案之外仍需要补充的情况。 */
     const fill = async (quiet = false) => {
         if (!requireLogin()) return false;
         try {
             const result = await runner.fill(ensure(), text.value);
             if (quiet) return true;
             const pending = [result.openQuestions ? `${result.openQuestions} 个问题` : "", result.unsureFacts ? `${result.unsureFacts} 条推断` : ""].filter(Boolean);
-            message.success(pending.length ? `已填好，还有${pending.join("、")}，在「商品档案」里核对` : "已按商品图填好");
-            if (result.infoKept)
-                modal.confirm({
-                    title: "用识别出的卖点替换现在的内容？",
-                    content: <pre className="es-confirm-pre">{result.info}</pre>,
-                    okText: "替换",
-                    cancelText: "保留我写的",
-                    onOk: () => edit((current) => ({ ...current, sellerNotes: result.info }), { immediate: true }),
-                });
+            message.success(pending.length ? `商品档案已更新，还有${pending.join("、")}待补充` : "商品档案已更新，原有卖家资料未修改");
             return true;
         } catch (error) {
             message.error(error instanceof Error ? error.message : "识别失败，请重试");
@@ -312,17 +344,18 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
     /** 策划一次，返回是否成功；失败时已经提示过原因。 */
     const runPlan = async (revise: boolean, recheck = false) => {
         if (!requireLogin()) return false;
+        if (planScroll.current) planScroll.current.scrollTop = 0;
+        const previousReceipt = useStudioStore.getState().products.find(({ id }) => id === product.id)?.planReceipt;
         try {
             const result = await runner.plan(ensure(), text.value, { revise, recheck });
             const count = result.plan.screens.length;
             const notes = [
-                result.dropped ? `${result.dropped} ${planUnit}依据不够没收进来` : "",
+                result.diagnostics && result.diagnostics.missingEvidence.length ? `按选择完成 ${result.diagnostics.requestedScreens} ${planUnit}，资料缺口：${result.diagnostics.missingEvidence.slice(0, 3).join("、")}` : "",
+                result.dropped ? `${result.dropped} ${planUnit}超出请求，已忽略` : "",
                 result.ungrounded ? `去掉了 ${result.ungrounded} 处没有出处的数字` : "",
                 result.issues.length ? `${result.issues.length} 处用词需要留意` : "",
-                result.warnings.length ? `${result.warnings.length} 项核对提醒，见最近策划结果` : "",
+                result.warnings.length ? `${result.warnings.length} 项生成提示，见最近页面设计结果` : "",
                 result.tacky.length ? `文案里有「${result.tacky.join("」「")}」这类说法，可以在补充调整里要求换掉` : "",
-                // 详情页版式变化不够时如实提示，由用户决定要不要按补充调整重排。
-                scope === "detail" && count >= 4 && !product.brief.sameLayout && result.compositionKinds < Math.min(4, Math.ceil(count / 2)) ? "图文重心较相似，可逐屏调整构图" : "",
             ].filter(Boolean);
             const summary = `已按这件商品排好 ${count} ${planUnit}${notes.length ? `，${notes.join("，")}` : ""}`;
             // 不足预定张数时如实说明，让用户决定直接出还是重新策划。
@@ -330,7 +363,9 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
             else message.success(`${summary}，可以展开修改`);
             return true;
         } catch (error) {
-            message.error(error instanceof Error ? error.message : "策划失败，请重试");
+            const reason = error instanceof Error ? error.message : "策划失败，请重试";
+            const receipt = useStudioStore.getState().products.find(({ id }) => id === product.id)?.planReceipt;
+            if (!receipt || receipt === previousReceipt || receipt.message !== reason) message.error(reason);
             return false;
         }
     };
@@ -350,11 +385,13 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
     /** 还没识别过就先识别，再按当前出图类型策划。revise 时带上这一版策划和补充调整，让模型按意见改。 */
     const analyzeAndPlan = async ({ revise = false } = {}): Promise<boolean> => {
         if (!scope) return fill();
+        onPlanning();
+        if (planScroll.current) planScroll.current.scrollTop = 0;
         if (!(await prepare())) return false;
         return runPlan(revise);
     };
 
-    /** AI 问几个只有卖家知道的问题。quiet 时是识别商品之后自动接着问的。 */
+    /** 可选的补充问题，不阻塞页面设计或出图。 */
     const runAsk = async (quiet = false) => {
         try {
             const asks = await runner.ask(ensure(), text.value);
@@ -370,21 +407,17 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
         if (!(await prepare())) return;
         try {
             const items = await runner.directions(ensure(), text.value);
-            message.success(`给了 ${items.length} 个视角，挑一个再策划`);
+            message.success(`给了 ${items.length} 个设计方向，挑一个再继续页面设计`);
         } catch (error) {
-            message.error(error instanceof Error ? error.message : "生成视角方案失败，请重试");
+            message.error(error instanceof Error ? error.message : "生成设计方向失败，请重试");
         }
     };
 
-    /**
-     * 顶部的「AI 分析商品」：重新识别商品；当前出图类型可以策划、还没问过问题时，接着问几个问题，
-     * 由卖家补充后再选视角和策划，不再一步跳到策划。
-     */
+    /** 顶部的「AI 分析商品」只负责识别商品；补充问题和设计方向是可选上下文。 */
     const analyzeProduct = async () => {
         if (!scope || !text.value) return void fill();
         if (!(await prepare(true))) return;
-        if (!brief.prep?.asks.length) await runAsk(true);
-        else message.success("已重新识别商品");
+        message.success("商品已识别；补充问题和设计方向可选，不影响页面设计或出图");
     };
     const planDetail = () => {
         if (!requireLogin()) return;
@@ -396,40 +429,45 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
         modal.confirm({ title: "重新策划会替换现在的清单", content: "改过的屏名、画面和文案都会换成新的策划。只想改几处的话，先在「补充调整」里写下要改的地方。", okText: "重新策划", cancelText: "取消", onOk: () => void analyzeAndPlan() });
     };
 
-    // 单张图和模板套图没策划时，有文本模型就先策划再出图：不策划的单张图只能套固定构图，模板套图照搬模板的镜头说明，
-    // 文案直接用卖点原文，是最普通的出法。「不策划，直接生成」跳过这一步。
-    const lazyPlan = scope === "single" || scope === "template";
-    const planBeforeGenerate = lazyPlan && !activePlan && Boolean(text.value);
-    const needsRecognition = planBeforeGenerate && !product.dossier && textSeesPhotos;
+    const needsRecognition = planningAvailable && !product.dossier && textSeesPhotos;
     const fillCount = Math.min(product.photos.length, modelCapabilityConfigFor(text.config, text.value).text?.references.maxImages || product.photos.length);
     const recognitionQuote = useStudioTextEstimate(text.value, needsRecognition ? fillCount : null);
     let planInputCount: number | null = planningImages.images.length;
     for (const ref of planningImages.references) {
+        if (planInputCount >= planCapacity) break;
         if (!ref.width || !ref.height) {
             planInputCount = null;
             break;
         }
         try {
-            planInputCount += commerceReferenceViewRanges(ref.width, ref.height).length;
+            planInputCount = Math.min(planCapacity, planInputCount + commerceReferenceViewCount(ref.width, ref.height));
         } catch {
             planInputCount = null;
             break;
         }
     }
-    const planQuote = useStudioTextEstimate(text.value, planBeforeGenerate ? planInputCount : null);
+    const planQuote = useStudioTextEstimate(text.value, planningAvailable ? planInputCount : null);
+    const planEstimate = planningAvailable && (planQuote || recognitionQuote || (!detailNeedsPlan && estimate.all)) ? `${needsRecognition ? `识别：${recognitionQuote || "待报价"}；` : ""}策划：${planQuote || "待报价"}` : "";
+    const imageEstimate =
+        (!detailNeedsPlan || scope === "template") && estimate.all
+            ? `${canTryFirst && estimate.first ? `首屏：${estimate.first}；` : ""}${detailNeedsPlan ? "按模板直接出图" : "出图"} ×${images}：${estimateSpec.complete ? estimate.all : "按实际出图规格计费"}`
+            : "";
     const generate = async ({ direct = false, firstOnly = false } = {}) => {
         if (!requireLogin()) return;
         const reason = firstOnly ? firstBlocked : blocked;
         if (reason) return void message.warning(reason);
-        if (planBeforeGenerate && !direct) {
-            message.info(`先按这件商品策划这 ${planScreens} ${planUnit}，策划好就开始出图`);
-            if (!(await analyzeAndPlan())) return;
-        }
+        if (generating.current) return;
+        generating.current = true;
+        setStarting(true);
         try {
-            await runner.generate(ensure(), image.value, { firstOnly });
+            if (planBeforeGenerate && !direct && !(await analyzeAndPlan())) return;
+            await runner.generate(ensure(), image.value, { firstOnly, confirmedPlanId: setKind === "detail" ? activePlan?.id : undefined });
             onGenerated();
         } catch (error) {
             message.error(error instanceof Error ? error.message : "生成失败");
+        } finally {
+            generating.current = false;
+            setStarting(false);
         }
     };
 
@@ -443,11 +481,9 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
 
     const ratioLabel = brief.sameLayout && product.references.length ? "自动（跟参考图）" : "自动（推荐）";
 
-    // 策划前的补充信息和视角方案：答过的和挑中的方向会带进每一次策划。
+    // 策划前的补充信息和设计方向方案：答过的和挑中的方向会带进每一次策划。
     const prepStep = studioPrepStep(brief.prep);
     const pickedDirection = studioPickedDirection(brief.prep);
-    const answeredCount = studioAnsweredAsks(brief.prep).length;
-    const prepSummary = ["补充信息与视角", answeredCount ? `已答 ${answeredCount} 个问题` : "", pickedDirection ? `按「${pickedDirection.angle}」` : ""].filter(Boolean).join(" · ");
     const prepPanel = (
         <StudioPlanPrepPanel
             product={product}
@@ -461,461 +497,563 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
             onDirections={() => void runDirections()}
         />
     );
+    const receipt = product.planReceipt;
+    const showReceiptFirst = Boolean(receipt && (saveFailed || (receipt.state !== "accepted" && (receipt.state !== "submitted" || !running))));
+    const planReceipt = receipt ? (
+        <div className="es-plan-receipt" data-priority={showReceiptFirst || undefined}>
+            <StudioPlanReceiptPanel
+                productId={product.id}
+                receipt={receipt}
+                current={scope === receipt.scope && receipt.inputSignature === planSignature}
+                busy={Boolean(running)}
+                onRecheck={() => void runPlan(false, true)}
+                onRetry={() => void runPlan(false)}
+            />
+        </div>
+    ) : null;
 
     return (
-        <section className="es-form" aria-label="生图表单" onPasteCapture={onPaste}>
-            <div className="es-form-scroll">
-                <section className="es-tuner-copy" aria-label="平台设计策略">
-                    <span className="es-tuner-title">平台设计策略</span>
-                    <p className="es-prompt-note">{studioChannelDesign(product.platform)}</p>
-                    <p className="es-prompt-note">先策划文案、色调与摄影，模型一次完成图文设计。</p>
-                </section>
-                <div className="es-uploads">
-                    <StudioUploadBox
-                        kind="photos"
-                        hint="必填 · 出图以它为准"
-                        product={product}
-                        pending={uploads.pending.photos}
-                        onFiles={(files) => void uploads.addFiles("photos", files)}
-                        onAssets={(assets) => void uploads.addAssets("photos", assets)}
-                        onRemove={(photo) => edit((current) => ({ ...current, photos: current.photos.filter((item) => item.id !== photo.id) }))}
-                        onPatch={(photo, patch) => edit((current) => ({ ...current, photos: current.photos.map((item) => (item.id === photo.id ? { ...item, ...patch } : item)) }))}
-                    />
-                    <StudioUploadBox
-                        kind="references"
-                        hint="可选 · 风格或版式"
-                        product={product}
-                        pending={uploads.pending.references}
-                        onFiles={(files) => void uploads.addFiles("references", files)}
-                        onAssets={(assets) => void uploads.addAssets("references", assets)}
-                        onRemove={(photo) => edit((current) => ({ ...current, references: current.references.filter((item) => item.id !== photo.id) }))}
-                    />
-                </div>
-
-                {suggestion ? (
-                    <div className="es-banner">
-                        <span>
-                            助手给出了
-                            {[suggestion.brand ? "品牌" : "", suggestion.productType ? "商品类型" : "", suggestion.points ? `${suggestion.points} 条卖点` : ""].filter(Boolean).join("、")}
-                            ，还没填进表单。
-                        </span>
-                        <Button size="small" onClick={() => edit(applyStudioSuggestion, { immediate: true })}>
-                            填入表单
-                        </Button>
+        <>
+            <section className="es-form" aria-labelledby="es-input-heading" onPasteCapture={onPaste}>
+                <header className="es-workspace-head">
+                    <h2 id="es-input-heading">商品与设置</h2>
+                </header>
+                <div className="es-form-scroll">
+                    <div className="es-uploads">
+                        <StudioUploadBox
+                            kind="photos"
+                            hint="必填"
+                            product={product}
+                            pending={uploads.pending.photos}
+                            onFiles={(files) => void uploads.addFiles("photos", files)}
+                            onAssets={(assets) => void uploads.addAssets("photos", assets)}
+                            onRemove={(photo) => edit((current) => ({ ...current, photos: current.photos.filter((item) => item.id !== photo.id) }))}
+                            onPatch={(photo, patch) => edit((current) => ({ ...current, photos: current.photos.map((item) => (item.id === photo.id ? { ...item, ...patch } : item)) }))}
+                        />
+                        <StudioUploadBox
+                            kind="references"
+                            hint=""
+                            product={product}
+                            pending={uploads.pending.references}
+                            onFiles={(files) => void uploads.addFiles("references", files)}
+                            onAssets={(assets) => void uploads.addAssets("references", assets)}
+                            onRemove={(photo) => edit((current) => ({ ...current, references: current.references.filter((item) => item.id !== photo.id) }))}
+                        />
                     </div>
-                ) : null}
 
-                <div className="es-section-head">
-                    <h2>商品信息</h2>
-                    <span className="es-field-actions">
-                        <Tooltip title={!product.photos.length ? "先上传商品图" : scope && text.value ? "看商品图识别品牌、类型、标题和卖点（已经写了的不覆盖），再问你几个商品图看不出来的问题" : "看商品图，自动填品牌、类型、标题和卖点；已经写了的不覆盖"}>
-                            <Button size="small" icon={<ScanSearch size={14} />} loading={filling || asking} disabled={Boolean(user) && (Boolean(analysisBlock) || Boolean(running && !filling && !asking))} onClick={() => void analyzeProduct()}>
-                                {filling ? "识别商品中…" : asking ? "生成问题中…" : "AI 分析商品"}
+                    {suggestion ? (
+                        <div className="es-banner">
+                            <span>
+                                助手给出了
+                                {[suggestion.brand ? "品牌" : "", suggestion.productType ? "商品类型" : "", suggestion.points ? `${suggestion.points} 条卖点` : ""].filter(Boolean).join("、")}
+                                ，还没填进表单。
+                            </span>
+                            <Button
+                                size="small"
+                                onClick={() => {
+                                    if (!suggestion.info) return edit(applyStudioSuggestion, { immediate: true });
+                                    modal.confirm({
+                                        title: "核对后采用这些卖点",
+                                        content: (
+                                            <>
+                                                <p>它们是识别建议，不是卖家事实。请确认每条都能在商品实物或资料里核实。</p>
+                                                <pre className="es-confirm-pre">{suggestion.info}</pre>
+                                            </>
+                                        ),
+                                        okText: "我已核对，填入表单",
+                                        cancelText: "暂不采用",
+                                        onOk: () => edit((current) => (studioSuggestion(current)?.info === suggestion.info ? applyStudioSuggestion(current) : current), { immediate: true }),
+                                    });
+                                }}
+                            >
+                                {suggestion.info ? "查看建议" : "填入表单"}
                             </Button>
-                        </Tooltip>
-                        <FillModelPopover imageCount={product.photos.length} />
-                    </span>
-                </div>
-                <p className="es-field-hint">{analysisBlock || "这里只识别资料和补充问题，不生成逐屏策划。要生成清单，请使用下方的策划按钮。"}</p>
-                <div className="es-grid">
-                    <Field label="品牌名" span={3} htmlFor="es-brand">
-                        <Input id="es-brand" variant="filled" size="large" value={brief.brand} placeholder="例如：NORDA" maxLength={40} onChange={(event) => editBrief({ brand: event.target.value })} />
-                    </Field>
-                    <Field label="商品类型" span={3} htmlFor="es-type">
-                        <Input id="es-type" variant="filled" size="large" value={brief.productType} placeholder="例如：保温杯" maxLength={40} onChange={(event) => editBrief({ productType: event.target.value })} />
-                    </Field>
-                    <Field label="核心标题" span={6} htmlFor="es-title">
-                        <Input
-                            id="es-title"
-                            variant="filled"
-                            size="large"
-                            value={studioTitleOf(product)}
-                            placeholder="图上的主标题，例如：12 小时长效保温（可留空）"
-                            maxLength={30}
-                            onChange={(event) => edit((current) => ({ ...current, copy: { headline: event.target.value, subhead: current.copy?.subhead || "", listingTitle: current.copy?.listingTitle || "", bullets: current.copy?.bullets || [] } }))}
-                        />
-                    </Field>
-                    <Field
-                        label="卖点与商品信息"
-                        span={6}
-                        htmlFor="es-info"
-                        hint={
-                            issues.length ? (
-                                <div className="es-hints">
-                                    {issues.slice(0, 3).map((issue, index) => (
-                                        <span key={`${issue.term}-${index}`} data-tone="warning">
-                                            {issue.field}「{issue.term}」：{issue.reason}
-                                        </span>
-                                    ))}
-                                </div>
-                            ) : undefined
-                        }
-                    >
-                        <Input.TextArea
-                            id="es-info"
-                            variant="filled"
-                            value={product.sellerNotes}
-                            placeholder={INFO_PLACEHOLDER}
-                            autoSize={{ minRows: 4, maxRows: 10 }}
-                            maxLength={600}
-                            onChange={(event) => edit((current) => ({ ...current, sellerNotes: event.target.value }))}
-                        />
-                    </Field>
-                </div>
+                        </div>
+                    ) : null}
 
-                {product.dossier ? <StudioDossierCard key={product.dossier.recognizedAt || "dossier"} dossier={product.dossier} edit={edit} /> : null}
-                <div className="es-section-head">
-                    <h2>出图设置</h2>
-                    <Tooltip title="从后台精选或 1173 套内置模板里挑一套，按模板逐张出图">
+                    <div className="es-section-head">
+                        <h2>商品信息</h2>
+                        <span className="es-field-actions">
+                            <Tooltip
+                                title={!product.photos.length ? "先上传商品图" : scope && text.value ? "看商品图识别品牌、类型、标题和卖点（已经写了的不覆盖），再问你几个商品图看不出来的问题" : "看商品图，自动填品牌、类型、标题和卖点；已经写了的不覆盖"}
+                            >
+                                <Button size="small" icon={<ScanSearch size={14} />} loading={filling || asking} disabled={Boolean(user) && (Boolean(analysisBlock) || Boolean(running && !filling && !asking))} onClick={() => void analyzeProduct()}>
+                                    {filling ? "识别商品中…" : asking ? "生成问题中…" : "AI 分析商品"}
+                                </Button>
+                            </Tooltip>
+                            <FillModelPopover imageCount={product.photos.length} />
+                        </span>
+                    </div>
+                    <div className="es-grid">
+                        <Field label="品牌名" span={3} htmlFor="es-brand">
+                            <Input id="es-brand" variant="filled" size="large" value={brief.brand} placeholder="例如：NORDA" maxLength={40} onChange={(event) => editBrief({ brand: event.target.value })} />
+                        </Field>
+                        <Field label="商品类型" span={3} htmlFor="es-type">
+                            <Input id="es-type" variant="filled" size="large" value={brief.productType} placeholder="例如：保温杯" maxLength={40} onChange={(event) => editBrief({ productType: event.target.value })} />
+                        </Field>
+                        <Field label="核心标题" span={6} htmlFor="es-title">
+                            <Input
+                                id="es-title"
+                                variant="filled"
+                                size="large"
+                                value={studioTitleOf(product)}
+                                placeholder="图上的主标题，例如：12 小时长效保温（可留空）"
+                                maxLength={30}
+                                onChange={(event) => edit((current) => ({ ...current, copy: { headline: event.target.value, subhead: current.copy?.subhead || "", listingTitle: current.copy?.listingTitle || "", bullets: current.copy?.bullets || [] } }))}
+                            />
+                        </Field>
+                        <Field
+                            label="卖点与商品信息"
+                            span={6}
+                            htmlFor="es-info"
+                            hint={
+                                issues.length ? (
+                                    <div className="es-hints">
+                                        {issues.slice(0, 3).map((issue, index) => (
+                                            <span key={`${issue.term}-${index}`} data-tone="warning">
+                                                {issue.field}「{issue.term}」：{issue.reason}
+                                            </span>
+                                        ))}
+                                    </div>
+                                ) : undefined
+                            }
+                        >
+                            <Input.TextArea
+                                id="es-info"
+                                variant="filled"
+                                value={product.sellerNotes}
+                                placeholder={INFO_PLACEHOLDER}
+                                autoSize={{ minRows: 4, maxRows: 10 }}
+                                maxLength={600}
+                                onChange={(event) => edit((current) => ({ ...current, sellerNotes: event.target.value }))}
+                            />
+                        </Field>
+                    </div>
+
+                    {product.dossier ? <StudioDossierCard key={product.dossier.recognizedAt || "dossier"} dossier={product.dossier} edit={edit} /> : null}
+                    <div className="es-section-head">
+                        <h2>出图设置</h2>
                         <Button size="small" icon={<LayoutTemplate size={14} />} onClick={() => setPickerOpen(true)}>
                             套图模板库
                         </Button>
-                    </Tooltip>
-                </div>
-                <div className="es-grid">
-                    {/* 单张类型可多选，一次出几种；套图只能单选。换类型时清掉套图的顺序和勾选，已选的模板保留。 */}
-                    <div className="es-field" data-span={6}>
-                        <div className="es-field-row">
-                            <span className="es-field-label" id="es-type-label">
-                                出图类型
-                            </span>
-                            <span className="es-field-hint">单张可以多选，一次出几种</span>
-                        </div>
-                        <div className="es-type-picker" role="group" aria-labelledby="es-type-label">
-                            <div className="es-chips" role="group" aria-label="单张类型，可多选">
-                                {STUDIO_SINGLE_TYPES.map((item) => (
-                                    <button
-                                        key={item.id}
-                                        type="button"
-                                        className="es-chip"
-                                        aria-pressed={singles.some((single) => single.id === item.id)}
-                                        title={item.hint}
-                                        onClick={() => edit((current) => ({ ...current, brief: toggleStudioSingleType(current.brief, item.id) }))}
-                                    >
-                                        {item.label}
-                                    </button>
-                                ))}
-                            </div>
-                            <div className="es-type-sets" role="group" aria-label="成套出图，单选">
-                                <span>成套</span>
-                                <div className="es-chips">
-                                    {STUDIO_SET_TYPES.map((item) => (
-                                        <button key={item.id} type="button" className="es-chip" aria-pressed={brief.outputType === item.id} title={item.hint} onClick={() => pickSet(item.id)}>
-                                            {item.label}
-                                        </button>
+                    </div>
+                    <div className="es-grid">
+                        <div className="es-field" data-span={6}>
+                            <div className="es-type-picker" role="group" aria-label="出图类型">
+                                <div className="es-type-set" role="group" aria-labelledby="es-type-set-label">
+                                    <h3 id="es-type-set-label">成套页面</h3>
+                                    <div className="es-type-set-options">
+                                        {STUDIO_SET_TYPES.map((item) => {
+                                            const Icon = item.id === "detail-set" ? Rows3 : item.id === "main-set" ? Images : LayoutTemplate;
+                                            return (
+                                                <button key={item.id} type="button" className="es-type-set-option" data-output-type={item.id} aria-pressed={brief.outputType === item.id} onClick={() => pickSet(item.id)}>
+                                                    <Icon size={18} aria-hidden />
+                                                    {item.id === "main-set" ? "主图套图" : item.label}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                                <div className="es-type-single" role="group" aria-label="单张图片，可多选">
+                                    <h3>单张图片</h3>
+                                    {SINGLE_TYPE_GROUPS.map((group) => (
+                                        <div className="es-type-group" role="group" key={group.id} aria-labelledby={`es-type-group-${group.id}`}>
+                                            <h4 id={`es-type-group-${group.id}`}>{group.label}</h4>
+                                            <div className="es-type-options">
+                                                {group.types.map((id) => {
+                                                    const item = STUDIO_SINGLE_TYPES.find((candidate) => candidate.id === id);
+                                                    if (!item) return null;
+                                                    const selected = singles.some((single) => single.id === item.id);
+                                                    return (
+                                                        <button key={item.id} type="button" className="es-type-option" data-output-type={item.id} aria-pressed={selected} onClick={() => pickOutput((current) => toggleStudioSingleType(current, item.id))}>
+                                                            <span>{item.label}</span>
+                                                            {selected ? <Check size={13} aria-hidden /> : null}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
                                     ))}
                                 </div>
                             </div>
                         </div>
-                        {typeHint ? <div className="es-field-hint">{typeHint}</div> : null}
-                    </div>
-                    {castRelevant ? <StudioModelCastSection product={product} edit={edit} /> : null}
-                    <Field label="视觉方向" span={2}>
-                        <Select appearance="field" size="large" value={product.platform} options={PLATFORM_OPTIONS} ariaLabel="视觉方向（平台）" onChange={(value: EcommercePlatformId) => edit((current) => ({ ...current, platform: value }))} />
-                    </Field>
-                    <Field label="市场" span={2}>
-                        <Select
-                            appearance="field"
-                            size="large"
-                            value={brief.market}
-                            options={MARKET_OPTIONS}
-                            ariaLabel="市场"
-                            onChange={(value: StudioMarket) => editBrief({ market: value, language: brief.language === "none" ? "none" : studioMarket(value).language })}
-                        />
-                    </Field>
-                    <Field label="语言" span={2} hint={brief.language !== "none" && adapter.textRendering === "weak" && image.value ? `${adapter.label} 写字不稳定，建议选「不加文字」` : undefined}>
-                        <Select appearance="field" size="large" value={brief.language} options={LANGUAGE_OPTIONS} ariaLabel="图上文字的语言" onChange={(value: StudioLanguage) => editBrief({ language: value })} />
-                    </Field>
-                    <Field label="质感" span={3} hint={styleHint || undefined}>
-                        <Select appearance="field" size="large" value={product.style} options={STYLE_OPTIONS} ariaLabel="质感" onChange={(value: StudioStyleId) => edit((current) => studioChangeStyle(current, value))} />
-                    </Field>
-                    <Field label="拍摄方式" span={3}>
-                        <Select appearance="field" size="large" value={brief.shooting} options={SHOOTING_OPTIONS} ariaLabel="拍摄方式" onChange={(value: StudioShooting) => editBrief({ shooting: value })} />
-                    </Field>
-                    <Field label="目标人群" span={3} htmlFor="es-audience">
-                        <Input id="es-audience" variant="filled" size="large" value={brief.audience} placeholder="例如：宝妈、上班族、送礼人" maxLength={60} onChange={(event) => editBrief({ audience: event.target.value })} />
-                    </Field>
-                    <Field label="价格/定位" span={3} htmlFor="es-positioning">
-                        <Input id="es-positioning" variant="filled" size="large" value={brief.positioning} placeholder="例如：中高端、性价比、礼盒" maxLength={60} onChange={(event) => editBrief({ positioning: event.target.value })} />
-                    </Field>
-
-                    <Field label="生图模型" span={6}>
-                        <StudioModelPicker kind="image" imageCount={Math.max(1, referenceCount)} placeholder="选择图片模型" />
-                    </Field>
-                    <Field label={scope === "detail" ? "详情屏数" : singles.length > 1 ? "每种数量" : "数量"} span={2} hint={scope === "detail" ? "先选屏数，再策划" : undefined}>
-                        <Select
-                            appearance="field"
-                            size="large"
-                            value={scope === "detail" ? studioDetailScreenCount(brief) : setKind ? images : brief.count}
-                            disabled={Boolean(setKind && scope !== "detail") || Boolean(planning)}
-                            options={
-                                scope === "detail"
-                                    ? STUDIO_DETAIL_SCREEN_OPTIONS.map((count) => ({ value: count, label: `${count} 屏` }))
-                                    : setKind
-                                      ? [{ value: images, label: `${images} ${unit}` }]
-                                      : STUDIO_COUNT_OPTIONS.map((count) => ({ value: count, label: `${count} 张` }))
-                            }
-                            ariaLabel={scope === "detail" ? "详情屏数" : "数量"}
-                            onChange={(value: number) => editBrief(scope === "detail" ? { detailScreens: value, shotOrder: [], shotSkip: [] } : { count: value })}
-                        />
-                    </Field>
-                    <Field label={resolutionOptions.length ? "清晰度 · 质量" : "质量"} span={2}>
-                        <span className={resolutionOptions.length ? "es-field-pair" : undefined}>
-                            {resolutionOptions.length ? <Select appearance="field" size="large" value={resolution} options={resolutionOptions} ariaLabel="清晰度" onChange={(value: string) => editBrief({ resolution: value })} /> : null}
+                        <Field label="生图模型" span={6}>
+                            <StudioModelPicker kind="image" imageCount={Math.max(1, referenceCount)} placeholder="选择图片模型" />
+                        </Field>
+                        {referenceSummary ? (
+                            <div className="es-field es-reference-audit" data-span={6} aria-label="本次生成实际参考图">
+                                <div className="es-reference-audit-head">
+                                    <span className="es-field-label">首张图实际发送给图片模型</span>
+                                    <strong>{referenceSummary.total} 张参考图</strong>
+                                </div>
+                                <div className="es-reference-audit-chips">
+                                    <span data-kind="product">商品真值 {referenceSummary.product}</span>
+                                    {referenceSummary.model ? <span data-kind="model">模特 {referenceSummary.model}</span> : null}
+                                    {referenceSummary.style ? <span data-kind="style">风格/淘宝参考 {referenceSummary.style}</span> : null}
+                                    {referenceSummary.layoutGuide ? <span data-kind="layout">版式蓝图 {referenceSummary.layoutGuide}</span> : null}
+                                    {referenceSummary.revision ? <span data-kind="revision">待修正成品 {referenceSummary.revision}</span> : null}
+                                </div>
+                                <p className="es-reference-audit-note">
+                                    {referenceSummary.notice || "商品真值锁定外观；风格参考只迁移构图、字阶和配色，不会把淘宝商品当成你的商品。"}
+                                    {referenceSummaryVaries ? " 后续画面会按本屏是否需要模特或版式蓝图调整参考图。" : ""}
+                                </p>
+                                <details>
+                                    <summary>查看本次会发送的资料</summary>
+                                    <p>{referenceSummary.names.join("、")}</p>
+                                </details>
+                            </div>
+                        ) : null}
+                        <Field label={scope === "detail" ? "详情屏数" : singles.length > 1 ? "每种数量" : "数量"} span={2}>
                             <Select
                                 appearance="field"
                                 size="large"
-                                value={qualityOptions.length ? quality : "default"}
-                                disabled={!qualityOptions.length}
-                                options={qualityOptions.length ? qualityOptions : [{ value: "default", label: "模型默认" }]}
-                                ariaLabel="质量"
-                                onChange={(value: string) => editBrief({ quality: value })}
+                                value={scope === "detail" ? studioDetailScreenCount(brief) : setKind ? images : brief.count}
+                                disabled={Boolean(setKind && scope !== "detail") || Boolean(planning)}
+                                options={
+                                    scope === "detail"
+                                        ? STUDIO_DETAIL_SCREEN_OPTIONS.map((count) => ({ value: count, label: `${count} 屏` }))
+                                        : setKind
+                                          ? [{ value: images, label: `${images} ${unit}` }]
+                                          : STUDIO_COUNT_OPTIONS.map((count) => ({ value: count, label: `${count} 张` }))
+                                }
+                                ariaLabel={scope === "detail" ? "详情屏数" : "数量"}
+                                onChange={(value: number) => editBrief(scope === "detail" ? { detailScreens: value, shotOrder: [], shotSkip: [] } : { count: value })}
                             />
-                        </span>
-                    </Field>
-                    <Field label="比例" span={2} hint={customRatio ? <CustomRatioNote ratio={brief.ratio} request={studioImageRequest(profile, quality, brief.ratio, resolution)} /> : undefined}>
-                        <Select
-                            appearance="field"
-                            size="large"
-                            value={customRatio ? "custom" : brief.ratio === "auto" || ratioOptions.includes(brief.ratio) ? brief.ratio : "auto"}
-                            disabled={!ratioOptions.length}
-                            options={[{ value: "auto", label: ratioOptions.length ? ratioLabel : "模型决定" }, ...ratioOptions.map((ratio) => ({ value: ratio, label: ratio })), ...(ratioOptions.length ? [{ value: "custom", label: "自定义" }] : [])]}
-                            ariaLabel="比例"
-                            onChange={(value: string) => {
-                                setCustomRatioOpen(value === "custom");
-                                if (value !== "custom") editBrief({ ratio: value });
-                            }}
-                        />
-                        {customRatio ? <CustomRatioInput ratio={brief.ratio} onChange={(ratio) => editBrief({ ratio })} /> : null}
-                    </Field>
-                    <Field label="补充要求" span={6} htmlFor="es-extra">
-                        <Input id="es-extra" variant="filled" size="large" value={brief.extra} placeholder="例如：白底、强质感、不要多余文字、保留商品结构" maxLength={300} onChange={(event) => editBrief({ extra: event.target.value })} />
-                    </Field>
-                    <div className="es-field" data-span={6}>
-                        <Tooltip title={product.references.length ? "照着参考图的构图、文字位置和配色出图，商品换成你的" : "先上传一张参考图"}>
-                            <span className="es-check">
-                                <Checkbox checked={brief.sameLayout && product.references.length > 0} disabled={!product.references.length} onChange={(event) => editBrief({ sameLayout: event.target.checked })}>
-                                    一键同款参考图版式
-                                </Checkbox>
+                        </Field>
+                        <Field label={resolutionOptions.length ? "清晰度 · 质量" : "质量"} span={2}>
+                            <span className={resolutionOptions.length ? "es-field-pair" : undefined}>
+                                {resolutionOptions.length ? <Select appearance="field" size="large" value={resolution} options={resolutionOptions} ariaLabel="清晰度" onChange={(value: string) => editBrief({ resolution: value })} /> : null}
+                                <Select
+                                    appearance="field"
+                                    size="large"
+                                    value={qualityOptions.length ? quality : "default"}
+                                    disabled={!qualityOptions.length}
+                                    options={qualityOptions.length ? qualityOptions : [{ value: "default", label: "模型默认" }]}
+                                    ariaLabel="质量"
+                                    onChange={(value: string) => editBrief({ quality: value })}
+                                />
                             </span>
-                        </Tooltip>
+                        </Field>
+                        <Field label="比例" span={2} hint={customRatio ? <CustomRatioNote ratio={brief.ratio} request={studioImageRequest(profile, quality, brief.ratio, resolution)} /> : undefined}>
+                            <Select
+                                appearance="field"
+                                size="large"
+                                value={customRatio ? "custom" : brief.ratio === "auto" || ratioOptions.includes(brief.ratio) ? brief.ratio : "auto"}
+                                disabled={!ratioOptions.length}
+                                options={[{ value: "auto", label: ratioOptions.length ? ratioLabel : "模型决定" }, ...ratioOptions.map((ratio) => ({ value: ratio, label: ratio })), ...(ratioOptions.length ? [{ value: "custom", label: "自定义" }] : [])]}
+                                ariaLabel="比例"
+                                onChange={(value: string) => {
+                                    setCustomRatioOpen(value === "custom");
+                                    if (value !== "custom") editBrief({ ratio: value });
+                                }}
+                            />
+                            {customRatio ? <CustomRatioInput ratio={brief.ratio} onChange={(ratio) => editBrief({ ratio })} /> : null}
+                        </Field>
                     </div>
-                </div>
-
-                {setKind || scope ? (
-                    <>
-                        <div className="es-section-head">
-                            <h2>{setKind ? "镜头清单" : "出图策划"}</h2>
-                            <span className="es-section-note">
-                                {planMissing || (!setKind && !activePlan) ? `策划好后可以逐${planUnit}修改、勾掉这次不出的、调整顺序` : `已选 ${included.length}/${entries.length} ${setKind ? unit : "张"} · 勾掉这次不出的，箭头调整顺序`}
+                    <details className="es-input-details">
+                        <summary>
+                            平台、受众与拍摄设置{" "}
+                            <span>
+                                {platform?.name} · {studioMarket(brief.market).label}
                             </span>
+                        </summary>
+                        <div className="es-grid">
+                            {castRelevant ? <StudioModelCastSection product={product} edit={edit} /> : null}
+                            <Field label="平台" span={2}>
+                                <Select appearance="field" size="large" value={product.platform} options={PLATFORM_OPTIONS} ariaLabel="平台" onChange={(value: EcommercePlatformId) => edit((current) => ({ ...current, platform: value }))} />
+                            </Field>
+                            <Field label="市场" span={2}>
+                                <Select
+                                    appearance="field"
+                                    size="large"
+                                    value={brief.market}
+                                    options={MARKET_OPTIONS}
+                                    ariaLabel="市场"
+                                    onChange={(value: StudioMarket) => editBrief({ market: value, language: brief.language === "none" ? "none" : studioMarket(value).language })}
+                                />
+                            </Field>
+                            <Field label="语言" span={2} hint={brief.language !== "none" && adapter.textRendering === "weak" && image.value ? `${adapter.label} 的文字可能不清晰，可换支持文字的图片模型。` : undefined}>
+                                <Select appearance="field" size="large" value={brief.language} options={LANGUAGE_OPTIONS} ariaLabel="图上文字的语言" onChange={(value: StudioLanguage) => editBrief({ language: value })} />
+                            </Field>
+                            <Field label="质感" span={3}>
+                                <Select appearance="field" size="large" value={product.style} options={STYLE_OPTIONS} ariaLabel="质感" onChange={(value: StudioStyleId) => edit((current) => studioChangeStyle(current, value))} />
+                            </Field>
+                            <Field label="拍摄方式" span={3}>
+                                <Select appearance="field" size="large" value={brief.shooting} options={SHOOTING_OPTIONS} ariaLabel="拍摄方式" onChange={(value: StudioShooting) => editBrief({ shooting: value })} />
+                            </Field>
+                            <Field label="目标人群" span={3} htmlFor="es-audience">
+                                <Input id="es-audience" variant="filled" size="large" value={brief.audience} placeholder="例如：通勤者、第一次配镜的人" maxLength={60} onChange={(event) => editBrief({ audience: event.target.value })} />
+                            </Field>
+                            <Field label="价格/定位" span={3} htmlFor="es-positioning">
+                                <Input id="es-positioning" variant="filled" size="large" value={brief.positioning} placeholder="例如：中高端、性价比、礼盒" maxLength={60} onChange={(event) => editBrief({ positioning: event.target.value })} />
+                            </Field>
+                            <Field label="补充要求" span={6} htmlFor="es-extra">
+                                <Input id="es-extra" variant="filled" size="large" value={brief.extra} placeholder="例如：白底、强质感、不要多余文字、保留商品结构" maxLength={300} onChange={(event) => editBrief({ extra: event.target.value })} />
+                            </Field>
+                            <div className="es-field" data-span={6}>
+                                <Tooltip title={product.references.length ? "照着参考图的构图、文字位置和配色出图，商品换成你的" : "先上传一张参考图"}>
+                                    <span className="es-check">
+                                        <Checkbox checked={brief.sameLayout && product.references.length > 0} disabled={!product.references.length} onChange={(event) => editBrief({ sameLayout: event.target.checked })}>
+                                            一键同款参考图版式
+                                        </Checkbox>
+                                    </span>
+                                </Tooltip>
+                            </div>
                         </div>
-                        {brief.outputType === "template-set" ? (
-                            <div className="es-suite-card" data-empty={brief.suite ? undefined : true}>
-                                <span className="es-suite-card-text">
-                                    <strong>{brief.suite ? brief.suite.name : "还没选模板"}</strong>
-                                    <span>
-                                        {brief.suite
-                                            ? [brief.suite.source === "admin" ? "后台精选" : "内置模板库", brief.suite.kind === "main" ? "按主图出" : "按详情页出", studioSuiteUse(brief.suite.shots), brief.suite.category].filter(Boolean).join(" · ")
-                                            : "从后台精选或内置模板库挑一套，按模板逐张出图。"}
-                                    </span>
-                                </span>
-                                <Button icon={<LayoutTemplate size={14} />} onClick={() => setPickerOpen(true)}>
-                                    {brief.suite ? "换一套" : "选择模板"}
-                                </Button>
-                            </div>
-                        ) : null}
-                        {scope ? (
-                            <div className="es-suite-card es-plan-card" data-empty={planMissing ? true : undefined} data-planned={activePlan ? true : undefined}>
-                                <span className="es-suite-card-text">
-                                    <strong>
-                                        {activePlan
-                                            ? `已按这件商品策划 ${activePlan.screens.length} ${planUnit}${planTone ? ` · ${planTone}` : ""}`
-                                            : !text.value
-                                              ? scope === "single"
-                                                  ? "没有可用的文本模型，按出图类型直接出"
-                                                  : scope === "template"
-                                                    ? "没有可用的文本模型，按模板直接出"
-                                                    : scope === "detail"
-                                                      ? `先选择文本模型，策划这 ${planScreens} 屏`
-                                                      : `按品类默认的 ${entries.length} ${planUnit}`
-                                              : scope === "single"
-                                                ? `可以先让 AI 策划这 ${planScreens} 张`
-                                                : scope === "template"
-                                                  ? `可以先让 AI 按模板策划这 ${planScreens} ${planUnit}`
-                                                  : `先策划这 ${planScreens} ${planUnit}`}
-                                    </strong>
-                                    <span>
-                                        {activePlan
-                                            ? activePlan.summary || `每一${planUnit}的画面和文案按这件商品写好，点笔形按钮可以修改。`
-                                            : planOutdated
-                                              ? "商品资料、图片或创作要求已变化，请按当前输入重新策划。已生成的图片仍保留原策划。"
-                                              : text.value
-                                                ? scope === "template"
-                                                    ? `模板定每${planUnit}讲什么，AI 按这件商品重写画面和文案。`
-                                                    : `先补充信息、选一个视角，AI 再排每一${planUnit}的画面和文案${scope === "single" ? "；直接点生成会先策划再出图" : ""}。`
-                                                : "添加文本模型后可以按商品策划。"}
-                                    </span>
-                                    {text.value && planningImages.notice ? <span>{planningImages.notice}</span> : null}
-                                    {analysisBlock ? <span>{analysisBlock}</span> : null}
-                                    {activePlan?.positioning ? <span>定位：{activePlan.positioning}</span> : null}
-                                    {activePlan?.concept ? <span>创意主线：{activePlan.concept}</span> : null}
-                                    {activePlan?.motifs?.length ? <span>视觉元素：{activePlan.motifs.join(" · ")}</span> : null}
-                                    {activePlan?.inspiration ? <span>借鉴：{activePlan.inspiration}</span> : null}
-                                    {activePlan?.designAnalysis ? (
-                                        <details>
-                                            <summary>商品与设计依据</summary>
-                                            <p>{activePlan.designAnalysis}</p>
-                                        </details>
-                                    ) : null}
-                                </span>
-                                {text.value ? (
-                                    activePlan ? (
-                                        // 策划过之后补充和视角收起来：要换个方向重新策划时再展开。
-                                        <details className="es-prep-fold">
-                                            <summary>{prepSummary}</summary>
-                                            {prepPanel}
-                                        </details>
-                                    ) : (
-                                        prepPanel
-                                    )
-                                ) : null}
-                                {text.value ? (
-                                    <span className="es-plan-card-actions">
-                                        <Button
-                                            type={!activePlan && prepStep === "plan" ? "primary" : "default"}
-                                            icon={<ListChecks size={14} />}
-                                            loading={planning || filling}
-                                            disabled={Boolean(user) && (Boolean(analysisBlock) || asking || directing)}
-                                            onClick={planDetail}
-                                        >
-                                            {filling
-                                                ? "分析商品中…"
-                                                : planning
-                                                  ? "策划中…"
-                                                  : storedPlan && brief.planNote?.trim()
-                                                    ? "按补充调整重新策划"
-                                                    : activePlan
-                                                      ? brief.planNote?.trim()
-                                                          ? "按补充调整重新策划"
-                                                          : pickedDirection
-                                                            ? `按「${pickedDirection.angle}」重新策划`
-                                                            : "重新策划"
-                                                      : pickedDirection
-                                                        ? `按「${pickedDirection.angle}」策划 ${planScreens} ${planUnit}`
-                                                        : product.dossier || !textSeesPhotos
-                                                          ? `AI 策划 ${planScreens} ${planUnit}`
-                                                          : `识别商品并策划 ${planScreens} ${planUnit}`}
-                                        </Button>
-                                        <FillModelPopover imageCount={planningImages.images.length} purpose="策划" />
-                                        {planBeforeGenerate ? (
-                                            <Button type="link" size="small" disabled={Boolean(user) && (Boolean(blocked) || planning || filling)} onClick={() => void generate({ direct: true })}>
-                                                {scope === "template" ? "不策划，按模板直接生成" : "不策划，直接生成"}
-                                            </Button>
+                    </details>
+                </div>
+                <footer className="es-form-foot es-input-next">
+                    <Button block onClick={onPlanning} icon={<ArrowRight size={15} />} iconPlacement="end">
+                        去页面设计
+                    </Button>
+                </footer>
+            </section>
+
+            <section className="es-plan-workspace" aria-labelledby="es-plan-heading">
+                <header className="es-workspace-head">
+                    <h2 id="es-plan-heading">逐屏页面设计</h2>
+                    <span>{activePlan ? `${included.length}/${entries.length} ${planUnit}已选` : scope ? `${planScreens} ${planUnit}待策划` : "选择出图类型"}</span>
+                </header>
+                <div className="es-form-scroll es-plan-scroll" ref={planScroll}>
+                    {showReceiptFirst ? planReceipt : null}
+                    <StudioPlanProgressPanel productId={product.id} inputSignature={planSignature} claimSources={claimSources} />
+                    {running && !planning ? (
+                        <p className="es-plan-preparing" role="status">
+                            {filling ? "正在识别商品图，整理可用于设计的外观与资料…" : asking ? "正在整理需要卖家确认的问题…" : "正在整理可选的设计参考…"}
+                        </p>
+                    ) : null}
+                    {setKind || scope ? (
+                        <>
+                            {activePlan && !planning && scope !== "detail" ? <StudioPlanDirectionCard key={activePlan.id} plan={activePlan} /> : null}
+                            {entries.length && !planMissing ? (
+                                <section className="es-plan-review" aria-labelledby="es-plan-review-heading">
+                                    <div className="es-plan-review-head es-section-head">
+                                        <div>
+                                            <h3 id="es-plan-review-heading">页面清单</h3>
+                                        </div>
+                                        {setKind === "detail" && activePlan ? (
+                                            <div className="es-plan-review-preview">
+                                                <StudioPlanPreview plan={activePlan} entries={entries} detail={scope === "detail"} claimSources={claimSources} />
+                                            </div>
                                         ) : null}
-                                    </span>
-                                ) : null}
-                                {text.value ? (
-                                    <label className="es-plan-note">
-                                        <span>补充调整（写给 AI 策划，每次策划都会带上）</span>
-                                        <Input.TextArea
-                                            variant="filled"
-                                            autoSize={{ minRows: 1, maxRows: 4 }}
-                                            maxLength={STUDIO_PLAN_NOTE_MAX}
-                                            value={brief.planNote || ""}
-                                            placeholder="例如：做成苹果官网那种极简高级感；多放生活场景，少放参数；标题更有画面感，别用口号"
-                                            onChange={(event) => editBrief({ planNote: event.target.value })}
-                                        />
-                                    </label>
-                                ) : null}
-                                {product.planReceipt ? (
-                                    <StudioPlanReceiptPanel
-                                        productId={product.id}
-                                        receipt={product.planReceipt}
-                                        current={scope === product.planReceipt.scope && product.planReceipt.inputSignature === studioPlanInputSignature(product)}
-                                        busy={Boolean(running)}
-                                        onRecheck={() => void runPlan(false, true)}
+                                    </div>
+                                    {scope === "detail" && !planning && activePlan?.summary.trim() ? <p className="es-plan-review-summary">{activePlan.summary}</p> : null}
+                                    <StudioShotList
+                                        entries={entries}
+                                        unit={setKind ? unit : "张"}
+                                        detail={scope === "detail"}
+                                        sameLayout={brief.sameLayout}
+                                        plan={activePlan}
+                                        claimSources={claimSources}
+                                        onToggle={(key) => edit((current) => ({ ...current, brief: toggleStudioSetEntry(current, key) }))}
+                                        onMove={(key, delta) => edit((current) => ({ ...current, brief: moveStudioSetEntry(current, key, delta) }))}
+                                        {...(activePlan ? { onEditPlan: (index: number, patch: StudioPlannedScreenPatch) => edit((current) => ({ ...current, brief: patchStudioDetailPlanScreen(current.brief, index, patch, planField) })) } : {})}
                                     />
-                                ) : null}
-                            </div>
-                        ) : null}
-                        {geometry && geometry.issues.length > 0 ? (
-                            <details className="es-inline-note" data-tone="warning">
-                                <summary>当前画幅的交付预检：{geometry.longImageAvailable ? "平台切片可能不可用" : "不能按当前规格装订"}</summary>
-                                <ul>
-                                    {geometry.issues.map((issue) => (
-                                        <li key={issue}>{issue}</li>
-                                    ))}
-                                </ul>
-                                <p>按所选画幅估算，不妨碍生成分屏；交付以成品实测为准。</p>
-                            </details>
-                        ) : null}
-                        {setKind === "detail" && activePlan ? (
-                            <StudioPlanPreview product={product} plan={activePlan} entries={entries} inputs={estimateSpec.inputs} onProofLayoutChange={(value) => editBrief({ useProofLayout: value ? true : undefined })} />
-                        ) : null}
-                        {entries.length && !planMissing ? (
-                            <StudioShotList
-                                entries={entries}
-                                unit={setKind ? unit : "张"}
-                                onToggle={(key) => edit((current) => ({ ...current, brief: toggleStudioSetEntry(current, key) }))}
-                                onMove={(key, delta) => edit((current) => ({ ...current, brief: moveStudioSetEntry(current, key, delta) }))}
-                                {...(activePlan ? { onEditPlan: (index: number, patch: StudioPlannedScreenPatch) => edit((current) => ({ ...current, brief: patchStudioDetailPlanScreen(current.brief, index, patch, planField) })) } : {})}
-                            />
-                        ) : null}
-                    </>
-                ) : null}
-            </div>
-            <StudioSuitePicker
-                open={pickerOpen}
-                query={brief.productType.trim() || product.dossier?.category.trim() || ""}
-                onClose={() => setPickerOpen(false)}
-                onPick={(suite) => {
-                    edit((current) => ({ ...current, brief: { ...current.brief, outputType: "template-set", suite, shotOrder: [], shotSkip: [] } }), { immediate: true });
-                    setPickerOpen(false);
-                    message.success(`已选「${suite.name}」，共 ${suite.shots.length} 张`);
-                }}
-            />
-            <footer className="es-form-foot">
-                {copyProblem ? (
-                    <span className="es-estimate" role="alert">
-                        {copyProblem.entry.title}：{copyProblem.issue}
-                    </span>
-                ) : null}
-                {estimate.all ? (
-                    <span className="es-estimate" aria-live="polite">
-                        {planBeforeGenerate
-                            ? `${needsRecognition ? `商品识别 ×1：${recognitionQuote || "报价中"}；` : ""}策划 ×1：${planQuote || (planInputCount === null ? "按实际参考图另行报价" : "报价中")}；策划成功后按最终方案出图。当前规格参考：`
-                            : ""}
-                        {canTryFirst ? `先试首屏 ×1：${estimate.first}；` : ""}
-                        出图 ×{images}：{estimateSpec.complete ? estimate.all : "整组规格未通过，暂无总价"}
-                    </span>
-                ) : null}
-                <Button size="large" icon={<RotateCcw size={15} />} onClick={() => edit((current) => ({ ...current, brief: resetStudioBriefParameters(current.brief) }))}>
-                    重置参数
-                </Button>
-                {canTryFirst ? (
-                    <Button size="large" disabled={Boolean(user) && (Boolean(firstBlocked) || Boolean(running))} onClick={() => void generate({ firstOnly: true })}>
-                        先试首屏
+                                </section>
+                            ) : null}
+                            {brief.outputType === "template-set" && !activePlan ? (
+                                <div className="es-suite-card" data-empty={brief.suite ? undefined : true}>
+                                    <span className="es-suite-card-text">
+                                        <strong>{brief.suite ? brief.suite.name : "还没选模板"}</strong>
+                                        <span>
+                                            {brief.suite
+                                                ? [brief.suite.source === "admin" ? "后台精选" : "内置模板库", brief.suite.kind === "main" ? "按主图出" : "按详情页出", studioSuiteUse(brief.suite.shots), brief.suite.category].filter(Boolean).join(" · ")
+                                                : "从后台精选或内置模板库挑一套，按模板逐张出图。"}
+                                        </span>
+                                    </span>
+                                    <Button icon={<LayoutTemplate size={14} />} onClick={() => setPickerOpen(true)}>
+                                        {brief.suite ? "换一套" : "选择模板"}
+                                    </Button>
+                                </div>
+                            ) : null}
+                            {scope ? (
+                                <details
+                                    className="es-plan-adjust"
+                                    data-ready={activePlan ? true : undefined}
+                                    open={!activePlan || expandedPlanId === activePlan.id}
+                                    onToggle={(event) => {
+                                        if (activePlan) setExpandedPlanId(event.currentTarget.open ? activePlan.id : undefined);
+                                    }}
+                                >
+                                    <summary>调整或重新策划</summary>
+                                    <div className="es-suite-card es-plan-card" data-empty={planMissing ? true : undefined} data-planned={activePlan ? true : undefined}>
+                                        {brief.outputType === "template-set" && activePlan ? (
+                                            <div className="es-plan-template">
+                                                <span>当前模板 · {brief.suite?.name}</span>
+                                                <Button size="small" onClick={() => setPickerOpen(true)}>
+                                                    换一套
+                                                </Button>
+                                            </div>
+                                        ) : null}
+                                        <span className="es-suite-card-text">
+                                            <strong>
+                                                {activePlan
+                                                    ? `已策划 ${activePlan.screens.length} ${planUnit}`
+                                                    : !text.value
+                                                      ? scope === "single"
+                                                          ? "没有可用的文本模型，按出图类型直接出"
+                                                          : scope === "template"
+                                                            ? "没有可用的文本模型，按模板直接出"
+                                                            : scope === "detail"
+                                                              ? `先选择文本模型，策划这 ${planScreens} 屏`
+                                                              : `按品类默认的 ${entries.length} ${planUnit}`
+                                                      : scope === "single"
+                                                        ? `可以先让 AI 策划这 ${planScreens} 张`
+                                                        : scope === "template"
+                                                          ? `可以先让 AI 按模板策划这 ${planScreens} ${planUnit}`
+                                                          : `策划 ${planScreens} ${planUnit}`}
+                                            </strong>
+                                            <span>
+                                                {activePlan
+                                                    ? activePlan.capacityDiagnostics?.missingEvidence?.length
+                                                        ? `可补充的商品资料：${activePlan.capacityDiagnostics.missingEvidence.slice(0, 3).join("、")}`
+                                                        : ""
+                                                    : planOutdated
+                                                      ? "请重新策划。已生成的图片保留在记录中。"
+                                                      : text.value
+                                                        ? scope === "template"
+                                                            ? `模板定每${planUnit}讲什么，AI 按这件商品重写画面和文字素材。`
+                                                            : `可直接让 AI 为每一${planUnit}完成页面设计；补充问题和设计方向只是可选参考${scope === "single" ? "，直接点生成也会先完成页面设计" : ""}。`
+                                                        : "添加文本模型后可以按商品策划。"}
+                                            </span>
+                                            {text.value && planningImages.notice ? <span>{planningImages.notice}</span> : null}
+                                            {analysisBlock ? <span>{analysisBlock}</span> : null}
+                                        </span>
+                                        {text.value ? prepPanel : null}
+                                        {text.value ? (
+                                            <span className="es-plan-card-actions">
+                                                {detailNeedsPlan ? null : (
+                                                    <Button
+                                                        type={!activePlan ? "primary" : "default"}
+                                                        icon={<ListChecks size={14} />}
+                                                        loading={planning || filling}
+                                                        disabled={Boolean(user) && (Boolean(analysisBlock) || asking || directing || starting)}
+                                                        onClick={planDetail}
+                                                    >
+                                                        {filling
+                                                            ? "分析商品中…"
+                                                            : planning
+                                                              ? "策划中…"
+                                                              : storedPlan && brief.planNote?.trim()
+                                                                ? "按补充调整重新策划"
+                                                                : activePlan
+                                                                  ? brief.planNote?.trim()
+                                                                      ? "按补充调整重新策划"
+                                                                      : pickedDirection
+                                                                        ? `按「${pickedDirection.angle}」重新策划`
+                                                                        : "重新策划"
+                                                                  : pickedDirection
+                                                                    ? `按「${pickedDirection.angle}」策划 ${planScreens} ${planUnit}`
+                                                                    : product.dossier || !textSeesPhotos
+                                                                      ? `AI 策划 ${planScreens} ${planUnit}`
+                                                                      : `识别商品并策划 ${planScreens} ${planUnit}`}
+                                                    </Button>
+                                                )}
+                                                <FillModelPopover imageCount={planningImages.images.length} purpose="策划" />
+                                                {planningAvailable && (scope === "single" || scope === "template") ? (
+                                                    <Button type="link" size="small" disabled={Boolean(user) && (Boolean(blocked) || Boolean(running) || starting)} onClick={() => void generate({ direct: true })}>
+                                                        {scope === "template" ? "不策划，按模板直接生成" : "不策划，直接生成"}
+                                                    </Button>
+                                                ) : null}
+                                            </span>
+                                        ) : null}
+                                        {text.value ? (
+                                            <label className="es-plan-note">
+                                                <span>补充要求（写给 AI，每次页面设计都会带上）</span>
+                                                <Input.TextArea
+                                                    variant="filled"
+                                                    autoSize={{ minRows: 1, maxRows: 4 }}
+                                                    maxLength={STUDIO_PLAN_NOTE_MAX}
+                                                    value={brief.planNote || ""}
+                                                    placeholder="例如：开场做满版使用场景；第二屏用真实局部证明；规格用白底对齐，不引用参考图的数字"
+                                                    onChange={(event) => editBrief({ planNote: event.target.value })}
+                                                />
+                                            </label>
+                                        ) : null}
+                                    </div>
+                                </details>
+                            ) : null}
+                            {geometry && geometry.issues.length > 0 ? (
+                                <details className="es-inline-note" data-tone="warning">
+                                    <summary>当前画幅的交付预检：{geometry.longImageAvailable ? "平台切片可能不可用" : "不能按当前规格装订"}</summary>
+                                    <ul>
+                                        {geometry.issues.map((issue) => (
+                                            <li key={issue}>{issue}</li>
+                                        ))}
+                                    </ul>
+                                    <p>按所选画幅估算，不妨碍生成分屏；交付以成品实测为准。</p>
+                                </details>
+                            ) : null}
+                            {showReceiptFirst ? null : planReceipt}
+                        </>
+                    ) : null}
+                </div>
+                <StudioSuitePicker
+                    open={pickerOpen}
+                    query={brief.productType.trim() || product.dossier?.category.trim() || ""}
+                    onClose={() => setPickerOpen(false)}
+                    onPick={(suite) => {
+                        edit((current) => ({ ...current, brief: { ...current.brief, outputType: "template-set", suite, templatePlan: undefined, shotOrder: [], shotSkip: [] } }), { immediate: true });
+                        onOutputChange();
+                        setPickerOpen(false);
+                        message.success(`已选「${suite.name}」，共 ${suite.shots.length} 张`);
+                    }}
+                />
+                <footer className="es-form-foot">
+                    {!detailNeedsPlan && copyProblem ? (
+                        <span className="es-estimate" role="alert">
+                            {copyProblem.entry.title}：{copyProblem.issue}
+                        </span>
+                    ) : null}
+                    {planEstimate || imageEstimate ? (
+                        <span className="es-estimate" aria-live="polite">
+                            {[planEstimate, imageEstimate].filter(Boolean).join("；")}
+                        </span>
+                    ) : null}
+                    {primaryBlock && (detailNeedsPlan || !copyProblem) && !planning && !filling ? <span className="es-estimate">{primaryBlock}</span> : null}
+                    <Button size="large" icon={<RotateCcw size={15} />} onClick={() => edit((current) => ({ ...current, brief: resetStudioBriefParameters(current.brief) }))}>
+                        重置参数
                     </Button>
-                ) : null}
-                <Tooltip title={blocked || undefined}>
-                    <Button type="primary" size="large" className="es-generate" disabled={Boolean(user) && (Boolean(blocked) || planning || filling)} loading={planBeforeGenerate && (planning || filling)} onClick={() => void generate()}>
-                        {planBeforeGenerate
-                            ? setKind
-                                ? `AI 策划并生成${setLabel}（${images} ${unit}）`
-                                : `AI 策划并生成 ${images} 张`
-                            : setKind
-                              ? `生成${setLabel}${images ? `（${images} ${unit}）` : ""}`
-                              : activePlan
-                                ? `按策划生成 ${images} 张`
-                                : singles.length > 1
-                                  ? `生成 ${singles.length} 种共 ${images} 张`
-                                  : brief.count > 1
-                                    ? `生成 ${brief.count} 张商品图`
-                                    : "生成商品图"}
-                    </Button>
-                </Tooltip>
-            </footer>
-        </section>
+                    {canTryFirst ? (
+                        <Button size="large" disabled={Boolean(user) && (Boolean(firstBlocked) || Boolean(running) || starting)} onClick={() => void generate({ firstOnly: true })}>
+                            先试首屏
+                        </Button>
+                    ) : null}
+                    <Tooltip title={primaryBlock || undefined}>
+                        <Button
+                            key={detailNeedsPlan ? "plan" : "generate"}
+                            type="primary"
+                            size="large"
+                            className="es-generate"
+                            disabled={Boolean(user) && (Boolean(primaryBlock) || Boolean(running) || starting)}
+                            loading={detailNeedsPlan ? planning || filling : starting}
+                            onClick={detailNeedsPlan ? planDetail : () => void generate()}
+                        >
+                            {detailNeedsPlan
+                                ? filling
+                                    ? "分析商品中…"
+                                    : planning
+                                      ? "策划中…"
+                                      : `策划 ${planScreens} 屏`
+                                : setKind === "detail" && activePlan
+                                  ? `确认生成 · ${images} 屏`
+                                  : planBeforeGenerate
+                                    ? setKind
+                                        ? `AI 策划并生成${setLabel}（${images} ${unit}）`
+                                        : `AI 策划并生成 ${images} 张`
+                                    : setKind
+                                      ? `生成${setLabel}${images ? `（${images} ${unit}）` : ""}`
+                                      : activePlan
+                                        ? `按策划生成 ${images} 张`
+                                        : singles.length > 1
+                                          ? `生成 ${singles.length} 种共 ${images} 张`
+                                          : brief.count > 1
+                                            ? `生成 ${brief.count} 张商品图`
+                                            : "生成商品图"}
+                        </Button>
+                    </Tooltip>
+                </footer>
+            </section>
+        </>
     );
 }

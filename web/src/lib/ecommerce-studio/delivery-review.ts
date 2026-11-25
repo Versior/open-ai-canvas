@@ -1,7 +1,7 @@
 import { checkImageAgainstSpec, type EcommerceImageAudit } from "@/lib/ecommerce/ecommerce-platform-specs";
-import { studioShotSpec } from "./shot-specs";
+import { studioShotPlatformRole } from "./shot-specs";
 import { reviewStudioCopy } from "./art-direction";
-import { studioFactUsable, type StudioProduct, type StudioShot } from "./types";
+import { studioFactUsable, type StudioPlanKind, type StudioProduct, type StudioShot } from "./types";
 
 export type StudioDeliveryMeasure = { width: number; height: number; bytes: number; audit?: EcommerceImageAudit };
 export type StudioDeliveryIssue = { shotId?: string; title: string; message: string };
@@ -46,9 +46,9 @@ export function studioEdgeAudit(data: Uint8ClampedArray, width: number, height: 
     };
 }
 
-export function reviewStudioDelivery(product: StudioProduct, shots: StudioShot[], measurements: ReadonlyMap<string, StudioDeliveryMeasure>, deliveredIds: ReadonlySet<string>): StudioDeliveryReview {
+export function reviewStudioDelivery(product: StudioProduct, shots: StudioShot[], measurements: ReadonlyMap<string, StudioDeliveryMeasure>, deliveredIds: ReadonlySet<string>, pageKind: StudioPlanKind | "single" = "single"): StudioDeliveryReview {
     const issues: StudioDeliveryIssue[] = [];
-    for (const shot of shots) {
+    for (const [index, shot] of shots.entries()) {
         if (!deliveredIds.has(shot.id)) {
             issues.push({ shotId: shot.id, title: shot.title, message: "没有可交付成品；整套交付前请补齐或明确删去这一张" });
             continue;
@@ -58,7 +58,7 @@ export function reviewStudioDelivery(product: StudioProduct, shots: StudioShot[]
             issues.push({ shotId: shot.id, title: shot.title, message: "成品尺寸和文件大小尚未实测" });
             continue;
         }
-        const role = studioShotSpec(shot.role, product.dossier?.family || "generic").platformRole;
+        const role = studioShotPlatformRole(shot.role, pageKind, index + 1);
         for (const issue of checkImageAgainstSpec({ platformId: product.platform, role, facts: measured })) issues.push({ shotId: shot.id, title: shot.title, message: issue.message });
         const [w, h] = shot.ratio.split(":").map(Number);
         if (w > 0 && h > 0 && Math.abs(measured.width / measured.height / (w / h) - 1) > 0.02) issues.push({ shotId: shot.id, title: shot.title, message: `实际画幅 ${measured.width}×${measured.height} 与策划 ${shot.ratio} 偏差超过 2%，请检查排版` });

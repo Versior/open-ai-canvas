@@ -3,16 +3,186 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
 
+	"yingce/backend/internal/ecommerceagent"
 	"yingce/backend/internal/model"
+	"yingce/backend/internal/platform"
+	"yingce/backend/internal/workbench"
 )
+
+func TestEcommerceArtworkTaskReachesOpenAIImageEdit(t *testing.T) {
+	allowLoopbackProviderTest(t)
+	const owner, channelID, modelKey = "user", "commerce-image-channel", "gpt-image-2"
+	const detail = `生成淘宝 / 天猫的手机端商品详情页成品。第 2/6 屏，回答镜腿连接处是什么样。先识别商品原图，展示可见铰链和镜腿的连接，证据为商品原图中的金属连接件。必须在成品中创作日文短文案，图文关系与排版由图片模型决定。`
+	for _, test := range []struct{ name, kind, role, prompt string }{
+		{"studio/detail", "detail", "detail-closeup", detail},
+		{"studio/main", "main", "main-selling", "淘宝 / 天猫搜索列表主图，从商品图识别透明眼镜，让小缩略图里的镜框轮廓能认清。用日文写一个短信息，文字与布局由图片模型完成。"},
+		{"studio/poster", "single", "detail-hero", "淘宝 / 天猫的商品海报，用透明眼镜轮廓做主视觉，不是搜索主图或局部特写。用日文写短文案，摄影、字形、布局与材质效果由图片模型完成。"},
+		{"agent/detail", "", "", detail},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			prompt := test.prompt
+			svc, db, _, _ := ecommerceCreationTestService(t)
+			svc.coordinator = platform.NewCoordinatorWithRedis(nil, t.Name())
+			svc.platform = platform.New(svc.repo, svc.coordinator, platformHost{svc: svc})
+			features := defaultFeatureAvailability()
+			features.EcommerceEnabled, features.EcommerceStudioEnabled, features.ImageWorkbenchEnabled = true, true, true
+			saveAdmissionFeatures(t, svc, features)
+			encoded := strings.TrimPrefix(testGeminiReferenceImageDataURL, "data:image/png;base64,")
+			pixels, err := base64.StdEncoding.DecodeString(encoded)
+			if err != nil {
+				t.Fatal(err)
+			}
+			product, _, err := svc.storeResource(owner, "image", "product.png", "image/png", int64(len(pixels)), 1, 1, 0, bytes.NewReader(pixels), nil, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			upstream, requests := newEcommerceImageEditCapture(t, encoded, pixels)
+			channel := model.ModelChannel{ID: channelID, Name: "Fixture image channel", Scope: model.ChannelScopeSystem, Enabled: true, BaseURL: upstream + "/v1", APIKey: "loopback-fixture", APIFormat: "openai"}
+			imageModel := model.ChannelModel{ID: "commerce-image-model", ChannelID: channelID, ModelKey: modelKey, ProviderModelKey: modelKey, Capability: "image", Protocol: model.ChannelInterfaceOpenAIImage, Enabled: true, PriceConfigured: true}
+			profile := DefaultModelCapabilityConfigForModel(string(imageModel.Protocol), imageModel.ModelKey)
+			profile.Image.Size.DefaultTier = "1k"
+			imageModel.CapabilityConfigJSON = mustEncodeModelCapabilityConfig(t, profile)
+			tier := newSelectionPriceTier("commerce-image-tier", "{}", modelKey, "fixed_request")
+			tier.ChannelModelID = imageModel.ID
+			for _, record := range []any{&channel, &imageModel, &tier} {
+				if err := db.Create(record).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			var task *model.Task
+			if test.kind != "" {
+				if _, err := svc.EnsureBuiltinEcommerceKnowledge(); err != nil {
+					t.Fatal(err)
+				}
+				setting := defaultEcommerceSetting()
+				setting.Capabilities["detail-plan"] = EcommerceFlowSetting{Enabled: true, DirectorPrompt: "管理员策划专用：固定左图右文"}
+				admin := &model.User{ID: "admin", Username: "admin", Role: model.UserRoleAdmin, Status: model.UserStatusActive}
+				if err := db.Create(admin).Error; err != nil {
+					t.Fatal(err)
+				}
+				if _, err := svc.UpdateEcommerceSetting(admin, setting); err != nil {
+					t.Fatal(err)
+				}
+				const attemptID = "studio-attempt"
+				task, err = svc.CreateTask(owner, CreateTaskRequest{
+					Type: "canvas_image", Operation: "image", Prompt: prompt, Model: modelKey, IdempotencyKey: attemptID,
+					Input: map[string]any{
+						"mode": "image", "prompt": prompt,
+						"config": map[string]any{"channelId": channelID, "model": modelKey, "size": "3:4", "count": 1},
+						"metadata": map[string]any{
+							"source": "ecommerce-studio", "studioStep": "image", "studioDetailContract": studioDetailContract, "studioUseDesignKnowledge": true,
+							"studioPlatform": "taobao", "studioPlanKind": test.kind, "studioProductName": "透明眼镜", "studioCategory": "眼镜", "studioFamily": "eyewear", "studioMaterials": "金属镜腿",
+							"studioScreenIndex": 2, "studioScreenCount": 6, "studioPurchaseQuestion": "镜腿连接处是什么样？", "studioDisplayContent": "展示可见铰链和镜腿连接", "studioVisualFocus": "金属连接件",
+							"studioRole":      test.role,
+							"studioProductId": "studio-product", "studioShotId": "studio-shot", "studioAttemptId": attemptID, "studioRunId": "studio-run",
+							"ecommercePlanningKnowledgeVersion": ecommerceagent.CreativeKnowledgeVersion,
+							"ecommercePlanningKnowledgeIds":     []string{kb20MethodID},
+						},
+						"referenceImages": []map[string]any{{"id": product.ID, "resourceId": product.ID, "storageKey": "resource:" + product.ID}},
+					},
+				})
+			} else {
+				project, createErr := svc.CreateEcommerceProject(owner)
+				if createErr != nil {
+					t.Fatal(createErr)
+				}
+				task, err = svc.CreateWorkbenchTask(owner, WorkbenchTaskInput{
+					Kind: WorkbenchKindImage, EcommerceProjectID: project.ID, Prompt: prompt, Model: modelKey, ChannelID: channelID,
+					Parameters: map[string]any{"size": "3:4", "count": 1},
+					References: []workbench.TaskReference{{ResourceID: product.ID, Kind: "image", Role: "reference"}},
+				}, "", "")
+			}
+			if err != nil {
+				t.Fatalf("creating detail task: %v", err)
+			}
+			stored, err := svc.repo.TaskForUser(owner, task.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if stored.Prompt != prompt || strings.Contains(stored.InputJSON, "设计参考方法") {
+				t.Fatal("worker design knowledge must not be saved as task input")
+			}
+			result, _, err := svc.processTask(context.Background(), *stored)
+			if err != nil {
+				t.Fatalf("processing detail task: %v", err)
+			}
+			if images, _ := result["images"].([]any); len(images) != 1 {
+				t.Fatalf("image result = %#v", result)
+			}
+			select {
+			case sent := <-requests:
+				if test.kind != "" {
+					const heading = "【设计参考方法，不是商品事实】"
+					if !strings.HasPrefix(sent.prompt, prompt+"\n\n"+heading) || strings.Count(sent.prompt, heading) != 1 || !strings.Contains(sent.prompt, "网格由内容产生，文字与摄影共同构图") {
+						t.Errorf("edit must receive the seller's brief followed by design guidance once: %q", sent.prompt)
+					}
+					if strings.Contains(sent.prompt, "固定左图右文") || strings.Contains(sent.prompt, "简体中文") {
+						t.Errorf("edit overrode the selected language or inherited planning instructions: %q", sent.prompt)
+					}
+				} else if sent.prompt != prompt {
+					t.Errorf("model did not receive the original detail brief: %q", sent.prompt)
+				}
+			default:
+				t.Fatal("image edits did not receive the detail task")
+			}
+		})
+	}
+}
+
+type capturedEcommerceImageEdit struct {
+	prompt string
+	size   string
+}
+
+func newEcommerceImageEditCapture(t *testing.T, responsePNG string, productPixels []byte) (string, <-chan capturedEcommerceImageEdit) {
+	t.Helper()
+	requests := make(chan capturedEcommerceImageEdit, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodPost || request.URL.Path != "/v1/images/edits" {
+			t.Errorf("provider request = %s %s, want POST /v1/images/edits", request.Method, request.URL.Path)
+		}
+		if err := request.ParseMultipartForm(1 << 20); err != nil {
+			t.Error(err)
+			writer.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		defer request.MultipartForm.RemoveAll()
+		files := request.MultipartForm.File["image"]
+		if len(files) != 1 {
+			t.Errorf("product image count = %d, want 1", len(files))
+		} else if file, err := files[0].Open(); err != nil {
+			t.Error(err)
+		} else {
+			pixels, err := io.ReadAll(file)
+			_ = file.Close()
+			if err != nil || !bytes.Equal(pixels, productPixels) {
+				t.Errorf("provider did not receive unchanged product pixels: %v", err)
+			}
+		}
+		select {
+		case requests <- capturedEcommerceImageEdit{prompt: request.FormValue("prompt"), size: request.FormValue("size")}:
+		default:
+			t.Error("provider received a duplicate edit request")
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(writer).Encode(map[string]any{"data": []map[string]string{{"b64_json": responsePNG}}}); err != nil {
+			t.Error(err)
+		}
+	}))
+	t.Cleanup(server.Close)
+	return server.URL, requests
+}
 
 // 图片能力（model-cast / pattern）的私有指令只存在于 worker 内存 SystemPrompt 中，
 // 只有走完 processCanvasGenerationTask 才能证明它真的到达上游。协议单测覆盖不了

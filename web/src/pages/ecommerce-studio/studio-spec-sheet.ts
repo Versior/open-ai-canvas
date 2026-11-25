@@ -42,7 +42,7 @@ export function wrapStudioSpecText(value: string, width: number, measure: (text:
 export function studioSpecCopy(product: StudioProduct, entry: StudioSetEntry) {
     const copy = entry.copy;
     if (!copy || !isStudioSpecEntry(entry)) throw new Error("当前屏没有可排版的规格定稿");
-    const issue = studioScreenCopyIssue({ ...copy, eyebrow: entry.eyebrow, role: entry.role }) || studioCopyLanguageIssue(product, { ...copy, eyebrow: entry.eyebrow });
+    const issue = studioScreenCopyIssue({ ...copy, eyebrow: entry.eyebrow, role: entry.role, copySource: "user" }) || studioCopyLanguageIssue(product, { ...copy, eyebrow: entry.eyebrow });
     if (issue) throw new Error(issue);
     const sources = studioClaimSources(product);
     for (const text of [entry.eyebrow || "", copy.headline, copy.subline, ...copy.lines]) {

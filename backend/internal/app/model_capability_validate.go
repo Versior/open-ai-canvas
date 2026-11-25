@@ -511,6 +511,8 @@ func addReferenceDuration(totalMs *int64, durationMs int64, limitSeconds *int) b
 	return true
 }
 
+const grokImageQualityPromptMaxBytes = 8000
+
 func validateImageTask(profile *ImageCapabilityConfig, input canvasGenerationInput) error {
 	if profile == nil {
 		return nil
@@ -522,10 +524,9 @@ func validateImageTask(profile *ImageCapabilityConfig, input canvasGenerationInp
 	}
 	modelName := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(input.Config.Model)), "models/")
 	if input.Config.InterfaceType == string(model.ChannelInterfaceGrokImage) && modelName == "grok-imagine-image-quality" {
-		const maxPromptBytes = 8000
 		promptBytes := len(withSystemPrompt(input.Config, input.Prompt))
-		if promptBytes > maxPromptBytes {
-			return BadAuthRequest(fmt.Sprintf("Grok 图片完整提示词为 %d UTF-8 字节，超过上游 %d 字节限制。系统不会自动删改；请精简当前输入、连线文本、角色卡、画风或模板内容后重试", promptBytes, maxPromptBytes))
+		if promptBytes > grokImageQualityPromptMaxBytes {
+			return BadAuthRequest(fmt.Sprintf("Grok 图片完整提示词为 %d UTF-8 字节，超过上游 %d 字节限制。系统不会自动删改；请精简当前输入、连线文本、角色卡、画风或模板内容后重试", promptBytes, grokImageQualityPromptMaxBytes))
 		}
 	}
 	if len(input.ReferenceImages) > profile.References.MaxImages {

@@ -7,7 +7,7 @@ import { studioLanguage } from "@/lib/ecommerce-studio/brief";
 import { studioModelAdapter, studioShotHasCopy } from "@/lib/ecommerce-studio/prompt-compiler";
 import { studioShotPreview } from "@/lib/ecommerce-studio/product";
 import { studioActivePlan } from "@/lib/ecommerce-studio/runs";
-import { studioProductStyle, studioShotSpec, studioStyle } from "@/lib/ecommerce-studio/shot-specs";
+import { studioProductStyle, studioShotPlatformRole, studioShotSpec, studioStyle } from "@/lib/ecommerce-studio/shot-specs";
 import { typesetStudioImage } from "@/lib/ecommerce-studio/typeset";
 import { studioDesignZone } from "@/lib/ecommerce-studio/art-direction";
 import type { StudioOutput, StudioPlan, StudioProduct, StudioShot } from "@/lib/ecommerce-studio/types";
@@ -28,6 +28,11 @@ export type StudioArchiveKind = "complete" | "originals" | "draft";
 export function studioOutputNeedsLegacyTypeset(plan: Pick<StudioPlan, "textMode">, shot: StudioShot, output: StudioOutput) {
     const attempt = shot.attempts.find((item) => item.outputs.some((value) => value.resourceId === output.resourceId));
     if (attempt?.textMode) return attempt.textMode === "overlay";
+    // New planned screens are rendered by the image model in one pass. Some
+    // historical attempts did not persist textMode, so the old weak-model
+    // fallback must not turn a content brief back into programmatic overlay
+    // typesetting. Only unplanned legacy shots use the fallback below.
+    if (shot.visual?.trim() || shot.purchaseQuestion?.trim() || shot.displayContent?.trim() || shot.visualFocus?.trim() || shot.visualBeat?.trim()) return false;
     return plan.textMode === "overlay" || studioModelAdapter(attempt?.model || "").textRendering === "weak";
 }
 
@@ -136,8 +141,8 @@ export async function exportStudioZip(product: StudioProduct, plan: StudioPlan, 
             continue;
         }
         const blob = await bytes(item.url);
-        const spec = studioShotSpec(shot.role, product.dossier?.family || "generic");
-        const file = `${plan.kind === "detail" ? "分屏" : "主图"}/${ecommerceFileName({ code, role: spec.platformRole, index, platformId: product.platform, extension: extension(blob.type) })}`;
+        const role = studioShotPlatformRole(shot.role, plan.kind, index);
+        const file = `${plan.kind === "detail" ? "分屏" : "主图"}/${ecommerceFileName({ code, role, index, platformId: product.platform, extension: extension(blob.type) })}`;
         const copy = studioCandidateCopy(shot, item.output, product.brief.language, item.composed);
         const sourceLabel = copy.source === "plan-only" ? "仅策划记录；旧候选没有提交定稿快照，画面文字／译文待核对" : copy.source === "typeset" ? "本次排字使用的文案" : "该候选提交定稿";
         copyText.push(`目标语言：${studioLanguage(copy.language).label} · ${sourceLabel}`);
@@ -145,7 +150,7 @@ export async function exportStudioZip(product: StudioProduct, plan: StudioPlan, 
         if (copy.headline) copyText.push(`主标题：${copy.headline}`);
         if (copy.subline) copyText.push(`注解：${copy.subline}`);
         copyText.push(...copy.lines.map((line) => `要点：${line}`));
-        if (!(copy.eyebrow || copy.headline || copy.subline || copy.lines.length)) copyText.push("无额外消费文案");
+        if (!(copy.eyebrow || copy.headline || copy.subline || copy.lines.length)) copyText.push(copy.source === "submitted" && copy.language !== "none" ? "无锁定文案；图内文字以成品为准" : "无定稿文案记录");
         manifest.push({ index, role: shot.role, title: shot.title, resourceId: item.output.resourceId, file, typeset: item.composed, copy });
         files.push({ name: file, data: blob });
     }
