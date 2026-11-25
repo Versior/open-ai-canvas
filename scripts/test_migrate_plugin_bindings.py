@@ -66,6 +66,8 @@ class PluginCutoverTests(unittest.TestCase):
         self.assertEqual(self.run_step('bind', False)['bind'], 1)
         summary = self.run_step('bind', True)
         self.assertEqual((summary['active'], summary['changed_sku'], summary['other_bound'], summary['no_original_evidence']), (1,1,1,1))
+        with cutover.db_at(self.target, True) as db:
+            db.execute('INSERT INTO schema_migrations VALUES (118)')
         again = self.run_step('bind', True)
         self.assertEqual((again['bind'], again['verified_bound']), (0,1))
         with cutover.db_at(self.target) as db:

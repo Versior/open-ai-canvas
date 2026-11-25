@@ -1,4 +1,4 @@
-"""Offline SQLite 112→117 plugin cutover. Operate only on a stopped, disposable target clone.
+"""Offline SQLite 112→117/118 plugin cutover. Operate only on a stopped, disposable target clone.
 
 prepare before schema up; then run plugin-bootstrap with the candidate official packages;
 finally bind. --baseline and --observed are immutable pre-switch and post-rollback snapshots.
@@ -165,7 +165,7 @@ def run(action, baseline, observed, target, apply=False):
         if action == 'prepare':
             require(version == 112, 'prepare requires pre-upgrade clone (112)')
             return prepare(baseline, observed, target, apply)
-        require(version == 117 and db.execute('SELECT MAX(version) FROM yingce_schema_migrations').fetchone()[0] == 4, 'bind requires a verified 117/4 clone')
+        require(version in (117, 118) and db.execute('SELECT MAX(version) FROM yingce_schema_migrations').fetchone()[0] == 4, 'bind requires a verified 117/4 or 118/4 clone')
         return bind(baseline, target, db, apply)
 
 

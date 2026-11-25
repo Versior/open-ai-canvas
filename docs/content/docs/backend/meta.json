@@ -24,6 +24,8 @@
     "model-metadata-presets",
     "bailian-minimax-video",
     "minimax-h3-image",
+    "minimax-speech",
+    "evolink-seed-audio",
     "system-update",
     "protocol-plugins",
     "official-video-protocols",

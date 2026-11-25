@@ -1,6 +1,13 @@
 # CHANGELOG
 ## Unreleased
 
+## v1.8.7.2
+- STAGE 二开升级：主链从 Schema 117 升至 118，对应上游 110；官方素材扩展链保持 4。迁移前备份数据库和后端数据目录，详见[数据库说明](docs/content/docs/backend/backend-database.mdx)。
+- Agent 与存储：新增平台 Agent 热历史池、终态 gzip 冷归档和会话删除/整理接口，回填升级前的历史账本；数据库 Schema 从 109 升至 110。
+- 画布与创作：兼容历史生成合同，恢复已落库但任务快照缺少结果地址的视频，并支持删除云端 Agent 对话。
+- 渠道与安全：修复配置出站代理时本机 DNS 不可用导致的请求阻断，同时保留本机、内网和链路本地地址拦截。
+- 官方协议插件：Seedance Compatible /videos 支持从 `metadata.url` 和 `data.metadata.url` 读取视频结果地址。
+
 ## v1.8.7.1
 - STAGE 二开升级：本分支从 Schema 112 升至 117，保留原有二开迁移；官方素材扩展链为 4。下列 105–109 是上游版本号，不是 STAGE 数据库的目标版本。对应关系和备份要求见[数据库说明](docs/content/docs/backend/backend-database.mdx)。
 - 视频模型：新增可灵 4.0 / Flash 官方 API 请求插件，更新万相 Wan 3 和 xAI 视频协议。管理员可按插件版本配置生成模式、画幅、分辨率和时长，并在保存前预览创作端选项。

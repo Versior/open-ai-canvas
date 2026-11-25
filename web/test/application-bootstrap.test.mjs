@@ -4,7 +4,7 @@ import { runInNewContext } from "node:vm";
 
 import { isIsolatedPrevisRepro } from "../src/lib/dev-repro";
 
-// Execute the real entry point; replace only its font, network and UI side effects.
+// Execute the real entry point; isolate its font, locale, network and UI dependencies.
 async function prepareEntry(dev, pathname) {
     const build = await Bun.build({
         entrypoints: [fileURLToPath(new URL("../src/main.tsx", import.meta.url))],
@@ -15,11 +15,14 @@ async function prepareEntry(dev, pathname) {
             {
                 name: "entry-side-effects",
                 setup(builder) {
-                    builder.onResolve({ filter: /^(@fontsource-variable\/|@\/services\/appearance-bootstrap$|\.\/(welcome-)?application$)/ }, ({ path }) => ({ path, namespace: "entry-test" }));
+                    builder.onResolve({ filter: /^(@fontsource-variable\/|@\/services\/appearance-bootstrap$|\.\/(i18n|(welcome-)?application)$)/ }, ({ path }) => ({ path, namespace: "entry-test" }));
                     builder.onLoad({ filter: /.*/, namespace: "entry-test" }, ({ path }) => {
                         if (path.startsWith("@fontsource-variable/")) return { contents: "", loader: "js" };
                         if (path === "@/services/appearance-bootstrap") {
                             return { contents: 'export function bootstrapAppearance() { events.push("appearance"); return appearanceReady; }', loader: "js" };
+                        }
+                        if (path === "./i18n") {
+                            return { contents: 'events.push("i18n"); export const i18nReady = localeReady;', loader: "js" };
                         }
                         return { contents: `events.push(${JSON.stringify(path)}); entryLoaded();`, loader: "js" };
                     });
@@ -31,19 +34,20 @@ async function prepareEntry(dev, pathname) {
 
     const events = [];
     let resolveAppearance;
+    let resolveLocale;
     let entryLoaded;
     const appearanceReady = new Promise((resolve) => (resolveAppearance = resolve));
+    const localeReady = new Promise((resolve) => (resolveLocale = resolve));
     const loaded = new Promise((resolve) => (entryLoaded = resolve));
-    const listeners = new Map();
-    runInNewContext(await build.outputs[0].text(), { window: { location: { pathname }, addEventListener: (name, listener) => listeners.set(name, listener) }, events, appearanceReady, entryLoaded });
-    expect(typeof listeners.get("vite:preloadError")).toBe("function");
-    return { events, resolveAppearance, loaded };
+    runInNewContext(await build.outputs[0].text(), { window: { location: { pathname } }, events, appearanceReady, localeReady, entryLoaded });
+    return { events, resolveAppearance, resolveLocale, loaded };
 }
 
 test("DEV previs lab loads without calling the appearance backend", async () => {
     const entry = await prepareEntry(true, "/dev/previs-repro");
+    entry.resolveLocale();
     await entry.loaded;
-    expect(entry.events).toEqual(["./application"]);
+    expect(entry.events).toEqual(["i18n", "./application"]);
 });
 
 for (const [dev, pathname] of [
@@ -53,10 +57,13 @@ for (const [dev, pathname] of [
     [true, "/dev/previs-repro/"],
     [true, "/dev/previs-repro-other"],
 ]) {
-    test(`appearance loads in parallel with normal startup: dev=${dev} path=${pathname}`, async () => {
+    test(`workspace waits for locale but not appearance: dev=${dev} path=${pathname}`, async () => {
         const entry = await prepareEntry(dev, pathname);
+        await new Promise((resolve) => setImmediate(resolve));
+        expect(entry.events).toEqual(["appearance", "i18n"]);
+        entry.resolveLocale();
         await entry.loaded;
-        expect(entry.events).toEqual(["appearance", "./application"]);
+        expect(entry.events).toEqual(["appearance", "i18n", "./application"]);
         entry.resolveAppearance();
     });
 }

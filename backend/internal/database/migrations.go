@@ -15,7 +15,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-const CurrentSchemaVersion int64 = 117
+const CurrentSchemaVersion int64 = 118
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -475,6 +475,12 @@ var schemaMigrations = []migration{
 			return nil
 		}
 		return tx.Migrator().CreateIndex(&model.ChannelModel{}, "ProtocolRelease")
+	}},
+	{version: 118, name: "cloud_agent_history_archives", checksum: "sha256:cloud-agent-history-archives-v110-20261123", apply: func(tx *gorm.DB) error {
+		if err := tx.AutoMigrate(&model.CloudAgentExecution{}, &model.CloudAgentHistoryArchive{}); err != nil {
+			return err
+		}
+		return reconcileAgentStorageUsage(tx)
 	}},
 }
 
@@ -1723,6 +1729,10 @@ func validateCanonicalMigrationPhysicalSchema(tx *gorm.DB, version int64) error 
 		if !tx.Migrator().HasIndex(&model.ChannelModel{}, "ProtocolRelease") || !tx.Migrator().HasColumn(&model.Task{}, "ProtocolBindingJSON") || !tx.Migrator().HasColumn(&model.RouteAttempt{}, "ProtocolBindingJSON") {
 			return errors.New("模型协议发行版迁移账本与物理结构不一致")
 		}
+	case 118:
+		if !tx.Migrator().HasTable(&model.CloudAgentHistoryArchive{}) || !tx.Migrator().HasColumn(&model.CloudAgentExecution{}, "HistoryCompacted") || !tx.Migrator().HasColumn(&model.CloudAgentExecution{}, "CompactedAt") {
+			return errors.New("Agent 历史归档迁移账本与物理结构不一致")
+		}
 	}
 	return nil
 }
@@ -1795,6 +1805,7 @@ func normalizeUpstreamMigrations(tx *gorm.DB) (bool, error) {
 		{migration{version: 107, name: "company_workgroups", checksum: "sha256:company-workgroups-v107"}, 115, "sha256:company-workgroups-v107"},
 		{migration{version: 108, name: "shared_workspace_content", checksum: "sha256:shared-workspace-content-v108"}, 116, "sha256:shared-workspace-content-v108"},
 		{migration{version: 109, name: "model_protocol_releases", checksum: "sha256:model-protocol-releases-v109"}, 117, "sha256:model-protocol-releases-v109"},
+		{migration{version: 110, name: "cloud_agent_history_archives", checksum: "sha256:cloud-agent-history-archives-v110-20261123"}, 118, "sha256:cloud-agent-history-archives-v110-20261123"},
 	}
 	if len(records) > len(upstream) {
 		return false, fmt.Errorf("上游迁移账本在版本 %d 后仍有记录，拒绝自动重排", upstream[len(upstream)-1].version)

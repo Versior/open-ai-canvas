@@ -206,7 +206,7 @@ func requireMigration(t *testing.T, db *gorm.DB, want schemaMigration) {
 }
 
 func TestCanonicalEcommerceDramaMigrationLineage(t *testing.T) {
-	if CurrentSchemaVersion != 117 {
+	if CurrentSchemaVersion != 118 {
 		t.Fatalf("CurrentSchemaVersion = %d", CurrentSchemaVersion)
 	}
 	want := []schemaMigration{
@@ -407,7 +407,7 @@ func TestMigrateSchemaUpgradesFork97ReferenceControls(t *testing.T) {
 }
 
 func TestMigrateSchemaNormalizesUpstreamSchemas(t *testing.T) {
-	for _, version := range []int64{72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109} {
+	for _, version := range []int64{72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110} {
 		t.Run(strconv.FormatInt(version, 10), func(t *testing.T) {
 			db, applied := upstreamSchemaDatabase(t, version)
 			project := model.EcommerceProject{ID: "upstream-shop", UserID: "upstream-owner", Name: "保温杯", Status: "completed", DraftJSON: "{}", PlanJSON: `{"images":[{"id":"kept"}]}`, Revision: 4}
@@ -462,6 +462,7 @@ func TestMigrateSchemaNormalizesUpstreamSchemas(t *testing.T) {
 				{Version: 115, Name: "company_workgroups", Checksum: "sha256:company-workgroups-v107", AppliedAt: applied[107]},
 				{Version: 116, Name: "shared_workspace_content", Checksum: "sha256:shared-workspace-content-v108", AppliedAt: applied[108]},
 				{Version: 117, Name: "model_protocol_releases", Checksum: "sha256:model-protocol-releases-v109", AppliedAt: applied[109]},
+				{Version: 118, Name: "cloud_agent_history_archives", Checksum: "sha256:cloud-agent-history-archives-v110-20261123", AppliedAt: applied[110]},
 			} {
 				requireMigration(t, db, want)
 			}
@@ -632,6 +633,7 @@ func TestMigrateSchemaRejectsUpstreamLedgerWithoutPhysicalSchema(t *testing.T) {
 		{"team membership table", 106, func(db *gorm.DB) error { return db.Migrator().DropTable(&model.TeamMembership{}) }},
 		{"workspace submission hash", 108, func(db *gorm.DB) error { return db.Migrator().DropColumn(&model.Task{}, "SubmissionHash") }},
 		{"model release index", 109, func(db *gorm.DB) error { return db.Migrator().DropIndex(&model.ChannelModel{}, "ProtocolRelease") }},
+		{"Agent history archive table", 110, func(db *gorm.DB) error { return db.Migrator().DropTable(&model.CloudAgentHistoryArchive{}) }},
 		{"email log table", 91, func(db *gorm.DB) error { return db.Migrator().DropTable(&model.EmailLog{}) }},
 		{"notification setting table", 91, func(db *gorm.DB) error { return db.Migrator().DropTable(&model.UserNotificationSetting{}) }},
 	}
