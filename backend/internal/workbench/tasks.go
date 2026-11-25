@@ -69,6 +69,7 @@ type TaskReference struct {
 	Kind       string `json:"kind"`
 	Role       string `json:"role,omitempty"`
 	SlotKey    string `json:"slotKey,omitempty"`
+	durationMs int64
 }
 
 type TaskResolution struct {
@@ -156,7 +157,7 @@ func (s *Service) ResolveTask(userID string, req TaskInput) (*TaskResolution, er
 		if err != nil || resource.Status != model.ResourceStatusReady || resource.Kind != ref.Kind {
 			return nil, kernel.BadAuthRequest("参考素材不存在、未就绪或类型不匹配")
 		}
-		refs = append(refs, TaskReference{ResourceID: resource.ID, Kind: resource.Kind, Role: role, SlotKey: strings.TrimSpace(ref.SlotKey)})
+		refs = append(refs, TaskReference{ResourceID: resource.ID, Kind: resource.Kind, Role: role, SlotKey: strings.TrimSpace(ref.SlotKey), durationMs: resource.DurationMs})
 	}
 	if tool != nil {
 		capability := map[string]any{}
@@ -212,6 +213,9 @@ func (s *Service) ResolveTask(userID string, req TaskInput) (*TaskResolution, er
 			}
 			if ref.SlotKey != "" {
 				value["slotKey"] = ref.SlotKey
+			}
+			if ref.Kind != "image" && ref.durationMs > 0 {
+				value["durationMs"] = ref.durationMs
 			}
 			switch ref.Kind {
 			case "image":

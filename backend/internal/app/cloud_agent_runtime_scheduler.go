@@ -30,8 +30,18 @@ func (s *Service) cloudAgentExecutionOutput(task *model.Task, initial cloudAgent
 	if len(options) > 0 {
 		view = options[0]
 	}
-	events := s.cloudAgentRunEventsForView(task.UserID, run, &state, view.SinceSeq, view.EventLimit, view.FromStart)
-	count := s.cloudAgentRunEventCount(task.UserID, run, &state)
+	var events []CloudAgentEvent
+	var count int
+	if view.EventStream {
+		var err error
+		events, count, err = s.cloudAgentReplayPage(run, &state, view, stateErr)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		events = s.cloudAgentRunEventsForView(task.UserID, run, &state, view.SinceSeq, view.EventLimit, view.FromStart)
+		count = s.cloudAgentRunEventCount(task.UserID, run, &state)
+	}
 	item := projectCloudAgentRunView(task, initial, run, &state, events, count, view)
 	if err := s.attachCloudAgentViewTasks(task.UserID, []cloudAgentRunView{item}, map[string]*model.Task{task.ID: task}); err != nil {
 		return nil, err

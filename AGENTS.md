@@ -163,6 +163,8 @@ cd web && bun run dev
 
 推送到 `main` 或任何会触发 CI 的分支前，必须在本地通过 CI「Quality checks」中与改动相关的检查；未通过不得推送，也不要推送后再看 CI 修。
 
+Versior 二开仓库同步上游时不在本机编译，改用[贡献指南](CONTRIBUTING.md#versior-二开仓库同步)的 GitHub Actions 预检。必须对拟推送的同一 SHA 跑完质量检查，不能用历史构建结果代替。
+
 1. `git fetch` 后把本地提交 rebase 到最新的远端分支，再验证要推送的那组提交；工作区应干净（未提交改动会混进验证结果）。
 2. 在仓库根目录运行 `bun scripts/verify-before-push.mjs`。脚本按相对 `origin/main` 的改动挑选检查并行运行：
    - Web：改动文件格式（`check-changed-formatting.mjs`，与 CI 同口径）、`typecheck`、`lint`、`bun run test`（含 `pretest`）；改动路径含 `previs` 时加跑预演台 Chrome E2E。

@@ -402,7 +402,7 @@ func RegisterAgentRoutes(r *gin.RouterGroup, svc *service.Service) {
 			return
 		}
 		explicitCursor := c.Query("after") != "" || c.GetHeader("Last-Event-ID") != ""
-		options := service.CloudAgentRunViewOptions{SinceSeq: int(after), FromStart: after == 0 && explicitCursor}
+		options := service.CloudAgentRunViewOptions{SinceSeq: int(after), EventStream: true, FromStart: explicitCursor}
 		run, err := svc.CloudAgentRun(user.ID, c.Param("id"), options)
 		if err != nil {
 			failService(c, err)
@@ -428,7 +428,7 @@ func RegisterAgentRoutes(r *gin.RouterGroup, svc *service.Service) {
 				before := after
 				for _, event := range run.Events {
 					if int64(event.Seq) > after {
-						if (explicitCursor || after > 0) && int64(event.Seq) != after+1 {
+						if (options.FromStart || after > 0) && int64(event.Seq) != after+1 {
 							c.SSEvent("error", gin.H{"message": "Agent 事件序列不连续"})
 							c.Writer.Flush()
 							return
@@ -437,7 +437,7 @@ func RegisterAgentRoutes(r *gin.RouterGroup, svc *service.Service) {
 						after = int64(event.Seq)
 					}
 				}
-				options.SinceSeq, options.FromStart = int(after), after == 0
+				options.SinceSeq, options.FromStart = int(after), true
 				if after < int64(run.EventCount) {
 					if after == before {
 						c.SSEvent("error", gin.H{"message": "Agent 事件未完整返回"})
@@ -447,16 +447,25 @@ func RegisterAgentRoutes(r *gin.RouterGroup, svc *service.Service) {
 					run, err = svc.CloudAgentRun(user.ID, c.Param("id"), options)
 					continue
 				}
+				// A cleanup or new revision can commit while the page is in flight.
+				newer, readErr := svc.CloudAgentRunIfChanged(user.ID, c.Param("id"), run.Revision, options)
+				if readErr != nil || newer != nil {
+					run, err = newer, readErr
+					continue
+				}
 				// Snapshots are state observations, not replayable Agent events; they
 				// intentionally have no SSE id and therefore never advance the cursor.
 				snapshot := *run
 				snapshot.Events = nil // Events were sent once above, never in every snapshot too.
+				terminal := run.Status == "completed" || run.Status == "failed" || run.Status == "cancelled" || run.Status == "rejected"
 				writeAgentSSE(c, "run_snapshot", 0, &snapshot)
-				revision, lastWrite = run.Revision, time.Now()
-				if !run.CleanupPending && (run.Status == "completed" || run.Status == "failed" || run.Status == "cancelled" || run.Status == "rejected") {
+				lastWrite = time.Now()
+				revision = run.Revision
+				if terminal && !run.CleanupPending {
 					return
 				}
-			} else if time.Since(lastWrite) >= 15*time.Second {
+			}
+			if time.Since(lastWrite) >= 15*time.Second {
 				_, _ = fmt.Fprint(c.Writer, ": heartbeat\n\n")
 				c.Writer.Flush()
 				lastWrite = time.Now()

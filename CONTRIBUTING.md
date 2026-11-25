@@ -29,3 +29,10 @@
 - Web checks、Backend checks 或 Payment plugin artifacts 失败时，先定位并修复。即使失败来自主干遗留问题，也不能将红色检查视为可忽略的背景噪声。
 
 Pull Request 应包含改动摘要、风险、验证方式和必要截图，并分别写明已执行、未执行或因环境跳过的检查。提交即表示你有权按本项目 MIT 许可证贡献相关代码或素材，并保留已有上游署名和许可证通知。
+
+### Versior 二开仓库同步
+
+- `origin` 指向 `Versior/open-ai-canvas`，`upstream` 指向 `ddcat-ai/open-ai-canvas`。在现有 `main` 合并 `upstream/main`、解决冲突并验证最终提交；分支更新只快进推送到 `origin/main`，不另开分支、不强推、不向上游推送。
+- 新提交的作者和提交者用 `Versior` 和该账号的 GitHub noreply 邮箱，只配置当前仓库，不改写历史。推送前用 `gh api user --jq .login` 核对登录账号。
+- 同步上游时不在本机编译或构建镜像。推送 `main` 前可用非发布标签 `verify-sync-<sha>` 在 Fork 手动运行 `Publish container images`（`preview: false`）；该运行只发布 SHA 镜像，不更新 `latest`、预览标签或 GitHub Release。检查通过后快进推送同一提交，删除临时标签，再确认正式运行已更新 Web、Backend 和 Agent 的 `latest`。
+- 镜像发布不是部署。测试环境只保留一套，使用已配置模型的测试数据库；更新前后端及 Agent 后单独做冒烟验证，不提交数据库、配置或凭据。

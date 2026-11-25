@@ -31,7 +31,7 @@ function inputs(patch: Partial<ProductVideoInputs> = {}): ProductVideoInputs {
 
 function profile(patch: Partial<VideoCapabilityConfig> = {}, references: Partial<VideoCapabilityConfig["references"]> = {}): VideoCapabilityConfig {
     return {
-        references: { promptMaxChars: 2000, minImages: 0, maxImages: 9, maxImageBytes: 0, maxVideos: 3, maxVideoBytes: 0, maxVideoDurationSeconds: 15, maxAudios: 0, maxAudioBytes: 0, maxAudioDurationSeconds: 0, ...references },
+        references: { promptMaxChars: 2000, minImages: 0, maxImages: 9, maxImageBytes: 0, maxVideos: 3, maxVideoBytes: 0, maxTotalVideoDurationSeconds: 15, maxAudios: 0, maxAudioBytes: 0, maxTotalAudioDurationSeconds: 0, ...references },
         duration: { selection: "range", min: 4, max: 15, step: 1, default: 5 },
         ratios: ["adaptive", "9:16", "16:9"],
         defaultRatio: "adaptive",
@@ -92,7 +92,8 @@ describe("product video inputs", () => {
 describe("product video model limits", () => {
     it("needs reference video support and at least 8 seconds per segment", () => {
         expect(productVideoModelLimits(profile({}, { maxVideos: 0 }))).toBe("不支持参考视频");
-        expect(productVideoModelLimits(profile({}, { maxVideoDurationSeconds: 5 }))).toContain("5 秒");
+        expect(productVideoModelLimits(profile({}, { maxTotalVideoDurationSeconds: 5 }))).toContain("5 秒");
+        expect(productVideoModelLimits(profile({ duration: { selection: "range", min: 4, max: 20, step: 1, default: 5 } }, { maxTotalVideoDurationSeconds: 0 }))).toMatchObject({ maxSegmentSeconds: 20 });
         expect(productVideoModelLimits(profile({ duration: { selection: "range", min: 4, max: 10, step: 1, default: 5 } }))).toMatchObject({ maxSegmentSeconds: 10, maxImages: 9 });
         expect(productVideoModelLimits(profile())).toMatchObject({ maxSegmentSeconds: 15, generateAudio: true });
     });

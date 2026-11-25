@@ -104,7 +104,7 @@ test("全部重拍能选仅支持图片的模型，换元素允许四秒参考�
     expect(typeof remakeModelLimits(profile, false)).toBe("object");
     expect(remakeModelLimits(profile, true)).toContain("换元素需要");
     profile.references.maxVideos = 1;
-    profile.references.maxVideoDurationSeconds = 4;
+    profile.references.maxTotalVideoDurationSeconds = 4;
     expect(remakeModelLimits(profile, true)).toMatchObject({ maxSegmentSeconds: 4 });
 });
 test("上传全身模特替换人脸，姿势独立保留", () => {

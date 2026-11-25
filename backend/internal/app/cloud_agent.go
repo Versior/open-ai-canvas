@@ -144,9 +144,10 @@ type CloudAgentRun struct {
 // CloudAgentRunViewOptions 是运行详情的读取选项：SinceSeq 只取该序号之后的增量，
 // EventLimit 覆盖默认页大小。零值即默认视图（尾部一窗）。
 type CloudAgentRunViewOptions struct {
-	SinceSeq   int
-	EventLimit int
-	FromStart  bool
+	EventStream bool // A subscribed cursor must never skip unread events.
+	SinceSeq    int
+	EventLimit  int
+	FromStart   bool
 }
 
 func validateCloudAgentRequest(req *CloudAgentRequest) error {

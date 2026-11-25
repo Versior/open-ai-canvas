@@ -15,7 +15,7 @@ import { productVideoShotSeconds } from "@/lib/product-video/media";
 import type { VideoCapabilityConfig } from "@/lib/model-capabilities";
 
 export function fashionVideoSegmentLimit(profile: VideoCapabilityConfig) {
-    return Math.min(30, Math.max(...videoDurationOptions(profile)), profile.references.maxVideoDurationSeconds || 30);
+    return Math.min(30, Math.max(...videoDurationOptions(profile)), profile.references.maxTotalVideoDurationSeconds || 30);
 }
 
 export function fashionVideoRequirements(work: Pick<FashionVideoWork, "draft">, imageCount: number, profile?: VideoCapabilityConfig): ModelRequirements {

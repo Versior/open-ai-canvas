@@ -106,7 +106,7 @@ export function FashionVideoWorkbench({
     }, [scope]);
     useEffect(() => {
         if (!profile || locked || work) return;
-        const durations = videoDurationOptions(profile).filter((seconds) => seconds >= 4 && seconds <= 30 && (!tool.source || !profile.references.maxVideoDurationSeconds || seconds <= profile.references.maxVideoDurationSeconds));
+        const durations = videoDurationOptions(profile).filter((seconds) => seconds >= 4 && seconds <= 30);
         if (!tool.source && !durations.includes(draft.seconds) && durations.length) setDraft((value) => ({ ...value, seconds: durations[0] }));
         if (!profile.ratios.includes(ratio)) setRatio(productVideoDefaultRatio(profile.ratios, draft.source?.width || draft.models[0]?.width || 1080, draft.source?.height || draft.models[0]?.height || 1920, profile.defaultRatio));
         if (!profile.resolutions.includes(resolution)) setResolution(profile.defaultResolution || profile.resolutions[0] || "");

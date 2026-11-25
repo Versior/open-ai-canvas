@@ -23,7 +23,7 @@ export function productVideoModelLimits(profile: VideoCapabilityConfig | undefin
     if (references.maxVideos < 1) return "不支持参考视频";
     if (references.maxImages < 1) return "不支持参考图";
     const durations = profile.durationSupported === false ? [] : videoDurationOptions(profile).filter((value) => value > 0);
-    const videoLimit = references.maxVideoDurationSeconds > 0 ? references.maxVideoDurationSeconds : 15;
+    const videoLimit = references.maxTotalVideoDurationSeconds || PRODUCT_VIDEO_SEGMENT_SECONDS.max;
     const durationLimit = durations.length ? Math.max(...durations) : videoLimit;
     const maxSegmentSeconds = Math.min(videoLimit, durationLimit, PRODUCT_VIDEO_SEGMENT_SECONDS.max);
     if (maxSegmentSeconds < PRODUCT_VIDEO_SEGMENT_SECONDS.min) return `一次只能参考 ${maxSegmentSeconds} 秒视频`;
