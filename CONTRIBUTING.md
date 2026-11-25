@@ -34,5 +34,5 @@ Pull Request 应包含改动摘要、风险、验证方式和必要截图，并�
 
 - `origin` 指向 `Versior/open-ai-canvas`，`upstream` 指向 `ddcat-ai/open-ai-canvas`。在现有 `main` 合并 `upstream/main`、解决冲突并验证最终提交；分支更新只快进推送到 `origin/main`，不另开分支、不强推、不向上游推送。
 - 新提交的作者和提交者用 `Versior` 和该账号的 GitHub noreply 邮箱，只配置当前仓库，不改写历史。推送前用 `gh api user --jq .login` 核对登录账号。
-- 同步上游时不在本机编译或构建镜像。推送 `main` 前可用非发布标签 `verify-sync-<sha>` 在 Fork 手动运行 `Publish container images`（`preview: false`）；该运行只发布 SHA 镜像，不更新 `latest`、预览标签或 GitHub Release。检查通过后快进推送同一提交，删除临时标签，再确认正式运行已更新 Web、Backend 和 Agent 的 `latest`。
+- 同步上游时不在本机编译或构建镜像。推送 `main` 前，在 Fork 给候选提交推送临时标签 `sync-check-<sha>`，再通过 `gh workflow run publish-images.yml -R Versior/open-ai-canvas --ref sync-check-<sha> -f preview=false` 手动预检（将 `<sha>` 替换为候选提交 SHA）。标签不得以 `v` 开头，否则会进入版本发布流程。预检只发布 SHA 镜像，不更新 `latest`、预览标签或 GitHub Release。确认运行的 `headSha` 等于候选提交且整轮成功后，快进推送同一提交，删除临时标签，再确认正式运行已更新 Web、Backend 和 Agent 的 `latest`。
 - 镜像发布不是部署。测试环境只保留一套，使用已配置模型的测试数据库；更新前后端及 Agent 后单独做冒烟验证，不提交数据库、配置或凭据。
