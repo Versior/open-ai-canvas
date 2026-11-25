@@ -35,6 +35,7 @@ const FeatureAvailabilityPage = lazyAdminPage(() => import("@/pages/admin/admin-
 const AgentLessonsPage = lazyAdminPage(() => import("@/pages/admin/admin-route-pages").then((module) => ({ default: module.AgentLessonsPage })));
 const ChannelsPage = lazyAdminPage(() => import("@/pages/admin/channels/channels-page"));
 const VideoReplicationAdminPage = lazyAdminPage(() => import("@/pages/admin/video-replication/video-replication-admin-page"));
+const RequestProtocolsPage = lazyAdminPage(() => import("@/pages/admin/request-protocols/protocols-page"));
 const LogicalModelsPage = lazyAdminPage(() => import("@/pages/admin/logical-models/logical-models-page"));
 const AdminPluginsPage = lazyAdminPage(() => import("@/pages/admin/plugins/plugins-page"));
 const AdminOfficialAssetsPage = lazyAdminPage(() => import("@/pages/admin/official-assets-page"));
@@ -362,6 +363,7 @@ const routes: RouteObject[] = [
                     { path: "email-logs", element: <EmailLogsPage /> },
                     { path: "feedbacks", element: <AdminFeedbacksPage /> },
                     { path: "channels", element: <ChannelsPage /> },
+                    { path: "request-protocols", element: <RequestProtocolsPage /> },
                     // 关闭前台模型只影响用户端模型来源；后台仍可进入，便于开启前先配置。
                     { path: "models", element: <LogicalModelsPage /> },
                     { path: "ecommerce", element: <Navigate to="/admin/ecommerce/agent" replace /> },

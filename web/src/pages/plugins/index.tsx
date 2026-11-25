@@ -116,8 +116,8 @@ export default function PluginsPage() {
         setBackendPluginsLoading(true);
         try {
             const result = await fetchPlugins();
-            setBackendPlugins(result.plugins);
-            setPluginStates(result.states);
+            setBackendPlugins(Array.isArray(result.plugins) ? result.plugins : []);
+            setPluginStates(result.states || {});
         } catch (error) {
             message.error(error instanceof Error ? error.message : "读取插件中心失败");
             setBackendPlugins([]);
@@ -149,11 +149,14 @@ export default function PluginsPage() {
         setEagleGeneratedFolderId(typeof folderId === "string" ? folderId : "");
     }, [eagle?.config.baseUrl, eagle?.config.autoUploadGenerated, eagle?.config.generatedFolderId]);
 
+    const visiblePlugins = useMemo(
+        () => registeredPlugins.filter(({ manifest }) => user?.role === "admin" || features.systemPluginsVisibleToUsers || backendPluginById.get(manifest.id)?.management?.kind === "application" || isOfficialApplicationPluginId(manifest.id)),
+        [backendPluginById, features.systemPluginsVisibleToUsers, registeredPlugins, user?.role],
+    );
+
     const filteredPlugins = useMemo(() => {
-        return registeredPlugins.filter((plugin) => {
+        return visiblePlugins.filter((plugin) => {
             const state = pluginStates[plugin.manifest.id];
-            const isApplicationPlugin = backendPluginById.get(plugin.manifest.id)?.management.kind === "application" || isOfficialApplicationPluginId(plugin.manifest.id);
-            if (user && user.role !== "admin" && !features.systemPluginsVisibleToUsers && !isApplicationPlugin) return false;
             const installation = installations.find((item) => item.manifest.id === plugin.manifest.id);
             const enabled = state?.effectiveEnabled ?? Boolean(installation?.enabled);
             const manifest = plugin.manifest;
@@ -171,7 +174,7 @@ export default function PluginsPage() {
             if (statusFilter === "disabled" && enabled) return false;
             return true;
         });
-    }, [backendPluginById, categoryFilter, features.systemPluginsVisibleToUsers, installations, pluginStates, registeredPlugins, search, statusFilter, trustFilter, user?.role]);
+    }, [categoryFilter, installations, pluginStates, search, statusFilter, trustFilter, visiblePlugins]);
 
     const pluginSections = useMemo(
         () =>
@@ -192,7 +195,6 @@ export default function PluginsPage() {
     };
 
     const categoryCounts = useMemo(() => {
-        const visiblePlugins = registeredPlugins.filter((plugin) => !user || user.role === "admin" || features.systemPluginsVisibleToUsers || isOfficialApplicationPluginId(plugin.manifest.id));
         const counts: Record<string, number> = { all: visiblePlugins.length, text: 0, image: 0, video: 0, audio: 0, payment: 0, other: 0 };
         for (const plugin of visiblePlugins) {
             for (const section of protocolSectionMeta) {
@@ -201,7 +203,7 @@ export default function PluginsPage() {
             if (pluginMatchesCategory(plugin.manifest, "other")) counts.other += 1;
         }
         return counts;
-    }, [features.systemPluginsVisibleToUsers, registeredPlugins, user?.role]);
+    }, [visiblePlugins]);
 
     const settingsPlugin = settingsPluginId ? registeredPlugins.find((plugin) => plugin.manifest.id === settingsPluginId) : undefined;
     const settingsInstallation = settingsPlugin ? installations.find((item) => item.manifest.id === settingsPlugin.manifest.id) : undefined;
@@ -431,15 +433,15 @@ export default function PluginsPage() {
                                                                         {(plugin.manifest.surfaces || []).map((surface) => (
                                                                             <span key={surface}>{surfaceLabels[surface] ?? surface}</span>
                                                                         ))}
-                                                                        {(plugin.manifest.contributes.providers || []).flatMap((provider) =>
-                                                                            provider.capabilities.map((capability) => (
+                                                                        {(plugin.manifest.contributes?.providers || []).flatMap((provider) =>
+                                                                            (provider.capabilities || []).map((capability) => (
                                                                                 <span key={`${provider.id}-${capability}`} title={`Provider：${provider.label}（${provider.id}）`}>
                                                                                     {provider.kind === "processing" ? "处理工具" : "生成协议"} · {provider.kind === "processing" ? `${capabilityLabel(capability)}处理` : `${capabilityLabel(capability)}生成`}
                                                                                 </span>
                                                                             )),
                                                                         )}
-                                                                        {plugin.manifest.contributes.providers?.some((provider) => provider.poll) ? <span>异步轮询</span> : null}
-                                                                        <span>{plugin.manifest.permissions.length} 项能力</span>
+                                                                        {plugin.manifest.contributes?.providers?.some((provider) => provider.poll) ? <span>异步轮询</span> : null}
+                                                                        <span>{(plugin.manifest.permissions || []).length} 项能力</span>
                                                                     </div>
                                                                 </button>
 
@@ -620,7 +622,7 @@ export default function PluginsPage() {
                                         </div>
                                         <div>
                                             <span>插件能力</span>
-                                            {settingsPlugin.manifest.permissions.map((permission) => permissionLabels[permission] ?? permission).join("、")}
+                                            {(settingsPlugin.manifest.permissions || []).map((permission) => permissionLabels[permission] ?? permission).join("、") || "未声明"}
                                         </div>
                                     </div>
                                 </div>
@@ -641,7 +643,15 @@ function formatPluginDate(value?: string) {
 }
 
 function toRegisteredPlugin(plugin: BackendPlugin): RegisteredPlugin {
-    return { manifest: plugin.manifest, source: plugin.source };
+    const { manifest, source } = plugin;
+    // 先按版本收窄，保留 v2 独有的编辑器权限和贡献。
+    return {
+        manifest:
+            manifest.apiVersion === "yingce.plugin/v2"
+                ? { ...manifest, permissions: Array.isArray(manifest.permissions) ? manifest.permissions : [], contributes: manifest.contributes || {} }
+                : { ...manifest, permissions: Array.isArray(manifest.permissions) ? manifest.permissions : [], contributes: manifest.contributes || {} },
+        source,
+    };
 }
 
 function pluginSourceLabel(plugin: RegisteredPlugin, state?: PluginState) {
@@ -652,13 +662,13 @@ function pluginSourceLabel(plugin: RegisteredPlugin, state?: PluginState) {
 }
 
 function contributionKindsFor(manifest: PluginManifest): string[] {
-    const contributions = manifest.contributes;
+    const contributions = manifest.contributes || {};
     const kinds: string[] = [];
     if (contributions.providers?.length) kinds.push("provider");
     if (contributions.paymentProviders?.length) kinds.push("payment-provider");
     if (contributions.workflows?.length) kinds.push("workflow");
     if (contributions.canvasNodes?.length) kinds.push("canvas-node");
-    if (manifest.apiVersion === "yingce.plugin/v2" && manifest.contributes.editorSlots?.length) kinds.push("editor-slot");
+    if (manifest.apiVersion === "yingce.plugin/v2" && manifest.contributes?.editorSlots?.length) kinds.push("editor-slot");
     if (contributions.transforms?.length) kinds.push("transform");
     if (contributions.assetSources?.length) kinds.push("asset-source");
     if (contributions.aiCapabilities?.length) kinds.push("ai-capability");
@@ -669,12 +679,12 @@ function contributionKindsFor(manifest: PluginManifest): string[] {
 }
 
 function providerCapabilitiesFor(manifest: PluginManifest) {
-    return [...new Set((manifest.contributes.providers || []).flatMap((provider) => provider.capabilities))];
+    return [...new Set((manifest.contributes?.providers || []).flatMap((provider) => provider.capabilities || []))];
 }
 
 function pluginMatchesCategory(manifest: PluginManifest, category: string) {
     const providerCapabilities = providerCapabilitiesFor(manifest);
-    const isPaymentProtocol = Boolean(manifest.contributes.paymentProviders?.length);
+    const isPaymentProtocol = Boolean(manifest.contributes?.paymentProviders?.length);
     if (category === "payment") return isPaymentProtocol;
     if (category === "other") return !isPaymentProtocol && providerCapabilities.length === 0;
     return providerCapabilities.includes(category as "text" | "image" | "video" | "audio");

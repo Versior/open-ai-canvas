@@ -12,6 +12,8 @@
 
 ## 设计沉淀
 
+- [画布 AI 节点：竞品调研与实施方案](plans/canvas-ai-node-product-plan.md)：左侧节点栏、严格局改、电商详情页、透明 PNG 印花、模特与商品裂变、动作和设计交付；含现状、能力边界、实施顺序和验收门槛（提案，未实施）。
+
 - [短剧拆镜与段间连续性调研](design/short-drama-shot-continuity-research.md)：对照制作台、同类产品和公开 Skill，区分同镜续拍、同场换镜与换场，附真实样片回查方法（调研建议，未实施）。
 
 - [团队空间、积分划拨与素材共享](design/team-workspace-design.md)：自由画布、创作页和素材库在个人与团队之间复用，按空间隔离作品与费用。使用入口见[功能清单](content/docs/overview/features.mdx)。

@@ -126,6 +126,9 @@ cd web && bun run dev
 
 - 画布组件、状态、算法分别放在 `web/src/components/canvas/`、`web/src/stores/canvas/`、`web/src/lib/canvas/`。事件忽略选择器必须覆盖 modal、popover、dropdown 等浮层。
 - 画布拖拽、连接、缩放和快捷键要考虑 pointer capture、滚轮冒泡、焦点以及 `data-canvas-no-zoom` / `data-canvas-wheel-scroll` 边界。
+- 画布节点栏、搜索和点击添加复用节点注册及插入入口。拖动预览不直接写入画布；合法放置才创建节点及连线，整次操作可撤销。拖拽必须有键盘和单指针替代，减少动画模式下仍可完整操作。
+- 新增「严格局部修改」时，蒙版使用原图坐标、保护区优先；只将校验对齐的生成候选合回允许区，验收以最终无损成品解码后保护区及框外像素差为零为准。无实测蒙版能力不开放严格模式，不静默降级成整图重绘。
+- 印花提取承诺透明 PNG 时验证真实 PNG 字节、尺寸、alpha 和透明像素。位图描摹不宣称恢复 AI/CDR 源文件；模型能力要用真实渠道与样本验收，不用截图或模拟通过代替。需求与阶段门槛见[画布 AI 节点方案](docs/plans/canvas-ai-node-product-plan.md)。
 - 节点和对象名称要有可发现的铅笔入口并支持单击编辑；双击或右键不能是唯一入口。图片节点保持原始比例，面板不能长期遮挡主要画布空间。
 - Ant Design 共性主题和控件状态集中在 `web/src/lib/app-theme.ts` / `AppProviders`。自带外壳的产品弹窗用 `AppModal flush`，侧栏用 `AppDrawer`；不要再复制 `padding: 0` 的 Modal styles。内容外壳仍是 `.ant-modal-container`。
 - 第三方覆盖限定在具体组件，不新增全局 `.ant-modal-*`、`.dark .ant-switch-*`、`.ant-checkbox-*` 或 Segmented 状态补丁。新增 CSS 前先搜索同名选择器，回到唯一源规则修改。

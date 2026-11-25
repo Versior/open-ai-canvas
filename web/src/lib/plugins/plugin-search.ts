@@ -2,6 +2,7 @@ import type { RegisteredPlugin } from "./plugin-types";
 
 export function pluginMatchesSearch(manifest: RegisteredPlugin["manifest"], query: string, categoryLabels: string[] = []) {
     const queryPieces = query.toLowerCase().match(/[a-z0-9._/-]+|\p{Script=Han}+/gu) ?? [];
+    if (!queryPieces.length) return true;
     const segmenter = new Intl.Segmenter("zh-CN", { granularity: "word" });
     const tokens = queryPieces.flatMap((piece) => {
         if (!/^\p{Script=Han}+$/u.test(piece)) return [piece];
@@ -12,14 +13,14 @@ export function pluginMatchesSearch(manifest: RegisteredPlugin["manifest"], quer
     });
     if (!tokens.length) return true;
 
-    const providers = manifest.contributes.providers || [];
+    const providers = manifest.contributes?.providers || [];
     const searchableValues = [
         manifest.id,
         manifest.name,
         manifest.description,
         manifest.author,
         ...categoryLabels,
-        ...providers.flatMap((provider) => [provider.id, provider.label, ...provider.capabilities, provider.create.path, provider.poll?.path, provider.cancel?.path]),
+        ...providers.flatMap((provider) => [provider.id, provider.label, ...(provider.capabilities || []), provider.create?.path, provider.poll?.path, provider.cancel?.path]),
     ]
         .filter((value): value is string => typeof value === "string")
         .map((value) => value.toLowerCase());
