@@ -1323,7 +1323,8 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
     const submit = async (override?: string, options?: AgentDraftPresentation & { outboxItem?: AgentOutboxItem; composerExtras?: ComposerExtras }): Promise<"sent" | "skipped" | "failed"> => {
         const outboxItem = options?.outboxItem;
         const composerExtras = outboxItem ? undefined : options?.composerExtras;
-        if (!accountIsCurrent() || cloudOpeningRef.current || cloudDeletingRef.current || (canvasId && !cloudHistoryReady && !pendingSubmission.current?.request) || (modelRestoreError && !pendingSubmission.current?.request && !outboxItem)) return "skipped";
+        if (!accountIsCurrent() || cloudOpeningRef.current || cloudDeletingRef.current || (canvasId && !cloudHistoryReady && !pendingSubmission.current?.request) || (modelRestoreError && !pendingSubmission.current?.request && !outboxItem))
+            return "skipped";
         const activity = canvasId ? canvasEditLeases.agent(canvasId) : null;
         if (activity && activity.runId !== run?.id && !pendingSubmission.current?.request) return "skipped";
         const draft = (outboxItem ? outboxItem.text : (override ?? prompt)).trim();
@@ -1944,11 +1945,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
             newConversation(true);
         }
         try {
-            await Promise.all([
-                saveCloudAgentConversations(id === currentId ? null : currentId, undefined, accountScope, [id]),
-                clearCloudAgentPendingSubmission(id, accountScope),
-                clearCloudAgentOutbox(id, accountScope),
-            ]);
+            await Promise.all([saveCloudAgentConversations(id === currentId ? null : currentId, undefined, accountScope, [id]), clearCloudAgentPendingSubmission(id, accountScope), clearCloudAgentOutbox(id, accountScope)]);
         } catch (cause) {
             if (accountIsCurrent()) setCloudHistoryError(cause instanceof Error ? cause.message : "本机对话清理失败");
         }
