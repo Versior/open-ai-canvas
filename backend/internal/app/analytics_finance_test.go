@@ -205,7 +205,8 @@ func TestAdminReferencesIncludeExistingDisplayNameGroups(t *testing.T) {
 		{ID: "a", ChannelID: "one", ModelKey: "a", DisplayName: "Shared", Enabled: true},
 		{ID: "b", ChannelID: "one", ModelKey: "b", DisplayName: "Shared", Enabled: false},
 		{ID: "c", ChannelID: "two", ModelKey: "c", DisplayName: "Other", Enabled: false},
-		{ID: "d", ChannelID: "two", ModelKey: "d"},
+		{ID: "d", ChannelID: "two", ModelKey: "image-2.5"},
+		{ID: "e", ChannelID: "two", ModelKey: "image-2.6", DisplayName: "未分类"},
 	}
 	if err := db.Create(&items).Error; err != nil {
 		t.Fatal(err)
@@ -220,7 +221,7 @@ func TestAdminReferencesIncludeExistingDisplayNameGroups(t *testing.T) {
 			groups[name]++
 		}
 	}
-	if len(groups) != 2 || groups["Shared"] != 1 || groups["Other"] != 1 {
+	if len(groups) != 4 || groups["Shared"] != 1 || groups["Other"] != 1 || groups["image-2.5"] != 1 || groups["image-2.6"] != 1 {
 		t.Fatalf("groups = %#v", groups)
 	}
 }
