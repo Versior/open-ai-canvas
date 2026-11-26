@@ -13,6 +13,7 @@ import (
 )
 
 type ChannelModelRequest struct {
+	ConfigurationOnly                bool                    `json:"configurationOnly,omitempty"`
 	ExpectedUpdatedAt                time.Time               `json:"expectedUpdatedAt,omitempty"`
 	ExpectedPriceVersion             int64                   `json:"expectedPriceVersion,omitempty"`
 	ProtocolSelectionExplicit        *bool                   `json:"protocolSelectionExplicit,omitempty"`
@@ -104,6 +105,13 @@ func (s *Service) EnsureSystemChannelModels() error {
 	return nil
 }
 
+func channelModelGroup(name, modelKey string) string {
+	if name = strings.TrimSpace(name); name == "" || name == "未分类" {
+		return modelKey
+	}
+	return name
+}
+
 func (s *Service) AdminChannelModels(actor *model.User, channelID string) ([]model.ChannelModel, error) {
 	if err := s.RequireAdmin(actor); err != nil {
 		return nil, err
@@ -117,6 +125,7 @@ func (s *Service) AdminChannelModels(actor *model.User, channelID string) ([]mod
 	}
 	registry := s.protocolRegistry()
 	for index := range items {
+		items[index].DisplayName = channelModelGroup(items[index].DisplayName, items[index].ModelKey)
 		normalized, normalizeErr := normalizedChannelModelCapability(&items[index], registry)
 		if normalizeErr != nil {
 			continue
@@ -152,14 +161,8 @@ func (s *Service) SaveAdminChannelModel(actor *model.User, channelID string, id 
 	if err := s.RequireAdmin(actor); err != nil {
 		return nil, err
 	}
-	channelLabel := strings.TrimSpace(req.ChannelLabel)
-	tags, err := normalizeChannelModelTags(req.Tags)
-	if err != nil {
-		return nil, err
-	}
-	description := strings.TrimSpace(req.Description)
-	if len([]rune(description)) > 500 {
-		return nil, BadAuthRequest("模型描述不能超过 500 字")
+	if req.ConfigurationOnly && id == "" {
+		return nil, BadAuthRequest("导入配置只能更新已有模型")
 	}
 	channel, err := s.repo.AdminSystemChannel(channelID)
 	if err != nil {
@@ -179,28 +182,42 @@ func (s *Service) SaveAdminChannelModel(actor *model.User, channelID string, id 
 			return nil, err
 		}
 	}
-	release, err := selectEditedModelRelease(s.protocolRegistry(), item, req.Protocol, req.ProtocolRelease)
+	if req.ConfigurationOnly {
+		req.ModelKey, req.ProviderModelKey = item.ModelKey, item.ProviderModelKey
+		if len(req.PriceTiers) == 0 {
+			return nil, BadAuthRequest("导入配置缺少价格档")
+		}
+	}
+	// 普通编辑未传版本时保留原绑定；导入时空版本是来源明确的「跟随当前版本」。
+	var release protocol.ProviderRelease
+	if req.ConfigurationOnly {
+		release, err = selectModelRelease(s.protocolRegistry(), req.Protocol, req.ProtocolRelease, true)
+	} else {
+		release, err = selectEditedModelRelease(s.protocolRegistry(), item, req.Protocol, req.ProtocolRelease)
+	}
 	if err != nil {
 		return nil, err
+	}
+	storedRelease := release.SHA256
+	if req.ConfigurationOnly && req.ProtocolRelease == "" {
+		storedRelease = ""
 	}
 	modelKey, providerModelKey, capability, protocol, err := normalizeChannelModelContractWithRegistry(release.Registry, channel, req)
 	if err != nil {
 		return nil, err
 	}
-	// 空值表示跟随上游 ID；不把默认名称固化，避免上游重命名后遗留旧 ID。
-	if channelLabel == providerModelKey {
-		channelLabel = ""
-	}
-	if len([]rune(channelLabel)) > 80 {
-		return nil, BadAuthRequest("渠道展示名不能超过 80 字")
-	}
 	// 先检查同渠道重复模型，避免无关能力校验或生成无用序列号掩盖真正的冲突。
-	conflict, conflictErr := s.repo.ChannelModelByKeyIncludingDisabled(channelID, modelKey)
-	if conflictErr != nil && !errors.Is(conflictErr, gorm.ErrRecordNotFound) {
-		return nil, conflictErr
+	checkKey := func(repo *repository.Repository) error {
+		taken, err := repo.ChannelModelKeyTaken(channelID, modelKey, strings.TrimSpace(id))
+		if err != nil || !taken {
+			return err
+		}
+		conflict := BadAuthRequest("该渠道已存在模型 " + modelKey + "，请直接编辑已有模型")
+		conflict.Details = map[string]any{"field": "modelKey"}
+		return conflict
 	}
-	if conflict != nil && conflict.ID != strings.TrimSpace(id) {
-		return nil, BadAuthRequest("该渠道已存在模型 " + modelKey + "，请直接编辑已有模型")
+	if err := checkKey(s.repo); err != nil {
+		return nil, err
 	}
 	if id != "" && (req.ExpectedUpdatedAt.IsZero() || !req.ExpectedUpdatedAt.Equal(item.UpdatedAt) || req.ExpectedPriceVersion != item.PriceVersion) {
 		return nil, BadAuthRequest("模型已被修改或缺少编辑版本，请刷新后重新编辑；本次未保存任何修改")
@@ -243,16 +260,41 @@ func (s *Service) SaveAdminChannelModel(actor *model.User, channelID string, id 
 			}
 		}
 	}
-	item.ModelKey = modelKey
-	item.ProviderModelKey = providerModelKey
-	item.DisplayName = strings.TrimSpace(req.DisplayName)
-	if item.DisplayName == "" {
-		item.DisplayName = "未分类"
+	if req.ConfigurationOnly {
+		// 路由属于目标型号，不是来源价格的一部分。相同规格沿用目标路由，其余跟随目标上游。
+		routes := make(map[string]string, len(item.PriceTiers))
+		if item.Capability == capability {
+			for _, tier := range item.PriceTiers {
+				routes[tier.SelectorKey] = tier.ProviderModelKey
+			}
+		}
+		for i := range tiers {
+			tiers[i].ProviderModelKey = firstNonEmpty(routes[tiers[i].SelectorKey], providerModelKey)
+		}
+	} else {
+		item.ModelKey, item.ProviderModelKey = modelKey, providerModelKey
+		item.DisplayName = channelModelGroup(req.DisplayName, modelKey)
+		item.ChannelLabel = strings.TrimSpace(req.ChannelLabel)
+		// 空值表示展示名跟随上游 ID。
+		if item.ChannelLabel == providerModelKey {
+			item.ChannelLabel = ""
+		}
+		if len([]rune(item.ChannelLabel)) > 80 {
+			return nil, BadAuthRequest("渠道展示名不能超过 80 字")
+		}
+		item.Tags, err = normalizeChannelModelTags(req.Tags)
+		if err != nil {
+			return nil, err
+		}
+		item.Description = strings.TrimSpace(req.Description)
+		if len([]rune(item.Description)) > 500 {
+			return nil, BadAuthRequest("模型描述不能超过 500 字")
+		}
+		item.Icon = strings.TrimSpace(req.Icon)
+		if req.Enabled != nil {
+			item.Enabled = *req.Enabled
+		}
 	}
-	item.ChannelLabel = channelLabel
-	item.Tags = tags
-	item.Description = description
-	item.Icon = strings.TrimSpace(req.Icon)
 	item.Capability = capability
 	item.Protocol = protocol
 	if priceCurrency != "" {
@@ -266,7 +308,7 @@ func (s *Service) SaveAdminChannelModel(actor *model.User, channelID string, id 
 		if encodeErr != nil {
 			return nil, encodeErr
 		}
-		if item.CapabilityConfigJSON != string(encoded) || item.ProtocolRelease != release.SHA256 {
+		if item.CapabilityConfigJSON != string(encoded) || item.ProtocolRelease != storedRelease {
 			item.CapabilityVersion++
 		}
 		item.CapabilityConfigJSON = string(encoded)
@@ -274,10 +316,7 @@ func (s *Service) SaveAdminChannelModel(actor *model.User, channelID string, id 
 		item.CapabilityConfigJSON = ""
 		item.CapabilityVersion = 0
 	}
-	item.ProtocolRelease = release.SHA256
-	if req.Enabled != nil {
-		item.Enabled = *req.Enabled
-	}
+	item.ProtocolRelease = storedRelease
 	if req.ReferenceVideoBilling != nil {
 		item.ReferenceVideoBilling = *req.ReferenceVideoBilling
 	}
@@ -307,6 +346,10 @@ func (s *Service) SaveAdminChannelModel(actor *model.User, channelID string, id 
 		if currentChannel.WebsiteID != channel.WebsiteID {
 			return BadAuthRequest("Key 分组归属已变化，请刷新后重试")
 		}
+		// 两个管理员可能同时通过前置校验；锁内复核，不把竞争降级成数据库错误。
+		if err := checkKey(repo); err != nil {
+			return err
+		}
 		if err := repo.SaveChannelModelWithPriceTiers(item, tiers); err != nil {
 			return err
 		}
@@ -314,7 +357,7 @@ func (s *Service) SaveAdminChannelModel(actor *model.User, channelID string, id 
 		if err := repo.SyncChannelModelNames(channel.ID, time.Now()); err != nil {
 			return err
 		}
-		if previousProtocol != item.Protocol && (req.ProtocolSelectionExplicit == nil || *req.ProtocolSelectionExplicit) {
+		if !req.ConfigurationOnly && previousProtocol != item.Protocol && (req.ProtocolSelectionExplicit == nil || *req.ProtocolSelectionExplicit) {
 			return repo.RecordChannelProtocolSelection(channel.WebsiteID, actor.ID, item)
 		}
 		return nil
@@ -460,7 +503,7 @@ func (s *Service) syncInitialChannelModels(channel *model.ModelChannel, names []
 		if idErr != nil {
 			return idErr
 		}
-		item := model.ChannelModel{ID: modelID, ChannelID: channel.ID, ModelKey: name, ProviderModelKey: name, DisplayName: "未分类", BillingMode: "fixed_request", Enabled: false, PriceConfigured: false, UnitPriceMicrocredits: 0, PriceVersion: 1}
+		item := model.ChannelModel{ID: modelID, ChannelID: channel.ID, ModelKey: name, ProviderModelKey: name, DisplayName: name, BillingMode: "fixed_request", Enabled: false, PriceConfigured: false, UnitPriceMicrocredits: 0, PriceVersion: 1}
 		if err := s.prepareDiscoveredChannelModel(channel, &item, existing); err != nil {
 			return err
 		}

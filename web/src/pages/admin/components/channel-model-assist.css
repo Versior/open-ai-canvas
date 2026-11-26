@@ -7,17 +7,75 @@
     container-type: inline-size;
 }
 
-.admin-model-editor-assists {
+.admin-model-transfer-body {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    align-items: start;
-    gap: 16px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+    color: var(--admin-text);
+    container-type: inline-size;
 }
-
-@media (max-width: 900px) {
-    .admin-model-editor-assists {
-        grid-template-columns: minmax(0, 1fr);
-    }
+.admin-model-import-source {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: start;
+    gap: 12px;
+}
+.admin-model-import-source > div {
+    min-width: 0;
+}
+.admin-model-import-arrow {
+    margin-top: 32px;
+    color: var(--admin-text-muted);
+}
+.admin-model-transfer-target {
+    overflow-wrap: anywhere;
+}
+.admin-model-transfer-target strong,
+.admin-model-copy-receipt strong {
+    font-weight: 600;
+}
+.admin-model-copy-receipt span {
+    color: var(--admin-text-secondary);
+    font-size: 13px;
+}
+.admin-model-transfer-target strong {
+    display: block;
+    padding: 5px 0;
+    font-size: 15px;
+}
+.admin-model-import .admin-model-assist-content {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 0;
+}
+.admin-model-import .admin-model-assist-footer {
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+}
+.admin-model-import .admin-model-assist-note {
+    margin: 0 auto 0 0;
+}
+.admin-model-copy-receipt {
+    display: grid;
+    gap: 4px;
+    padding: 12px 16px;
+    border-inline-start: 3px solid var(--admin-text-secondary);
+    background: var(--admin-surface-2);
+    border-radius: var(--admin-radius);
+    overflow-wrap: anywhere;
+}
+.admin-model-preset-disclosure > summary {
+    width: fit-content;
+    padding: 6px 0;
+    color: var(--admin-text-secondary);
+    font-size: 13px;
+    cursor: pointer;
+}
+.admin-model-preset-disclosure > summary:focus-visible {
+    outline: 2px solid var(--admin-focus);
+}
+.admin-model-preset-disclosure[open] > summary {
+    margin-bottom: 8px;
 }
 
 .admin-model-assist-heading {
@@ -55,7 +113,7 @@
     padding: 0 20px 16px;
 }
 
-.admin-model-assist-card .admin-model-assist-select {
+.admin-model-assist-select {
     width: 100%;
     min-width: 0;
     border-radius: var(--admin-radius);
@@ -205,13 +263,91 @@
 
 .admin-model-copy-preview {
     display: grid;
-    gap: 8px;
-    padding: 12px 16px;
-    border-radius: var(--admin-radius);
+    gap: 12px;
+    padding: 16px;
+    border-radius: var(--admin-radius-lg);
     background: var(--admin-surface-2);
     font-size: 12px;
     line-height: 1.6;
     overflow-wrap: anywhere;
+}
+
+.admin-model-copy-route {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: 16px;
+}
+.admin-model-copy-route small,
+.admin-model-copy-facts dt,
+.admin-model-copy-facts small {
+    display: block;
+    font-size: 12px;
+    color: var(--admin-text-secondary);
+}
+.admin-model-copy-route strong {
+    display: block;
+    font-size: 15px;
+    line-height: 1.5;
+}
+.admin-model-copy-route svg {
+    color: var(--admin-text-muted);
+}
+.admin-model-copy-facts {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin: 0;
+    padding-block: 12px;
+    border-block: 1px solid var(--admin-divider);
+}
+.admin-model-copy-facts dd {
+    margin: 2px 0;
+    font-size: 14px;
+    font-weight: 600;
+}
+.admin-model-copy-preview b {
+    color: var(--admin-text);
+}
+.admin-model-import .admin-model-copy-preview {
+    padding: 0;
+    background: none;
+}
+.admin-model-import .admin-model-copy-facts {
+    border-bottom: 0;
+    padding-bottom: 0;
+}
+
+@container (max-width: 450px) {
+    .admin-model-import-source {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 12px;
+    }
+    .admin-model-import-arrow {
+        display: none;
+    }
+    .admin-model-transfer-target {
+        border-inline-start: 2px solid var(--admin-divider);
+        padding-inline-start: 10px;
+    }
+    .admin-model-transfer-target .admin-model-assist-label {
+        margin-bottom: 0;
+    }
+    .admin-model-copy-facts {
+        grid-template-columns: 1fr;
+        gap: 8px;
+    }
+    .admin-model-copy-facts > div {
+        display: grid;
+        grid-template-columns: 80px minmax(0, 1fr);
+        align-items: baseline;
+    }
+    .admin-model-copy-facts small {
+        grid-column: 2;
+    }
+    .admin-model-copy-route {
+        gap: 8px;
+    }
 }
 
 .admin-model-copy-preview p {

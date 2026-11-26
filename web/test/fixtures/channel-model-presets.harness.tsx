@@ -184,7 +184,7 @@ test("renaming an image model with unchanged parameters does not ask to recheck 
     await enterModelId("providerModelKey", "image-model-renamed");
     expect(document.body.textContent).not.toContain("能力或协议已变更");
     expect(document.body.textContent).not.toContain("请核对定价");
-    await act(async () => button("添加模型").click());
+    await act(async () => button("创建副本").click());
     await settle();
     expect(payload).toMatchObject({ providerModelKey: "image-model-renamed", capability: "image", protocol: "image" });
     expect(payload.priceTiers[0]).toMatchObject({ billingMode: "fixed_request", unitPriceMicrocredits: 19_000_000 });
@@ -233,7 +233,7 @@ test("protocol changes require pricing review, acknowledge it and warn again aft
     expect(document.body.textContent).not.toContain("请核对定价");
     await select("first");
     expect(document.body.textContent).toContain("请核对定价");
-    await act(async () => button("添加模型").click());
+    await act(async () => button("创建副本").click());
     await settle();
     expect(payload.priceTiers[0]).toMatchObject({ billingMode: "token", inputTokenPriceMicrocredits: 3_000_000, outputTokenPriceMicrocredits: 12_000_000, cachedTokenPriceMicrocredits: 500_000 });
 });
@@ -276,7 +276,7 @@ test("upstream changes that actually change image specifications still warn with
     expect(document.body.textContent).toContain("图片参数已更新");
     expect(document.body.textContent).toContain("请核对定价");
     expect(document.body.textContent).not.toContain("能力或协议已变更");
-    await act(async () => button("添加模型").click());
+    await act(async () => button("创建副本").click());
     await settle();
     expect(payload.capabilityConfig.image.size.presets.every((preset: { tier: string }) => preset.tier === "2k")).toBe(true);
     expect(payload.priceTiers[0]).toMatchObject({ billingMode: "fixed_request", unitPriceMicrocredits: 19_000_000 });
@@ -330,7 +330,7 @@ test("real editor applies metadata only on command and saves it through the exis
     await act(async () => button("应用预设到表单").click());
     expect(payload).toBeUndefined();
     expect(document.body.textContent).toContain("已填入，可继续修改");
-    await act(async () => button("添加模型").click());
+    await act(async () => button("创建副本").click());
     await settle();
     expect(saved).toBe(1);
     expect(payload).toMatchObject({
@@ -391,8 +391,8 @@ test("new model editor automatically fills fuzzy metadata and saves without appl
     expect(payload).toBeUndefined();
     await act(async () => button("添加模型").click());
     await settle();
-    expect(document.querySelector<HTMLInputElement>("input#displayName")?.value).toBe("Gemini");
-    expect(payload).toMatchObject({ displayName: "Gemini", icon: "Gemini", protocol: "chat-completion", capabilityConfig: { text: { contextWindowTokens: 1048576, maxOutputTokens: 65536, references: { maxImages: 100 } } } });
+    expect(document.querySelector<HTMLInputElement>("input#displayName")?.value).toBe("Gemini_2.5_Flash-high");
+    expect(payload).toMatchObject({ displayName: "Gemini_2.5_Flash-high", icon: "Gemini", protocol: "chat-completion", capabilityConfig: { text: { contextWindowTokens: 1048576, maxOutputTokens: 65536, references: { maxImages: 100 } } } });
     expect(payload.priceTiers[0].priceConfigured).toBe(false);
 });
 
@@ -550,30 +550,26 @@ test("full configuration copy overwrites an existing model through the update AP
         ),
     );
     await chooseOption("配置来源模型", "source-upstream");
-    expect(document.body.textContent).toContain("将替换");
-    expect(document.body.textContent).toContain("目标模型标识、上游 ID");
+    const preview = document.querySelector('[aria-label="复制预览"]')!;
+    for (const text of [source.modelKey, target.modelKey, target.providerModelKey, "调用协议", "价格与成本"]) expect(preview.textContent).toContain(text);
     await act(async () => button("复制完整配置到表单").click());
     expect(payload).toBeUndefined();
-    expect(document.querySelector<HTMLInputElement>("input#modelKey")!.value).toBe(target.modelKey);
+    expect(document.querySelector("input#modelKey")).toBeNull();
+    expect(document.querySelector(".admin-model-copy-receipt")?.textContent).toContain(target.modelKey);
     expect(releaseSuggestion).toBeDefined();
     await act(async () => releaseSuggestion!());
     await settle();
     await act(async () => button("保存修改").click());
     await settle();
     expect(payload).toMatchObject({
-        modelKey: "target-product",
-        providerModelKey: "target-upstream",
-        channelLabel: "保留渠道名",
-        enabled: false,
-        displayName: source.displayName,
-        tags: source.tags,
-        description: source.description,
+        configurationOnly: true,
         protocol: source.protocol,
         protocolSelectionExplicit: false,
         priceCurrency: "USD",
         capabilityConfig: { text: { contextWindowTokens: 64_000 } },
     });
     expect(payload.priceTiers[0]).toMatchObject({ providerModelKey: "target-upstream", inputTokenPriceMicrocredits: 3_000_000, outputTokenPriceMicrocredits: 12_000_000 });
+    for (const key of ["modelKey", "providerModelKey", "channelLabel", "enabled", "displayName", "tags", "description", "icon"]) expect(payload).not.toHaveProperty(key);
 });
 
 test("choosing a metadata preset automatically fills blank identifiers and parameters without a save", async () => {
@@ -610,7 +606,7 @@ test("choosing a metadata preset automatically fills blank identifiers and param
     await chooseOption("选择模型资料预设", "Gemini 2.5 Flash · gemini-2.5-flash", "gemini-2.5-flash");
     expect(document.querySelector<HTMLInputElement>("input#modelKey")!.value).toBe("gemini-2.5-flash");
     expect(document.querySelector<HTMLInputElement>("input#providerModelKey")!.value).toBe("gemini-2.5-flash");
-    expect(document.querySelector<HTMLInputElement>("input#displayName")!.value).toBe("Gemini");
+    expect(document.querySelector<HTMLInputElement>("input#displayName")!.value).toBe("gemini-2.5-flash");
     expect(document.body.textContent).toContain("1,048,576");
     expect(saves).toBe(0);
     await enterModelId("modelKey", "my-product-alias");
@@ -674,7 +670,7 @@ test("existing models can identify upstream video parameters and save them witho
     expect(reads).toBe(1);
     expect(payload).toBeUndefined();
     expect(document.body.textContent).toContain("上游模型目录 video-upstream");
-    await act(async () => button("添加模型").click());
+    await act(async () => button("创建副本").click());
     await settle();
     expect(payload.capabilityConfig.video).toMatchObject({ duration: { values: [5, 12], default: 12 }, resolutions: ["1080p"], defaultResolution: "1080p" });
     expect(payload).toMatchObject({ modelKey: "video-product", providerModelKey: "video-upstream", displayName: "我的视频" });

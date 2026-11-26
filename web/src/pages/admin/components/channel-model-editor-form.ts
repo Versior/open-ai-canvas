@@ -1,11 +1,13 @@
 import type { ModelCapabilityChoice } from "@/components/model-protocol-picker";
+import { modelGroupName } from "@/lib/model-group-name";
 import type { FormInstance } from "antd";
-import { defaultModelCapabilityConfig, normalizeLegacyImageResolutionConfig, normalizeModelCapabilityConfig, officialVideoCapabilityPreset, type ModelCapabilityConfig } from "@/lib/model-capabilities";
+import { canonicalize } from "json-canonicalize";
+import { defaultModelCapabilityConfig, normalizeLegacyImageResolutionConfig, normalizeModelCapabilityConfig, officialVideoCapabilityPreset, type ImageCapabilityConfig, type ModelCapabilityConfig } from "@/lib/model-capabilities";
 import { imagePresetForRatio, imageSizePresets } from "@/lib/image-size-presets";
 import { definitionForRelease, modelProtocolSupportsTokenBilling, type ModelProtocolDefinition } from "@/lib/model-protocols";
 import type { ChannelModel } from "@/services/api/wallet";
 import type { ModelTag } from "@/lib/model-tags";
-import { imageParameterAppliesTo, initializeImageRatioDefaults, resolveImageParameters, standardImageSizeEncoding } from "@/lib/image-parameters";
+import { imageParameterAppliesTo, initialImageResolution, initializeImageRatioDefaults, resolveImageParameters, standardImageSizeEncoding, updateImageParameterSchema } from "@/lib/image-parameters";
 import { findProtocolWorkflow, resolveWorkflowVideoScreenSpec } from "@/lib/video-screen-specs";
 import { defaultPriceTier, legacyPriceTierToForm, normalizeUpstreamModelKey, priceTierToForm, skuSelectorFromForm, tokenRuleClockMinutes, type PriceTierFormValues, type TokenPriceRuleFormValues } from "./channel-model-price-tier-form";
 import { applyModelMetadataPreset, matchingModelPresets, modelFamilyIdentity, modelMatchScore, presetApplicationError, type ModelMetadataPreset } from "@/lib/model-metadata-presets";
@@ -44,23 +46,50 @@ export function copyChannelModelPrices(values: ChannelModelFormValues, source: C
     return next;
 }
 
-export function copyChannelModelConfiguration(values: ChannelModelFormValues, source: ChannelModel, protocols: ModelProtocolDefinition[], copySkuRoutes = false): ChannelModelFormValues {
-    validateChannelModelProtocol(source.capability, source.protocol, protocols);
-    const configuration = structuredClone(initialChannelModelValues(source, protocols));
-    const sourceUpstream = normalizeUpstreamModelKey(source.providerModelKey || source.modelKey);
-    const next = {
-        ...configuration,
-        modelKey: values.modelKey,
-        providerModelKey: values.providerModelKey,
-        channelLabel: values.channelLabel,
-        enabled: values.enabled,
-        priceTiers: configuration.priceTiers.map((tier) => ({
-            ...tier,
-            providerModelKey: copySkuRoutes && normalizeUpstreamModelKey(tier.providerModelKey) !== sourceUpstream ? tier.providerModelKey : "",
-        })),
-    };
-    validateChannelModelPrices(next);
+export function modelCopyPriceCount(source: ChannelModel) {
+    return source.priceTiers?.length || (source.priceConfigured ? 1 : 0);
+}
+
+export function modelCopySourceInfo(source: ChannelModel, protocols: ModelProtocolDefinition[]) {
+    const family = protocols.find((item) => item.value === source.protocol && item.capability === source.capability && item.enabled !== false);
+    const release = source.protocolRelease || family?.releases?.find((item) => item.current)?.sha256;
+    const protocol = definitionForRelease(family, release);
+    let issue = "";
+    if (!family) issue = "未配置已启用的调用协议";
+    else if (!protocol || (family.releases?.length && !release)) issue = "协议的发行版不可用";
+    else if (source.capability && source.capability !== "audio" && !source.capabilityConfig?.[source.capability]) issue = "未能读取来源模型的能力参数，不能用默认参数代替";
+    else if (!modelCopyPriceCount(source)) issue = "未配置价格，不能覆盖目标定价";
+    if (issue) issue = `来源模型 ${source.modelKey}：${issue}`;
+    return { family, protocol, release, issue };
+}
+
+function sourceConfigurationValues(source: ChannelModel, protocols: ModelProtocolDefinition[]) {
+    const { issue, release } = modelCopySourceInfo(source, protocols);
+    if (issue) throw new Error(issue);
+    return initialChannelModelValues({ ...source, protocolRelease: release }, protocols, "preserve");
+}
+
+export function copyChannelModelConfiguration(values: ChannelModelFormValues, source: ChannelModel, protocols: ModelProtocolDefinition[]): ChannelModelFormValues {
+    // 按来源的有效发行版解释参数，但不把「跟随当前版本」变成固定版本。
+    const next = reuseChannelModelDraft(values, { ...sourceConfigurationValues(source, protocols), protocolRelease: source.protocolRelease || undefined });
+    validateChannelModelPrices({ ...next, protocols });
     return next;
+}
+
+// 从目标出发，只导入三类配置；规格的上游 SKU 仍使用目标自己的路由。
+export function reuseChannelModelDraft(target: ChannelModelFormValues, draft: ChannelModelFormValues): ChannelModelFormValues {
+    const skuKey = (record: ChannelModelFormValues, tier: PriceTierFormValues) => canonicalize(skuSelectorFromForm(record.capability, tier, record.capabilityConfig));
+    const routes = new Map(target.capability === draft.capability ? target.priceTiers.filter((tier) => tier.providerModelKey).map((tier) => [skuKey(target, tier), tier.providerModelKey]) : []);
+    return {
+        ...target,
+        protocol: draft.protocol,
+        protocolRelease: draft.protocolRelease,
+        capability: draft.capability,
+        capabilityConfig: structuredClone(draft.capabilityConfig),
+        priceCurrency: draft.priceCurrency,
+        referenceVideoBilling: draft.referenceVideoBilling,
+        priceTiers: draft.priceTiers.map((tier) => ({ ...structuredClone(tier), providerModelKey: routes.get(skuKey(draft, tier)) || "" })),
+    };
 }
 
 export function autoConfigureChannelModel(values: ChannelModelFormValues, models: ChannelModel[], protocols: ModelProtocolDefinition[], presets: ModelMetadataPreset[], protectedFields = new Set<string>()) {
@@ -76,7 +105,17 @@ export function autoConfigureChannelModel(values: ChannelModelFormValues, models
     if (protectedFields.has("capability")) blank.capability = values.capability;
     if (protectedFields.has("protocol")) blank.protocol = values.protocol;
     else blank.protocol = protocols.find((p) => p.capability === blank.capability && p.enabled !== false)?.value;
-    blank.capabilityConfig = blank.capability === "audio" ? undefined : defaultModelCapabilityConfig(blank.protocol, id);
+    const newConfig = (capability: ModelCapabilityChoice, protocol: string | undefined) => {
+        if (capability === "audio") return undefined;
+        const config = defaultModelCapabilityConfig(protocol, id);
+        const target = definitionForRelease(
+            protocols.find((p) => p.value === protocol),
+            values.protocol === protocol ? values.protocolRelease : undefined,
+        );
+        if (capability === "image" && config.image) config.image = resolveEditorImage(config.image, target, id, protocol, "new");
+        return config;
+    };
+    blank.capabilityConfig = newConfig(blank.capability, blank.protocol);
     blank.priceTiers = blank.priceTiers.map((tier) => ({ ...tier, priceConfigured: false }));
     for (const key of ["displayName", "capability", "protocol", "capabilityConfig", "icon", "priceTiers"] as const) {
         if (!protectedFields.has(key)) Object.assign(next, { [key]: structuredClone(blank[key]) });
@@ -84,10 +123,10 @@ export function autoConfigureChannelModel(values: ChannelModelFormValues, models
     if (!protectedFields.has("priceTiers") && !protectedFields.has("priceCurrency")) next.priceCurrency = blank.priceCurrency;
     const sources: string[] = [];
     if (template && (!protectedFields.has("capability") || values.capability === template.capability) && (!protectedFields.has("protocol") || values.protocol === template.protocol)) {
-        const defaults = initialChannelModelValues(template, protocols);
+        const defaults = initialChannelModelValues(template, protocols, "preserve");
         for (const key of ["capability", "protocol", "capabilityConfig", "icon"] as const) {
             if (key === "capabilityConfig" && score === 1) {
-                if (!protectedFields.has(key)) next.capabilityConfig = template.capability === "audio" ? undefined : defaultModelCapabilityConfig(defaults.protocol, id);
+                if (!protectedFields.has(key)) next.capabilityConfig = newConfig(defaults.capability, defaults.protocol);
                 continue;
             }
             if (!protectedFields.has(key)) Object.assign(next, { [key]: structuredClone(defaults[key]) });
@@ -105,9 +144,9 @@ export function autoConfigureChannelModel(values: ChannelModelFormValues, models
     }
     const preset = matchingModelPresets(presets, id)[0];
     const identity = modelFamilyIdentity(id);
-    if (!protectedFields.has("displayName")) next.displayName = template?.displayName?.trim() && template.displayName !== "未分类" ? template.displayName : identity?.category || "未分类";
+    if (!protectedFields.has("displayName")) next.displayName = modelGroupName(values.modelKey);
     if (!protectedFields.has("icon")) next.icon = template?.icon?.trim() || identity?.icon || "";
-    if (identity) sources.push(`分类与 Logo 匹配 ${identity.category}`);
+    if (identity) sources.push(`Logo 匹配 ${identity.category}`);
     if (preset && !presetApplicationError(preset, next.capability)) {
         const applied = applyModelMetadataPreset(next, preset);
         if (!protectedFields.has("capabilityConfig")) next.capabilityConfig = applied.capabilityConfig;
@@ -132,7 +171,29 @@ export function editorSectionForField(name: (string | number)[]): EditorSection 
     return name[0] === "priceTiers" ? "pricing" : name[0] === "capabilityConfig" ? "capabilities" : "identity";
 }
 
-export function initialChannelModelValues(item: ChannelModel | null, protocols: ModelProtocolDefinition[]): ChannelModelFormValues {
+function resolveEditorImage(image: ImageCapabilityConfig, target: ModelProtocolDefinition | undefined, model: string, protocol: string | undefined, mode: "new" | "edit" | "preserve") {
+    const definitions = target?.imageParameters;
+    if (!definitions && !image.parameters && !standardImageSizeEncoding(target?.create)) return image;
+    if (mode === "new" && protocol === "openai-image" && image.size.presets?.length) {
+        image = { ...image, size: { ...image.size, defaultTier: "1k", values: ["auto", ...new Set(image.size.presets.map((preset) => preset.ratio))] } };
+    }
+    const resolved = resolveImageParameters(image, definitions || [], model, protocol, target?.create);
+    const field = resolved.parameters?.find((p) => p.name === "imageResolution");
+    // Defaults belong to a new draft or an enabled, unconfigured field — never a copy or a live edit.
+    if (!field || mode === "preserve" || (mode === "edit" && (field.enabled === false || field.values?.length))) return resolved;
+    const declared = definitions?.find((p) => p.name === field.name && imageParameterAppliesTo(p, model));
+    if (!declared && mode === "new") return resolved;
+    const patch = initialImageResolution(declared || field);
+    if (!patch.values.length) return resolved;
+    return updateImageParameterSchema(
+        resolved,
+        resolved.parameters!.map((p) => (p === field ? { ...p, ...patch, enabled: true } : p)),
+        definitions || resolved.parameters,
+        protocol,
+    );
+}
+
+export function initialChannelModelValues(item: ChannelModel | null, protocols: ModelProtocolDefinition[], resolutionMode: "edit" | "preserve" = "edit"): ChannelModelFormValues {
     const capability = item?.capability || "text";
     const protocol = item ? item.protocol : protocols.find((p) => p.capability === capability && p.enabled !== false)?.value;
     const upstreamModel = item?.providerModelKey || item?.modelKey || "";
@@ -151,19 +212,13 @@ export function initialChannelModelValues(item: ChannelModel | null, protocols: 
         const preset = !item?.capabilityConfig && officialVideoCapabilityPreset(protocol, upstreamModel, target);
         capabilityConfig = { ...capabilityConfig, video: { ...(preset || capabilityConfig.video), modeLimits: target.videoModes?.[upstreamModel] } };
     }
-    const definitions = target?.imageParameters;
-    if (capabilityConfig?.image && capability === "image" && (definitions || capabilityConfig.image.parameters || standardImageSizeEncoding(target?.create))) {
-        const image = capabilityConfig.image;
-        if (!item?.capabilityConfig?.image && protocol === "openai-image" && image.size.presets?.length) {
-            image.size.defaultTier = "1k";
-            image.size.values = ["auto", ...new Set(image.size.presets.map((preset) => preset.ratio))];
-        }
-        capabilityConfig = { ...capabilityConfig, image: resolveImageParameters(image, definitions || [], upstreamModel, protocol, target?.create) };
+    if (capabilityConfig?.image && capability === "image") {
+        capabilityConfig = { ...capabilityConfig, image: resolveEditorImage(capabilityConfig.image, target, upstreamModel, protocol, !item?.capabilityConfig?.image ? "new" : resolutionMode) };
     }
     return {
         modelKey: item?.modelKey || "",
         providerModelKey: upstreamModel,
-        displayName: item?.displayName || "未分类",
+        displayName: modelGroupName(item?.modelKey || "", item?.displayName),
         channelLabel: item?.channelLabel || upstreamModel,
         tags: item?.tags?.map((tag) => ({ ...tag })) || [],
         description: item?.description || "",
@@ -179,13 +234,21 @@ export function initialChannelModelValues(item: ChannelModel | null, protocols: 
     };
 }
 
-export function duplicateChannelModelValues(item: ChannelModel, protocols: ModelProtocolDefinition[]): ChannelModelFormValues {
-    const values = initialChannelModelValues(item, protocols);
+export function duplicateChannelModelValues(item: ChannelModel, protocols: ModelProtocolDefinition[], channelModels: ChannelModel[]): ChannelModelFormValues {
+    const values = sourceConfigurationValues(item, protocols);
     const sourceUpstream = normalizeUpstreamModelKey(item.providerModelKey || item.modelKey);
+    const base = Array.from(normalizeUpstreamModelKey(item.modelKey));
+    const occupied = new Set(channelModels.map((model) => normalizeUpstreamModelKey(model.modelKey)));
+    let modelKey: string;
+    for (let n = 1; ; n++) {
+        const suffix = n === 1 ? "-copy" : `-copy-${n}`;
+        modelKey = base.slice(0, 120 - suffix.length).join("") + suffix;
+        if (!occupied.has(modelKey) && modelKey !== item.modelKey) break;
+    }
     return {
         ...values,
-        modelKey: "",
-        providerModelKey: "",
+        modelKey,
+        providerModelKey: sourceUpstream,
         priceTiers: values.priceTiers.map((tier) => (normalizeUpstreamModelKey(tier.providerModelKey) === sourceUpstream ? { ...tier, providerModelKey: "" } : tier)),
     };
 }
@@ -269,7 +332,7 @@ export function updateChannelModelUpstreamCapabilities(values: ChannelModelFormV
         const profile = values.capabilityConfig || defaultModelCapabilityConfig(values.protocol, values.providerModelKey || values.modelKey);
         if (profile.image) {
             const fresh = profile.image.parameters?.length === 0;
-            const resolved = resolveImageParameters(profile.image, definitions || [], values.providerModelKey?.trim() || values.modelKey.trim(), values.protocol, target?.create);
+            const resolved = resolveEditorImage(profile.image, target, values.providerModelKey?.trim() || values.modelKey.trim(), values.protocol, fresh ? "new" : "preserve");
             return { ...values, capabilityConfig: { ...profile, image: fresh ? initializeImageRatioDefaults(resolved, resolved.parameters!, undefined, undefined, values.protocol) : resolved } };
         }
     }
@@ -297,7 +360,7 @@ export function validateChannelModelProtocol(capability: string, protocol: strin
     }
 }
 
-export function validateChannelModelPrices(values: Pick<ChannelModelFormValues, "capability" | "protocol" | "priceTiers" | "capabilityConfig"> & { referenceVideoBilling?: boolean; protocols?: ModelProtocolDefinition[] }) {
+export function validateChannelModelPrices(values: Pick<ChannelModelFormValues, "capability" | "protocol" | "protocolRelease" | "priceTiers" | "capabilityConfig"> & { referenceVideoBilling?: boolean; protocols?: ModelProtocolDefinition[] }) {
     const { capability, protocol, priceTiers } = values;
     const referenceVideoBilling = capability === "video" && values.referenceVideoBilling === true;
     if (!priceTiers?.length) throw new Error("请至少配置一个价格档");

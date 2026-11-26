@@ -180,14 +180,12 @@ test("managed logical models and personal channels never become system product r
     expect(groupModelsForPicker(config, [])).toEqual([]);
 });
 
-test("new models share 未分类 while explicit groups equal to model IDs remain intact", () => {
-    const channels = systemChannelModelChannels([{ id: "upstream", name: "Provider", displayName: "Provider", models: [model("upstream-a", 300000, "a", "未分类"), model("upstream-b", 300000, "b", "未分类"), model("upstream-c", 300000, "c", "c")] }]);
+test("legacy and empty categories use the full target model key; custom categories stay independent", () => {
+    const channels = systemChannelModelChannels([
+        { id: "upstream", name: "Provider", displayName: "Provider", models: [model("upstream-a", 300000, "gpt-image-2.6-flare", "未分类"), model("upstream-b", 300000, "b", " "), model("upstream-c", 300000, "c", "自定义")] },
+    ]);
     const config = normalizeConfigSnapshot({ config: { ...defaultConfig, channels } }).config;
     const groups = groupModelsForPicker(config, selectableModelsByCapability(config, "video"));
-    expect(groups.map((group) => group.label)).toEqual(["未分类", "c"]);
-    expect(groups[0].models.map((item) => [item.label, item.models])).toEqual([
-        ["upstream-a", ["upstream::a"]],
-        ["upstream-b", ["upstream::b"]],
-    ]);
-    expect(groups[1].models[0].models).toEqual(["upstream::c"]);
+    expect(groups.map((group) => group.label)).toEqual(["gpt-image-2.6-flare", "b", "自定义"]);
+    expect(groups[0].models[0]).toMatchObject({ label: "upstream-a", models: ["upstream::gpt-image-2.6-flare"] });
 });

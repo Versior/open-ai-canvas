@@ -1,48 +1,107 @@
 import { useEffect, useState } from "react";
-import { Alert, Button, Checkbox, Select } from "antd";
-import { Copy } from "lucide-react";
+import { Alert, Button, Select } from "antd";
+import { ArrowRight, Copy } from "lucide-react";
 import type { ModelChannel } from "@/stores/use-config-store";
 import { listAdminChannelModels, type ChannelModel } from "@/services/api/wallet";
 import type { ModelProtocolDefinition } from "@/lib/model-protocols";
+import { priceCurrencyUnit } from "@/services/api/user-groups";
+import { formatModelPrice } from "./channel-model-pricing";
 import { useAdminContext } from "../admin-context";
-import { normalizeUpstreamModelKey } from "./channel-model-price-tier-form";
+import { modelCopyPriceCount, modelCopySourceInfo } from "./channel-model-editor-form";
 import "./channel-model-assist.css";
+
+function ModelCopyPreview({ source, targetKey, upstream, protocols, importing }: { source: ChannelModel; targetKey: string; upstream: string; protocols: ModelProtocolDefinition[]; importing: boolean }) {
+    const { family, protocol, issue } = modelCopySourceInfo(source, protocols);
+    const version = protocol?.version;
+    const image = source.capabilityConfig?.image;
+    const tiers = source.priceTiers || [];
+    const defaultTier = tiers.find((t) => !Object.keys(t.selector || {}).length && (!t.resolution || t.resolution === "*"));
+    const defaultPrice = tiers.length ? defaultTier : source;
+    const count = modelCopyPriceCount(source);
+    const currency = priceCurrencyUnit(source.priceCurrency);
+    return (
+        <section className="admin-model-copy-preview" aria-label="复制预览">
+            {!importing && (
+                <div className="admin-model-copy-route" aria-live="polite">
+                    <div>
+                        <small>读取配置</small>
+                        <strong>{source.modelKey}</strong>
+                    </div>
+                    <ArrowRight size={17} aria-hidden />
+                    <div>
+                        <small>写入配置</small>
+                        <strong>{targetKey || "待填写目标标识"}</strong>
+                    </div>
+                </div>
+            )}
+            <dl className="admin-model-copy-facts">
+                <div>
+                    <dt>调用协议</dt>
+                    <dd>{family?.label || source.protocol || "未配置"}</dd>
+                    <small>{source.protocolRelease ? (version ? `固定发行版 v${version}` : "绑定发行版不可用") : version ? `未固定 · 跟随当前 v${version}` : "未指定发行版"}</small>
+                </div>
+                <div>
+                    <dt>模型能力</dt>
+                    <dd>{{ image: "图片生成", video: "视频生成", text: "文本生成", audio: "音频生成", "": "未配置" }[source.capability]}</dd>
+                    <small>{source.capability === "image" && image ? `最多输出 ${image.maxOutputs} 张 · 参考图 ${image.references.maxImages} 张` : "参数、输入限制与素材传输"}</small>
+                </div>
+                <div>
+                    <dt>价格与成本</dt>
+                    <dd>{count ? `${count} 个价格档 · ${currency}` : "未配置价格"}</dd>
+                    {count > 0 && <small>{defaultPrice?.priceConfigured && defaultPrice.billingMode === "fixed_request" ? `默认售价 ${formatModelPrice(defaultPrice.unitPriceMicrocredits)} ${currency} / 次` : "含规格条件及计费规则"}</small>}
+                    {defaultTier?.billingMode === "fixed_request" && defaultTier.costPricing?.configured && <small>成本 {formatModelPrice(defaultTier.costPricing.unitPriceMicrocredits)} 积分 / 次</small>}
+                </div>
+            </dl>
+            {(!importing || upstream !== targetKey) && (
+                <p>
+                    目标默认请求上游：<b>{upstream || "待填写"}</b>。不复制来源的上游 ID 或展示资料。
+                </p>
+            )}
+            {issue && <Alert type="warning" title={issue} />}
+        </section>
+    );
+}
 
 export function ChannelModelCopyPicker({
     mode,
     channel,
     models,
     target,
+    targetKey = target?.modelKey || "",
+    upstream = target?.providerModelKey || targetKey,
     capability,
     protocols,
     disabled,
+    onCancel,
     onApply,
 }: {
-    mode: "configuration" | "prices";
+    mode: "configuration" | "prices" | "import";
     channel: ModelChannel;
     models: ChannelModel[];
     target: ChannelModel | null;
-    capability: string;
+    targetKey?: string;
+    upstream?: string;
+    capability?: string;
     protocols: ModelProtocolDefinition[];
     disabled: boolean;
-    onApply: (source: ChannelModel, copySkuRoutes: boolean) => void;
+    onApply: (source: ChannelModel) => void;
+    onCancel?: () => void;
 }) {
     const { references } = useAdminContext();
-    const full = mode === "configuration";
+    const full = mode !== "prices";
+    const importing = mode === "import";
     const prefix = full ? "配置" : "价格";
-    const title = full ? "复用完整模型配置" : "从现有模型复制价格";
+    const title = full ? "从已有模型复制配置" : "从现有模型复制价格";
     const [sourceChannel, setSourceChannel] = useState(channel.id);
     const [sources, setSources] = useState(models);
     const [sourceId, setSourceId] = useState<string>();
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
     const [attempt, setAttempt] = useState(0);
-    const [copySkuRoutes, setCopySkuRoutes] = useState(false);
     useEffect(() => {
         let active = true;
         setSources([]);
         setSourceId(undefined);
-        setCopySkuRoutes(false);
         setError("");
         if (sourceChannel === channel.id) {
             setSources(models);
@@ -64,31 +123,35 @@ export function ChannelModelCopyPicker({
             active = false;
         };
     }, [sourceChannel, channel.id, models, attempt]);
-    const source = sources.find((item) => item.id === sourceId);
-    const protocol = protocols.find((item) => item.value === source?.protocol && item.capability === source?.capability && item.enabled !== false);
-    const routeCount = source?.priceTiers.filter((tier) => tier.providerModelKey && normalizeUpstreamModelKey(tier.providerModelKey) !== normalizeUpstreamModelKey(source.providerModelKey || source.modelKey)).length || 0;
+    const candidates = sources.filter((item) => item.channelId === sourceChannel && item.id !== target?.id && (full || item.capability === capability));
+    const source = candidates.find((item) => item.id === sourceId);
+    const copyBlocked = full && source && Boolean(modelCopySourceInfo(source, protocols).issue);
     return (
-        <section className="admin-model-assist-card" aria-label={title}>
-            <header className="admin-model-assist-heading">
-                <Copy size={16} aria-hidden />
-                <div>
-                    <h2>{title}</h2>
-                    <p>{full ? "选择来源，替换当前表单的能力、协议、全部参数、展示资料和定价。" : "选择来源渠道与模型，复制整套售价、成本和规格条件。"}</p>
-                </div>
-            </header>
-            <div className="admin-model-assist-content">
-                <div className="admin-model-price-source-fields">
+        <section className={importing ? "admin-model-import" : "admin-model-assist-card"} aria-label={title}>
+            {!importing && (
+                <header className="admin-model-assist-heading">
+                    <Copy size={16} aria-hidden />
                     <div>
-                        <span className="admin-model-assist-label">来源渠道</span>
-                        <Select
-                            className="admin-model-assist-select"
-                            aria-label={`${prefix}来源渠道`}
-                            value={sourceChannel}
-                            options={[{ value: channel.id, label: channel.name }, ...references.channels.filter((item) => item.id !== channel.id).map((item) => ({ value: item.id, label: item.name }))]}
-                            disabled={disabled}
-                            onChange={setSourceChannel}
-                        />
+                        <h2>{title}</h2>
+                        <p>{full ? "只复制调用协议、模型能力、价格与成本。型号和展示资料不变。" : "选择来源渠道与模型，复制整套售价、成本和规格条件。"}</p>
                     </div>
+                </header>
+            )}
+            <div className="admin-model-assist-content">
+                <div className={importing ? "admin-model-import-source" : "admin-model-price-source-fields"}>
+                    {!importing && (
+                        <div>
+                            <span className="admin-model-assist-label">来源渠道</span>
+                            <Select
+                                className="admin-model-assist-select"
+                                aria-label={`${prefix}来源渠道`}
+                                value={sourceChannel}
+                                options={[{ value: channel.id, label: channel.name }, ...references.channels.filter((item) => item.id !== channel.id).map((item) => ({ value: item.id, label: item.name }))]}
+                                disabled={disabled}
+                                onChange={setSourceChannel}
+                            />
+                        </div>
+                    )}
                     <div>
                         <span className="admin-model-assist-label">来源模型</span>
                         <Select
@@ -96,20 +159,28 @@ export function ChannelModelCopyPicker({
                             aria-label={`${prefix}来源模型`}
                             showSearch={{ optionFilterProp: "label" }}
                             allowClear
-                            placeholder={full ? "搜索已配置模型" : "选择相同能力的现有模型"}
+                            placeholder={full ? "选择提供配置的已有模型" : "选择相同能力的现有模型"}
                             notFoundContent="此渠道暂无可复用模型"
                             value={sourceId}
                             loading={loading}
                             disabled={disabled || loading}
-                            options={sources
-                                .filter((item) => item.id !== target?.id && (full ? Boolean(item.capability && item.protocol) : item.capability === capability))
-                                .map((item) => ({ value: item.id, label: `${item.channelLabel || item.providerModelKey || item.modelKey} · ${item.protocol || "未配置协议"} · ${item.priceTiers?.length || 1} 个价格档` }))}
-                            onChange={(value) => {
-                                setSourceId(value);
-                                setCopySkuRoutes(false);
-                            }}
+                            options={candidates.map((item) => {
+                                const label = item.channelLabel || item.providerModelKey || item.modelKey;
+                                const count = modelCopyPriceCount(item);
+                                return { value: item.id, label: importing ? item.modelKey : `${label}${label === item.modelKey ? "" : `（${item.modelKey}）`} · ${item.protocol || "未配置协议"} · ${count ? `${count} 个价格档` : "未配置价格"}` };
+                            })}
+                            onChange={setSourceId}
                         />
                     </div>
+                    {importing && (
+                        <>
+                            <ArrowRight size={16} aria-hidden className="admin-model-import-arrow" />
+                            <div className="admin-model-transfer-target">
+                                <span className="admin-model-assist-label">目标模型 · {channel.name}</span>
+                                <strong>{targetKey}</strong>
+                            </div>
+                        </>
+                    )}
                 </div>
                 {error ? (
                     <Alert
@@ -123,32 +194,19 @@ export function ChannelModelCopyPicker({
                         }
                     />
                 ) : null}
-                {source && full ? (
-                    <div className="admin-model-copy-preview" role="status">
-                        <strong>{source.displayName || source.modelKey} → 当前模型</strong>
-                        <p>
-                            将替换：{{ text: "文本", image: "图片", video: "视频", audio: "音频", "": "未配置" }[source.capability]}能力 · {protocol?.label || source.protocol} · 引用限制与协议参数 · {source.priceTiers?.length || 1} 个价格档（含成本和
-                            Token 规则）· {source.priceCurrency || "credits"} · 参考视频计费 · Logo、分组、标签与描述。
-                        </p>
-                        <p>目标模型标识、上游 ID、渠道展示名和启停状态保留。点击后仅填写表单，保存后生效。</p>
-                        {routeCount ? (
-                            <Checkbox checked={copySkuRoutes} disabled={disabled} onChange={(event) => setCopySkuRoutes(event.target.checked)}>
-                                同时复用 {routeCount} 个独立上游 SKU（勾选后请求会调用来源 SKU，请确认目标渠道可用）
-                            </Checkbox>
-                        ) : null}
-                        {!protocol ? <Alert type="warning" title="来源协议不可用，请先启用对应协议" /> : null}
-                    </div>
-                ) : null}
+                {source && full ? <ModelCopyPreview source={source} targetKey={targetKey} upstream={upstream} protocols={protocols} importing={importing} /> : null}
                 <footer className="admin-model-assist-footer">
-                    <p className="admin-model-assist-note">{full ? "默认让所有价格档调用目标模型。" : "替换当前价格表，保存后生效。"}</p>
+                    <p className="admin-model-assist-note">{importing ? "型号与启停不变，保存后生效。" : full ? "只填写草稿，保存后生效。" : "替换当前价格表，保存后生效。"}</p>
+                    {onCancel && <Button onClick={onCancel}>取消</Button>}
                     <Button
+                        type={importing ? "primary" : "default"}
                         icon={<Copy size={14} aria-hidden />}
-                        disabled={disabled || loading || !source || (full && !protocol)}
+                        disabled={disabled || loading || !source || copyBlocked}
                         onClick={() => {
-                            if (source) onApply(source, copySkuRoutes);
+                            if (source) onApply(source);
                         }}
                     >
-                        {full ? "复制完整配置到表单" : "复制价格到表单"}
+                        {importing ? "填入目标模型" : full ? "复制完整配置到表单" : "复制价格到表单"}
                     </Button>
                 </footer>
             </div>

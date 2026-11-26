@@ -25,12 +25,28 @@ func TestChannelModelDirectoryDefaultsAndCustomNames(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if saved.DisplayName != "未分类" {
+	if saved.DisplayName != request.ModelKey {
 		t.Fatalf("default group = %q", saved.DisplayName)
 	}
 	public, err := svc.sanitizeChannelModel(saved)
 	if err != nil || public.ChannelLabel != "upstream" {
 		t.Fatalf("default second-level label = %q, %v", public.ChannelLabel, err)
+	}
+	// A pre-existing sentinel must resolve on read, without editing the stored record.
+	if err := db.Model(saved).UpdateColumn("display_name", "未分类").Error; err != nil {
+		t.Fatal(err)
+	}
+	items, err := svc.AdminChannelModels(admin, channel.ID)
+	if err != nil || len(items) != 1 || items[0].DisplayName != request.ModelKey {
+		t.Fatalf("legacy list group: %v %v", items, err)
+	}
+	stored, err := svc.repo.ChannelModelByID(channel.ID, saved.ID)
+	if err != nil || stored.DisplayName != "未分类" {
+		t.Fatal("reading rewrote legacy metadata")
+	}
+	public, err = svc.sanitizeChannelModel(stored)
+	if err != nil || public.DisplayName != request.ModelKey {
+		t.Fatalf("legacy public group = %q, %v", public.DisplayName, err)
 	}
 	request.DisplayName, request.ChannelLabel = "product", "自定义渠道"
 	request.ExpectedUpdatedAt, request.ExpectedPriceVersion = saved.UpdatedAt, saved.PriceVersion

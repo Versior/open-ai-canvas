@@ -43,7 +43,7 @@ func TestBatchModelMetadataPreservesPricingAndIdentity(t *testing.T) {
 		t.Fatalf("n=%d err=%v", n, err)
 	}
 	after, _ := svc.repo.ChannelModelByID("channel", "a")
-	if after.DisplayName != "未分类" || after.Description != "备注" || after.Enabled || after.PriceVersion != before.PriceVersion || after.ModelKey != before.ModelKey || after.Protocol != before.Protocol || after.CapabilityConfigJSON != before.CapabilityConfigJSON || !reflect.DeepEqual(after.PriceTiers, before.PriceTiers) {
+	if after.DisplayName != before.ModelKey || after.Description != "备注" || after.Enabled || after.PriceVersion != before.PriceVersion || after.ModelKey != before.ModelKey || after.Protocol != before.Protocol || after.CapabilityConfigJSON != before.CapabilityConfigJSON || !reflect.DeepEqual(after.PriceTiers, before.PriceTiers) {
 		t.Fatalf("unexpected sparse update: %+v", after)
 	}
 	var audits int64

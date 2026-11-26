@@ -91,7 +91,7 @@ test("new admin model fills fuzzy metadata and reuses same-channel prices withou
     expect(result.values).toMatchObject({
         modelKey: "new-product",
         providerModelKey: values.providerModelKey,
-        displayName: "我的分组",
+        displayName: "new-product",
         icon: "Gemini",
         protocol: "chat-completion",
         capabilityConfig: { text: { contextWindowTokens: 1048576, maxOutputTokens: 65536 } },
@@ -115,7 +115,7 @@ test("changing to an unknown model clears previously automatic prices and metada
     const matched = autoConfigureChannelModel({ ...initialChannelModelValues(null, protocols), modelKey: preset.id }, [template], protocols, [preset]);
     const unknown = autoConfigureChannelModel({ ...matched.values, modelKey: "unrelated-brand" }, [template], protocols, [preset]);
     expect(unknown.values.icon).toBe("");
-    expect(unknown.values.displayName).toBe("未分类");
+    expect(unknown.values.displayName).toBe("unrelated-brand");
     expect(unknown.values.priceTiers[0]).toMatchObject({ priceConfigured: false, inputTokenPrice: 0, unitPrice: 0 });
     expect(unknown.values.capabilityConfig?.text?.contextWindowTokens).not.toBe(preset.context);
 });
@@ -124,16 +124,16 @@ test("category and logo matching is independent of text catalog limits and prese
     const values = { ...initialChannelModelValues(null, protocols), modelKey: "models/Gemini_9_Image-preview" };
     const protectedFields = new Set(["capability", "protocol", "capabilityConfig"]);
     const image = autoConfigureChannelModel({ ...values, capability: "image" }, [], protocols, [], protectedFields).values;
-    expect(image).toMatchObject({ displayName: "Gemini", icon: "Gemini", capability: "image" });
+    expect(image).toMatchObject({ displayName: "Gemini_9_Image-preview", icon: "Gemini", capability: "image" });
     const custom = { ...values, displayName: "商品图", icon: "Qwen" };
     expect(autoConfigureChannelModel(custom, [], protocols, [], new Set(["displayName", "icon"])).values).toMatchObject({ displayName: "商品图", icon: "Qwen" });
-    for (const [modelKey, displayName, icon] of [
-        ["flux.1-dev", "FLUX", "Flux"],
-        ["sora-2-pro", "Sora", "Sora"],
-        ["veo-3.1", "Veo", "Gemini"],
-        ["gpt-image-1", "GPT", "OpenAI"],
+    for (const [modelKey, icon] of [
+        ["flux.1-dev", "Flux"],
+        ["sora-2-pro", "Sora"],
+        ["veo-3.1", "Gemini"],
+        ["gpt-image-1", "OpenAI"],
     ]) {
-        expect(autoConfigureChannelModel({ ...values, modelKey }, [], protocols, []).values).toMatchObject({ displayName, icon });
+        expect(autoConfigureChannelModel({ ...values, modelKey }, [], protocols, []).values).toMatchObject({ displayName: modelKey, icon });
     }
 });
 

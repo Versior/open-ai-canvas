@@ -609,6 +609,24 @@ func validateImagePresetSelection(profile *ImageCapabilityConfig, quality, ratio
 		return nil
 	}
 	tier := imagePresetSelectionTier(profile, quality)
+	if strings.ContainsAny(ratio, "xX") && imageSizePixelOutbound(profile, "") && profile.Parameters != nil {
+		w, h, _ := strings.Cut(strings.ToLower(ratio), "x")
+		width, widthErr := strconv.ParseUint(w, 10, 32)
+		height, heightErr := strconv.ParseUint(h, 10, 32)
+		if widthErr != nil || heightErr != nil || width == 0 || height == 0 {
+			return newModelCapabilityArgumentError("size", "unsupported_value", BadAuthRequest("像素尺寸请使用正整数宽x高"))
+		}
+		if _, ok := declaredImageSizePreset(activeImageSizePresets(profile), ratio, tier, imagePresetDefaultTier(profile)); ok {
+			return nil
+		}
+		// A custom default is an exact size, not a second mapping for the same ratio.
+		// It belongs to the default tier only and cannot borrow another tier's preset.
+		_, mapped := declaredImageSizePreset(profile.Size.Presets, ratio, "", "")
+		if !mapped && ratio == profile.Size.Default && tier == imagePresetDefaultTier(profile) {
+			return nil
+		}
+		return newModelCapabilityArgumentError("size", "unsupported_value", BadAuthRequest("当前分辨率不支持所选像素尺寸"))
+	}
 	if tier == "" {
 		return nil
 	}

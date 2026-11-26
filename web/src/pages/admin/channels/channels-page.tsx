@@ -406,7 +406,7 @@ export default function ChannelsPage() {
     );
 
     return (
-        <AdminPageFrame title="渠道与模型" description="按 API 网站管理多个 Key 分组；每个 Key 的模型、协议、能力和价格独立。">
+        <AdminPageFrame title="渠道与模型">
             <Segmented
                 className="admin-channel-view-switch"
                 aria-label="渠道与模型视图"

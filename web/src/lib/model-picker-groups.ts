@@ -1,4 +1,5 @@
 import { groupModelsByDisplayName, isDirectSystemModel, type DisplayModelGroup } from "@/lib/model-selection";
+import { modelGroupName } from "@/lib/model-group-name";
 import { modelIcon, modelOptionName, PUBLIC_MODEL_CATALOG_ID, resolveModelChannel, type AiConfig } from "@/stores/use-config-store";
 
 export type ModelPickerGroup = {
@@ -19,7 +20,7 @@ export function modelChannelLabel(config: AiConfig, value: string) {
     return cost?.channelLabel?.trim() || channel.name || "未命名渠道";
 }
 
-// 一级按已设置的模型展示名跨渠道聚合，空值归入未分类；二级保留独立调用与售价。
+// 一级按有效展示名跨渠道聚合；二级保留独立调用与售价。
 export function groupModelsForPicker(config: AiConfig, options: string[]): ModelPickerGroup[] {
     const groups = new Map<string, ModelPickerGroup>();
     for (const channel of config.channels) {
@@ -27,7 +28,7 @@ export function groupModelsForPicker(config: AiConfig, options: string[]): Model
         const directModels = models.filter((value) => isDirectSystemModel(config, value));
         for (const value of directModels) {
             const cost = channel.modelCosts?.find((item) => item.model === modelOptionName(value));
-            const label = cost?.displayName?.trim() || "未分类";
+            const label = modelGroupName(modelOptionName(value), cost?.displayName);
             const key = JSON.stringify(["product", label]);
             let group = groups.get(key);
             if (!group) {

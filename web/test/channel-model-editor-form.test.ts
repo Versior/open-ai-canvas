@@ -2,8 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { defaultModelCapabilityConfig } from "../src/lib/model-capabilities";
 import type { ModelProtocolDefinition } from "../src/lib/model-protocols";
 import {
+    autoConfigureChannelModel,
     changeChannelModelCapability,
     changeChannelModelProtocol,
+    copyChannelModelConfiguration,
     duplicateChannelModelValues,
     editorSectionForField,
     initialChannelModelValues,
@@ -16,6 +18,76 @@ import type { ChannelModel, ChannelModelPriceTier } from "../src/services/api/wa
 import { projectImageParameters, resolveImageParameters, type ImageParameter } from "../src/lib/image-parameters";
 
 const definition = (value: string, capability: ModelProtocolDefinition["capability"], enabled = true): ModelProtocolDefinition => ({ value, capability, enabled, label: value, create: "POST /test", contentType: "application/json", media: "url" });
+const openaiImages = (await Bun.file(new URL("../../plugin-packages/openai-images/manifest.json", import.meta.url)).json()).contributes.providers[0];
+
+describe("渠道图片分辨率初始选择", () => {
+    const size: ImageParameter = { name: "size", label: "尺寸", type: "string", encoding: "pixels" };
+    const resolution: ImageParameter = { name: "imageResolution", label: "分辨率", type: "string", enabled: false };
+    const catalog = [{ ...definition("openai-image", "image"), imageParameters: openaiImages.imageParameters as ImageParameter[] }];
+    const model = { modelKey: "image-fixture", capability: "image", protocol: "openai-image", billingMode: "fixed_request", unitPriceMicrocredits: 1_000_000, priceConfigured: true, priceTiers: [] } as unknown as ChannelModel;
+    const configured = (field: Partial<ImageParameter>) => ({
+        ...model,
+        capabilityConfig: {
+            version: 1 as const,
+            image: projectImageParameters(defaultModelCapabilityConfig(model.protocol).image!, [
+                { ...size, values: ["1:1"], default: "1:1" },
+                { ...resolution, ...field },
+            ]),
+        },
+    });
+    const initial = { supported: true, values: ["1k", "2k", "4k"], default: "1k" };
+
+    test("未配置模型、手动新增及新增时的延迟识别都把三档写入草稿，首选 1K", () => {
+        const create = changeChannelModelCapability({ ...initialChannelModelValues(null, catalog), capability: "image", modelKey: model.modelKey }, catalog);
+        const identified = autoConfigureChannelModel(create, [], catalog, [], new Set(["protocol", "capability"])).values;
+        for (const draft of [initialChannelModelValues(model, catalog), create, identified]) {
+            const image = draft.capabilityConfig!.image!;
+            expect(image.resolution).toEqual(initial);
+            expect(image.parameters!.find((p) => p.name === "imageResolution")).toMatchObject({ values: initial.values, default: "1k" });
+            for (const tier of initial.values) expect(image.size.presets?.some((p) => p.tier === tier && p.ratio === "1:1" && p.width > 0)).toBe(true);
+        }
+    });
+
+    test("已开启但无档位的模型首次打开补齐，之后更新表单不反复补回刚移除的档位", () => {
+        const empty = configured({ enabled: true, values: [] });
+        expect(initialChannelModelValues(empty, catalog).capabilityConfig!.image!.resolution).toEqual(initial);
+        const edited = { ...initialChannelModelValues(model, catalog), capabilityConfig: empty.capabilityConfig };
+        expect(updateChannelModelUpstreamCapabilities(edited, catalog).capabilityConfig!.image!.resolution.values).toEqual([]);
+        expect(empty.capabilityConfig.image.resolution.values).toEqual([]);
+    });
+
+    test("已配首选、显式关闭、自定义档位和模板的 auto 均保留；复制来源不补默认", () => {
+        for (const field of [{ enabled: false }, { enabled: true, values: ["2k", "1.5k"], default: "2k" }, { enabled: true, values: ["auto", "1k"], default: "auto" }]) {
+            const item = configured(field);
+            expect(initialChannelModelValues(item, catalog).capabilityConfig!.image!.resolution).toEqual(item.capabilityConfig.image.resolution);
+        }
+        for (const field of [
+            { enabled: true, values: [] },
+            { enabled: false, values: ["1.5k"], default: "1.5k" },
+        ]) {
+            const source = configured(field);
+            const target = { ...initialChannelModelValues(model, catalog), modelKey: "another-model" };
+            const result = copyChannelModelConfiguration(target, source, catalog);
+            expect(result.modelKey).toBe(target.modelKey);
+            expect(result.capabilityConfig!.image!.parameters!.find((p) => p.name === resolution.name)).toMatchObject(field);
+            expect(result.capabilityConfig!.image!.resolution).toEqual(source.capabilityConfig.image.resolution);
+        }
+    });
+
+    test("按实际协议声明选档，不创造 4K，不改线上的大小写，不给无分辨率的型号加字段", () => {
+        for (const values of [
+            ["1k", "2k"],
+            ["1K", "2K", "4K"],
+            ["1k", "1.5k", "2k"],
+        ]) {
+            const item = configured({ enabled: true, values: [] });
+            const allowed = [{ ...catalog[0], imageParameters: [size, { ...resolution, values, default: values[0] }] }];
+            expect(initialChannelModelValues(item, allowed).capabilityConfig!.image!.resolution).toEqual({ supported: true, values, default: values[0] });
+        }
+        const other = [{ ...catalog[0], imageParameters: catalog[0].imageParameters.map((field) => (field.name === resolution.name ? { ...field, models: ["another-model"] } : field)) }];
+        expect(initialChannelModelValues(model, other).capabilityConfig!.image!.parameters!.some((p) => p.name === resolution.name)).toBe(false);
+    });
+});
 
 for (const shape of ["nil", "empty", "missing-size", "missing-encoding"] as const) {
     for (const pixelsToRatio of [true, false]) {
@@ -123,10 +195,10 @@ const protocols = [definition("disabled-text", "text", false), definition("text"
 const protocolsWithAudio = [...protocols, definition("audio", "audio")];
 
 describe("channel model editor drafts", () => {
-    test("new drafts use 未分类 and imported drafts display the upstream ID without overwriting custom names", () => {
-        expect(initialChannelModelValues(null, protocols).displayName).toBe("未分类");
+    test("blank drafts wait for a model key and legacy drafts use the model key, not the upstream ID", () => {
+        expect(initialChannelModelValues(null, protocols).displayName).toBe("");
         const imported = { modelKey: "product-id", providerModelKey: "upstream-id", displayName: "未分类", channelLabel: "", priceTiers: [] } as unknown as ChannelModel;
-        expect(initialChannelModelValues(imported, protocols)).toMatchObject({ displayName: "未分类", channelLabel: "upstream-id" });
+        expect(initialChannelModelValues(imported, protocols)).toMatchObject({ displayName: "product-id", channelLabel: "upstream-id" });
         expect(initialChannelModelValues({ ...imported, displayName: "product-id", channelLabel: "手动命名" }, protocols)).toMatchObject({ displayName: "product-id", channelLabel: "手动命名" });
     });
     test("Kemei Seedream selection initializes the image profile and preserves pricing", () => {
@@ -146,7 +218,7 @@ describe("channel model editor drafts", () => {
         expect(second.modelKey).toBe("");
         expect(second.tags).toEqual([]);
     });
-    test("duplicate drafts clear model IDs and inherited tier IDs while preserving custom routing and configuration", () => {
+    test("duplicate drafts allocate a free local key but keep the upstream and independent SKU routes", () => {
         const tier = (id: string, providerModelKey: string, unitPriceMicrocredits: number): ChannelModelPriceTier => ({
             id,
             channelModelId: "source-id",
@@ -186,16 +258,17 @@ describe("channel model editor drafts", () => {
             priceConfigured: true,
             enabled: false,
             priceVersion: 1,
+            capabilityConfig: defaultModelCapabilityConfig("video"),
             priceTiers: [tier("default-tier", "vendor-video", 5_000_000), tier("custom-tier", "vendor-video-hq", 8_000_000)],
             createdAt: "2026-08-29T00:00:00Z",
             updatedAt: "2026-08-29T00:00:00Z",
         };
 
-        const draft = duplicateChannelModelValues(item, protocols);
+        const draft = duplicateChannelModelValues(item, protocols, [item, { ...item, id: "disabled-copy", modelKey: "product-video-copy" }]);
 
         expect(draft).toMatchObject({
-            modelKey: "",
-            providerModelKey: "",
+            modelKey: "product-video-copy-2",
+            providerModelKey: "vendor-video",
             displayName: "视频模型组",
             channelLabel: "原渠道",
             tags: [{ text: "稳定", color: "green" }],
@@ -209,6 +282,8 @@ describe("channel model editor drafts", () => {
             ],
         });
         expect(draft.tags).not.toBe(item.tags);
+        const longKey = "模".repeat(120);
+        expect(duplicateChannelModelValues({ ...item, modelKey: longKey, providerModelKey: "" }, protocols, [])).toMatchObject({ modelKey: "模".repeat(115) + "-copy", providerModelKey: longKey });
     });
     test("missing catalogs do not invent a protocol", () => {
         expect(initialChannelModelValues(null, []).protocol).toBeUndefined();

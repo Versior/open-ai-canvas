@@ -407,6 +407,74 @@ func TestImageParametersPixelSelectionKeepsExactSizeWithoutResolution(t *testing
 	}
 }
 
+func TestMixedPixelDefaultKeepsExactSizeAndTier(t *testing.T) {
+	adapter := imageParameterTestAdapter(t, "openai-images", "openai-image")
+	registry, err := protocol.NewRegistry(adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := DefaultModelCapabilityConfigForModel("openai-image", "fixture")
+	profile.Image.Parameters = []protocol.ImageParameter{
+		{Name: "size", Type: "string", Encoding: "pixels", Values: []any{"auto", "1:1", "1024x1024", "1088x1088", "2048x2048"}, Default: "1088x1088"},
+		{Name: "imageResolution", Type: "string", Values: []any{"1k", "2k"}, Default: "1k"},
+	}
+	profile.Image.Size.Presets = []ImageSizePreset{{Tier: "1k", Ratio: "1:1", Size: "1024x1024", Width: 1024, Height: 1024}, {Tier: "2k", Ratio: "1:1", Size: "2048x2048", Width: 2048, Height: 2048}}
+	saved, err := NormalizeModelCapabilityConfigForModel("image", "openai-image", "fixture", profile, registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.Image.Size.Default != "1088x1088" || len(saved.Image.Size.Presets) != 2 {
+		t.Fatal("exact default or other tier changed")
+	}
+	for _, tc := range []struct{ size, tier, want string }{{"", "", "1088x1088"}, {"1088x1088", "1k", "1088x1088"}, {"1:1", "1k", "1024x1024"}, {"1:1", "2k", "2048x2048"}, {"1088x1088", "2k", ""}, {"2048x2048", "1k", ""}} {
+		input := canvasGenerationInput{Mode: "image", Prompt: "fixture", Config: providerConfig{Model: "fixture", InterfaceType: "openai-image", Size: tc.size, ImageResolution: tc.tier}}
+		err := validateImageTaskWithResolvedSize(map[string]any{"config": map[string]any{}}, &input, saved.Image)
+		if tc.want == "" {
+			if err == nil {
+				t.Fatal("pixels from a different tier accepted")
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		request, err := adapter.BuildCreate(context.Background(), protocol.RequestContext{Request: protocolRequestFromInput(input)})
+		if err != nil || request.Body.(map[string]any)["size"] != tc.want {
+			t.Fatalf("outbound size should be %s: %v", tc.want, err)
+		}
+	}
+	profile.Image.Parameters[0].Default = "2048x2048"
+	if _, err := NormalizeModelCapabilityConfigForModel("image", "openai-image", "fixture", profile, registry); err == nil {
+		t.Fatal("saved default from the wrong tier")
+	}
+	profile.Image.Parameters[0].Default = "1024x1024"
+	if _, err := NormalizeModelCapabilityConfigForModel("image", "openai-image", "fixture", profile, registry); err != nil {
+		t.Fatalf("mapped exact default at its own tier: %v", err)
+	}
+	profile.Image.Parameters[0].Values = append(profile.Image.Parameters[0].Values, "1:1x1024")
+	profile.Image.Parameters[0].Default = "1:1x1024"
+	if _, err := NormalizeModelCapabilityConfigForModel("image", "openai-image", "fixture", profile, registry); err == nil {
+		t.Fatal("mixed ratio and pixel syntax was saved as an exact size")
+	}
+}
+
+func TestImageParametersOptionalPixelSizeOmissionIsNotAuto(t *testing.T) {
+	for _, values := range [][]any{nil, {"auto", "1024x1024"}} {
+		for _, initial := range []any{nil, "auto"} {
+			profile := DefaultModelCapabilityConfigForModel("openai-image", "fixture").Image
+			profile.Parameters = []protocol.ImageParameter{{Name: "size", Type: "string", Encoding: "pixels", Values: values, Default: initial}}
+			projectImageParameters(profile)
+			config := providerConfig{InterfaceType: "openai-image"}
+			if err := applyImageParameterValues(&config, profile); err != nil {
+				t.Fatal(err)
+			}
+			if value, present := config.ImageParameters["size"]; present != (initial != nil) || value != initial {
+				t.Fatalf("optional pixel size: got %v (present=%t), default %v", value, present, initial)
+			}
+		}
+	}
+}
+
 func TestImageParametersDisabledResolutionUsesDefaultAndPreservesGroups(t *testing.T) {
 	profile := DefaultModelCapabilityConfigForModel("opaque-provider", "opaque-model")
 	disabled := false

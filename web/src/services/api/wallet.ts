@@ -203,6 +203,9 @@ export type ChannelModelMutation = {
     priceConfigured?: boolean;
 };
 
+type ChannelModelConfigurationImport = Pick<ChannelModelMutation, "capability" | "protocol" | "protocolRelease" | "protocolSelectionExplicit" | "capabilityConfig" | "priceCurrency" | "referenceVideoBilling"> &
+    Required<Pick<ChannelModelMutation, "priceTiers" | "expectedUpdatedAt" | "expectedPriceVersion">> & { configurationOnly: true };
+
 export type LinuxDOSetting = {
     enabled: boolean;
     clientId: string;
@@ -478,7 +481,7 @@ export function createAdminChannelModel(channelId: string, input: ChannelModelMu
     return http.post<{ model: ChannelModel }>(`/admin/channels/${encodeURIComponent(channelId)}/models`, input);
 }
 
-export function updateAdminChannelModel(channelId: string, id: string, input: ChannelModelMutation) {
+export function updateAdminChannelModel(channelId: string, id: string, input: ChannelModelMutation | ChannelModelConfigurationImport) {
     return http.patch<{ model: ChannelModel }>(`/admin/channels/${encodeURIComponent(channelId)}/models/${encodeURIComponent(id)}`, input);
 }
 

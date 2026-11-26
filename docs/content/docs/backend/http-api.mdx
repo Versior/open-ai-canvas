@@ -469,12 +469,18 @@ Agent 通过 `mcp_list_tools` 分三步读取连接目录、指定连接的工�
 | `POST /api/admin/channels`、`PATCH /api/admin/channels/:id` | 原合同增加 `websiteId`；编辑可携带 `expectedUpdatedAt`。关联网站后公共连接从网站取得，Key 凭据和模型独立 |
 | `GET /api/admin/channels/:id/catalog-status` | 返回最近目录 `models/readAt?/stale`，不请求上游 |
 | `POST /api/admin/channels/:id/models/fetch` | 读取该 Key 的目录，返回 `models/added/retained/missing/firstRead/baselineReset/readAt/previousReadAt?`；缺失型号不会自动删除 |
+| `POST /api/admin/channels/:id/models` | 新建模型（包括新建副本），成功返回 `data.model`。同渠道未删除的记录即使停用也占用 `modelKey`；不同产品标识可以共用 `providerModelKey`。不会按同名记录自动更新 |
+| `PATCH /api/admin/channels/:id/models/:modelId` | 更新指定目标，携带该目标的 `expectedUpdatedAt` 和 `expectedPriceVersion`，成功返回 `data.model`。`configurationOnly: true` 仅导入协议、能力和完整价格配置，版本过期则整笔拒绝 |
 | `GET /api/admin/channels/:id/protocol-suggestion` | 查询参数 `providerModelKey/capability`；返回 `protocol?`、`source`（`selection/history/conflict/none/invalid`）、`candidates`、`reason?`、`selectedAt?`。建议不等于明确选择 |
 | `POST /api/admin/channels/:id/models/batch-update`、`POST /api/admin/channel-models/batch-update` | `{models:[{modelId,priceVersion,capabilityVersion,updatedAt,changes}]}`，分别限定单 Key 或允许跨 Key；返回 `data.updated` |
 | `POST /api/admin/channels/:id/models/batch-protocol`、`POST /api/admin/channel-models/batch-protocol` | 支持 `{groups:[{modelIds,protocol}]}`，按模型原类型分组设置协议 |
 | `GET /api/admin/request-protocols` | 返回 `data.protocols[]`，按插件注册表列出声明式请求协议、归档发行版 `releases[]`（含 `version/sha256/current/manifest/bindings`）及渠道模型绑定 |
 | `POST /api/admin/request-protocols/check` | `{manifest,request,response,phase,taskId?}`；使用生产声明式适配器离线构造请求并解析示例响应，不访问上游或创建任务，返回 `data={create,poll?,download?,parsed?,warnings}` |
 | `POST /api/admin/request-protocols` | `{id,expectedSha256?,check}`；校验通过后按稳定 `id`/`providerId` 递增 SemVer 主版本号并打包为 `.yingce-plugin` 归档发行版，摘要冲突返回 409，返回 `data.protocol` |
+
+单个模型新增或编辑时，产品标识已被同渠道另一条记录占用，返回 HTTP 400、`reason=invalid_argument`、`details.field="modelKey"`，不修改已有模型及其价格档。客户端按字段定位错误，不解析提示文案，也不把失败的新增自动改为更新。两种操作的使用说明见[模型资料预设](./model-metadata-presets)。
+
+配置导入只接受已有目标的 `PATCH`，`POST` 带 `configurationOnly: true` 会被拒绝。客户端只发送目标版本和 `protocol/protocolRelease`、`capability/capabilityConfig`、`priceTiers/priceCurrency/referenceVideoBilling`。空 `protocolRelease` 表示跟随当前可用版本，不固定或回退到目标以前的版本。服务端从路径锁定的记录读取身份，忽略请求中的型号、上游、展示资料及启停；价格档按目标的同规格路由或目标默认上游保存，不采用请求中的来源路由。导入不记录为手动选择协议，能力、价格档或版本校验失败不写入任何修改。
 
 `changes` 可包含 `capability`（仅初始化未设置类型的模型）、`protocol`、`protocolRelease`（指定目标插件发行版 SHA-256，传空串切换到当前发行版，省略沿用原行为）、`displayName`、`description`、`enabled`、`pricingEnabled`、`capabilityTemplate`、`pricingTemplate`。省略字段保持原值，不接受以 `null` 隐式清空或设置为零。`capabilityTemplate` 只需 `{capabilityConfig}`，不能用模板内容隐式切换协议；`pricingTemplate` 为 `{priceCurrency,referenceVideoBilling,priceTiers}`，金额和开关按价格档合同明确提供。
 

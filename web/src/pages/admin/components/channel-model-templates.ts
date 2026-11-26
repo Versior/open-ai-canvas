@@ -2,7 +2,7 @@ import { defaultModelCapabilityConfig } from "@/lib/model-capabilities";
 import { imageHostControls, imageParameterAccepts, initializeImageRatioDefaults, resolveImageParameters, type ImageParameter } from "@/lib/image-parameters";
 import { imageResolutionTiers } from "@/lib/image-size-presets";
 import { normalizeTierResolution } from "@/lib/model-pricing";
-import { modelProtocolSupportsTokenBilling, type ModelProtocolDefinition } from "@/lib/model-protocols";
+import { definitionForRelease, modelProtocolSupportsTokenBilling, type ModelProtocolDefinition } from "@/lib/model-protocols";
 import type { ChannelModelFormValues } from "./channel-model-editor-form";
 import { defaultPriceTier, skuSelectorFromForm, type PriceTierFormValues } from "./channel-model-price-tier-form";
 
@@ -86,7 +86,14 @@ export const pricingTemplates = [
 ] as const;
 export const MAX_TEMPLATE_PRICE_TIERS = 48;
 export type PricingDimension = { id: string; label: string; values: string[]; field: string; imageParameter?: boolean };
-type PricingContext = Pick<ChannelModelFormValues, "capability" | "protocol" | "capabilityConfig"> & { protocols?: ModelProtocolDefinition[] };
+type PricingContext = Pick<ChannelModelFormValues, "capability" | "protocol" | "protocolRelease" | "capabilityConfig"> & { protocols?: ModelProtocolDefinition[] };
+
+function pricingImageParameters(values: PricingContext) {
+    return definitionForRelease(
+        values.protocols?.find((protocol) => protocol.value === values.protocol),
+        values.protocolRelease,
+    )?.imageParameters;
+}
 
 export function pricingDimensions(values: PricingContext): PricingDimension[] {
     const dimensions: PricingDimension[] = [];
@@ -99,7 +106,7 @@ export function pricingDimensions(values: PricingContext): PricingDimension[] {
         if (!image) return dimensions;
         add("operation", "生成方式", ["text_to_image", ...(image.references.maxImages > 0 ? ["image_to_image"] : [])]);
         if (image.parameters) {
-            const definitions = values.protocols?.find((protocol) => protocol.value === values.protocol)?.imageParameters;
+            const definitions = pricingImageParameters(values);
             for (const field of image.parameters) {
                 if (field.enabled === false || !field.pricing) continue;
                 const definition = definitions?.find((item) => item.name === field.name && item.pricing);
@@ -192,7 +199,7 @@ export function priceSelectorIssues(values: PricingContext & { priceTiers: Price
                         if (!specific(value)) continue;
                         const field = image.parameters.find((item) => item.name === name && item.enabled !== false && item.pricing);
                         const typed = field?.type === "boolean" ? (value === "true" ? true : value === "false" ? false : value) : field?.type === "number" || field?.type === "integer" ? Number(value) : value;
-                        const definitions = values.protocols?.find((protocol) => protocol.value === values.protocol)?.imageParameters;
+                        const definitions = pricingImageParameters(values);
                         const definition = definitions?.find((item) => item.name === name && item.pricing);
                         if (!field || !imageParameterAccepts(field, typed) || (!imageHostControls.has(name) && definitions && (!definition || !imageParameterAccepts(definition, typed))))
                             fail(`条件 ${name}=${value} 不受当前参数支持，请调整或删除该价格档`);

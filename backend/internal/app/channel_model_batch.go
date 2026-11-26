@@ -184,10 +184,7 @@ func (s *Service) prepareBatchModelUpdate(repo *repository.Repository, channel *
 	columns := map[string]any{}
 	replaceTiers := changes.PricingTemplate != nil
 	if changes.DisplayName != nil {
-		after.DisplayName = strings.TrimSpace(*changes.DisplayName)
-		if after.DisplayName == "" {
-			after.DisplayName = "未分类"
-		}
+		after.DisplayName = channelModelGroup(*changes.DisplayName, before.ModelKey)
 		if len([]rune(after.DisplayName)) > 160 {
 			return batchModelUpdate{}, BadAuthRequest("模型展示名不能超过 160 字")
 		}

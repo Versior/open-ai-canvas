@@ -1,12 +1,165 @@
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { Button, Input, InputNumber } from "antd";
 import { Check, Plus } from "lucide-react";
 import { Switch } from "@/components/ui/base/switch";
+import { AppModal } from "@/components/ui/product/app-modal";
 import "./image-size-picker.css";
 import type { ImageCapabilityConfig } from "@/lib/model-capabilities";
 import { DEFAULT_IMAGE_RATIOS, IMAGE_RATIOS, imageResolutionTiers, imagePresetForRatio, imageResolutionUsesQuality, imageSizeConfigWithPresets, imageSizePresets, imageTierAvailable } from "@/lib/image-size-presets";
-import { validateImageSize } from "@/services/api/image-validation";
-import type { ImageResolutionOption, ImageResolutionTier } from "@/lib/image-resolution-tiers";
+import { parseImageDimensions, validateImageSize } from "@/services/api/image-validation";
+import { imageRatioForSize, type ImageResolutionOption, type ImageResolutionTier } from "@/lib/image-resolution-tiers";
+
+type SizeEditorProps = {
+    profile: ImageCapabilityConfig;
+    disabled?: boolean;
+    onChange: (size: ImageCapabilityConfig["size"]) => void;
+    onClearDefault?: () => void;
+};
+
+export function ImageDefaultOutput({ profile, disabled, onChange, onClearDefault }: SizeEditorProps) {
+    const { size } = profile;
+    const field = profile.parameters?.find((p) => p.name === "size");
+    const pixels = field?.encoding ? field.encoding === "pixels" : size.parameter === "size";
+    const current = field ? field.default : size.default;
+    const exact = typeof current === "string" ? parseImageDimensions(current) : null;
+    const presets = imageSizePresets(profile);
+    const tier = profile.resolution.supported && profile.resolution.default !== "auto" ? profile.resolution.default : size.defaultTier;
+    const inTier = (item: ImageResolutionOption) => !tier || item.tier === tier;
+    const options = new Map<string, string>();
+    // Labels are a projection only. The value sent when selecting a ratio must still belong to the field's contract.
+    for (const value of size.values) {
+        if (parseImageDimensions(value)) continue;
+        if (!presets.some((p) => p.ratio === value) || presets.some((p) => inTier(p) && p.ratio === value)) options.set(value, value);
+    }
+    if (pixels) {
+        for (const p of presets.filter(inTier)) {
+            if (p.size && !options.has(p.ratio) && (!size.values.length || size.values.includes(p.size))) options.set(p.ratio, p.size);
+        }
+        for (const value of size.values) {
+            if (!parseImageDimensions(value) || (size.presets ?? presets).some((p) => p.size === value)) continue;
+            const ratio = imageRatioForSize(value);
+            if (ratio && !options.has(ratio)) options.set(ratio, value);
+        }
+    }
+    const [draft, setDraft] = useState<{ width: string; height: string } | null>(null);
+    const [error, setError] = useState("");
+    const customButton = useRef<HTMLButtonElement>(null);
+    const id = useId();
+    const customSelected = Boolean(exact && ![...options.values()].includes(String(current)));
+    const select = (value: string) => {
+        onChange({ ...size, default: value, values: size.values.length && !size.values.includes(value) ? [...size.values, value] : size.values });
+        setDraft(null);
+    };
+    const apply = () => {
+        if (!draft) return;
+        try {
+            const width = Number(draft.width),
+                height = Number(draft.height);
+            if (!/^\d+$/.test(draft.width) || !/^\d+$/.test(draft.height) || width <= 0 || height <= 0) throw new Error("宽度和高度都必须是正整数");
+            const value = `${width}x${height}`;
+            const mapped = (size.presets ?? presets).filter((p) => p.size === value);
+            // Model-declared sizes remain selectable; generic custom-size limits apply only to new sizes.
+            if (!mapped.length && !size.values.includes(value)) validateImageSize(width, height, !field);
+            if (tier && mapped.length && !mapped.some(inTier)) throw new Error(`此尺寸不属于 ${tier.toUpperCase()} 档，请先切换默认分辨率`);
+            if (field?.maxLength !== undefined && value.length > field.maxLength) throw new Error("尺寸超出协议长度限制");
+            select(value);
+        } catch (reason) {
+            setError(reason instanceof Error ? reason.message : "像素尺寸无效");
+        }
+    };
+    return (
+        <div className="image-size-defaults">
+            <strong id={`${id}-label`}>默认输出</strong>
+            <div className="image-size-default-options" role="group" aria-labelledby={`${id}-label`} aria-label="默认输出">
+                {onClearDefault && (
+                    <button
+                        type="button"
+                        disabled={disabled}
+                        aria-pressed={current === undefined}
+                        onClick={() => {
+                            setDraft(null);
+                            onClearDefault();
+                        }}
+                    >
+                        跟随模型默认
+                    </button>
+                )}
+                {[...options].map(([label, value]) => (
+                    <button key={label} type="button" disabled={disabled} aria-pressed={current === value} title={value !== label ? value : undefined} onClick={() => select(value)}>
+                        {label === "auto" ? "自动" : label}
+                    </button>
+                ))}
+                {pixels && (
+                    <button
+                        ref={customButton}
+                        type="button"
+                        disabled={disabled}
+                        aria-pressed={customSelected}
+                        aria-haspopup="dialog"
+                        aria-expanded={Boolean(draft)}
+                        onClick={() => {
+                            setError("");
+                            setDraft({ width: exact ? String(exact.width) : "", height: exact ? String(exact.height) : "" });
+                        }}
+                    >
+                        自定义尺寸{customSelected && exact && ` · ${exact.width} × ${exact.height}`}
+                    </button>
+                )}
+            </div>
+            {pixels && (
+                <AppModal
+                    open={Boolean(draft)}
+                    title="自定义尺寸"
+                    width={360}
+                    centered
+                    mask={{ closable: false }}
+                    okText="应用尺寸"
+                    cancelText="取消"
+                    okButtonProps={{ disabled }}
+                    onOk={apply}
+                    onCancel={() => setDraft(null)}
+                    afterClose={() => customButton.current?.focus({ preventScroll: true })}
+                >
+                    {draft && (
+                        <div className="image-size-custom-default">
+                            {(
+                                [
+                                    ["width", "宽度"],
+                                    ["height", "高度"],
+                                ] as const
+                            ).map(([key, label]) => (
+                                <label key={key}>
+                                    <span>{label}（px）</span>
+                                    <Input
+                                        inputMode="numeric"
+                                        autoComplete="off"
+                                        disabled={disabled}
+                                        value={draft[key]}
+                                        aria-invalid={Boolean(error)}
+                                        aria-describedby={error ? `${id}-error` : undefined}
+                                        onChange={(event) => {
+                                            setDraft({ ...draft, [key]: event.target.value });
+                                            setError("");
+                                        }}
+                                        onPressEnter={(event) => {
+                                            event.preventDefault();
+                                            if (!event.nativeEvent.isComposing) apply();
+                                        }}
+                                    />
+                                </label>
+                            ))}
+                            {error && (
+                                <p id={`${id}-error`} role="alert" className="image-size-error">
+                                    {error}
+                                </p>
+                            )}
+                        </div>
+                    )}
+                </AppModal>
+            )}
+        </div>
+    );
+}
 
 export function ImageSizePresetsEditor({
     profile,
@@ -18,11 +171,7 @@ export function ImageSizePresetsEditor({
     allowCustomRatio = true,
     grouped = true,
     defaultPresets = [],
-}: {
-    profile: ImageCapabilityConfig;
-    disabled?: boolean;
-    onChange: (size: ImageCapabilityConfig["size"]) => void;
-    onClearDefault?: () => void;
+}: SizeEditorProps & {
     tiers?: string[];
     ratios?: string[];
     allowCustomRatio?: boolean;
@@ -31,14 +180,6 @@ export function ImageSizePresetsEditor({
 }) {
     const IMAGE_RESOLUTIONS = tiers ?? imageResolutionTiers(profile);
     const presets = imageSizePresets(profile);
-    const presetValue = (preset: ImageResolutionOption) => (profile.size.parameter === "aspect_ratio" ? preset.ratio : preset.size);
-    const defaultOptions = profile.size.values.length ? profile.size.values : [...new Set(presets.map(presetValue).filter(Boolean))];
-    const defaultTier = grouped && profile.resolution.supported && IMAGE_RESOLUTIONS.includes(profile.resolution.default) ? profile.resolution.default : undefined;
-    const tierPresets = defaultTier ? presets.filter((preset) => preset.tier === defaultTier) : [];
-    const allMapped = new Set(presets.map(presetValue));
-    const tierValues = new Set(tierPresets.map(presetValue));
-    const options = tierValues.size ? defaultOptions.filter((value) => value === profile.size.default || !allMapped.has(value) || tierValues.has(value)) : defaultOptions;
-    const defaultSize = profile.parameters ? profile.parameters.find((field) => field.name === "size")?.default : profile.size.default;
     const id = useId();
     const [drafts, setDrafts] = useState<Partial<Record<ImageResolutionTier, string>>>({});
     const [errors, setErrors] = useState<Partial<Record<ImageResolutionTier, string>>>({});
@@ -106,10 +247,7 @@ export function ImageSizePresetsEditor({
     };
     const mappings = (
         <details className="image-size-mappings" open={presets.some((preset) => !preset.width || !preset.height || !preset.size) || undefined}>
-            <summary>
-                配置画幅与精确像素 <span>{presets.length} 项映射</span>
-            </summary>
-            <p className="image-size-editor-intro">点选支持的比例，再次点击可移除。已有精确尺寸保持不变，有换算规则时自动填入。</p>
+            <summary>编辑比例与像素映射</summary>
             {IMAGE_RESOLUTIONS.map((tier) => {
                 const items = presets.filter((preset) => preset.tier === tier);
                 const ratios = [...new Set([...(allowedRatios ?? IMAGE_RATIOS), ...items.map((item) => item.ratio)])];
@@ -236,28 +374,7 @@ export function ImageSizePresetsEditor({
     );
     return (
         <div className="image-size-presets-editor">
-            <div className="image-size-defaults">
-                <div className="image-size-defaults-heading">
-                    <strong>默认输出</strong>
-                    <span>{tierPresets.length ? `${defaultTier?.toUpperCase()} 档位的初始画幅` : "用户选择模型时的初始尺寸"}</span>
-                </div>
-                <div className="image-size-default-options" role="group" aria-label="默认输出">
-                    {onClearDefault && (
-                        <button type="button" disabled={disabled} aria-pressed={defaultSize === undefined} onClick={onClearDefault}>
-                            跟随模型默认
-                        </button>
-                    )}
-                    {options.map((value) => {
-                        const preset = presets.find((item) => presetValue(item) === value);
-                        const label = value === "auto" ? "自动" : preset && profile.size.parameter === "size" ? `${grouped ? preset.tier.toUpperCase() + " · " : ""}${preset.ratio}` : value;
-                        return (
-                            <button key={value} type="button" disabled={disabled} aria-pressed={defaultSize === value} title={value} aria-label={`默认输出 ${label} ${value}`} onClick={() => onChange({ ...profile.size, default: value })}>
-                                {label}
-                            </button>
-                        );
-                    })}
-                </div>
-            </div>
+            <ImageDefaultOutput profile={profile} disabled={disabled} onChange={onChange} onClearDefault={onClearDefault} />
             {mappings}
         </div>
     );

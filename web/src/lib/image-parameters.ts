@@ -1,6 +1,6 @@
 import type { ImageCapabilityConfig } from "@/lib/model-capabilities";
 import type { CapabilitySpec, OptionConstraint } from "@/services/api/logical-models";
-import { DEFAULT_IMAGE_RATIOS, imagePresetForRatio, imageSizeConfigWithPresets } from "./image-size-presets";
+import { DEFAULT_IMAGE_RATIOS, IMAGE_RESOLUTIONS, imagePresetForRatio, imageSizeConfigWithPresets } from "./image-size-presets";
 import { protocolImageSizePresets } from "./protocol-image-presets";
 
 export type ImageParameterValue = string | number | boolean;
@@ -25,6 +25,13 @@ export type ImageParameter = {
 
 export function imageParameterAppliesTo(field: ImageParameter, model: string) {
     return !field.models?.length || field.models.includes(model.trim().replace(/^models\//, ""));
+}
+
+export function initialImageResolution(definition: ImageParameter) {
+    const choices = (definition.values?.length ? definition.values : IMAGE_RESOLUTIONS).filter((v): v is string => typeof v === "string" && imageParameterAccepts(definition, v));
+    const tiers = choices.filter((v) => v !== "auto");
+    const values = tiers.length ? tiers : choices;
+    return { values, default: values.find((v) => v.toLowerCase() === "1k") ?? values.find((v) => v === definition.default) ?? values[0] };
 }
 
 export function imageParameterAccepts(field: ImageParameter, value: unknown): value is ImageParameterValue {
@@ -186,10 +193,12 @@ export function updateImageParameterSchema(profile: ImageCapabilityConfig, param
         ]),
     ];
     const initialized = initializeImageRatioDefaults(next, definitions, added, ratios.length ? ratios : DEFAULT_IMAGE_RATIOS, protocol);
-    if (initialized.size.parameter !== "size" || !initialized.resolution.supported || initialized.resolution.default === profile.resolution.default || !sizeField?.default) return initialized;
+    if ((initialized.size.parameter !== "size" && sizeField?.encoding !== "pixels") || !initialized.resolution.supported || initialized.resolution.default === profile.resolution.default || !sizeField?.default) return initialized;
     const previous = profile.size.presets?.find((preset) => preset.size === sizeField.default);
     const equivalent = previous && initialized.size.presets?.find((preset) => preset.tier === initialized.resolution.default && preset.ratio === previous.ratio);
-    return equivalent?.size && equivalent.size !== initialized.size.default ? updateImageParameterSize(initialized, { ...initialized.size, default: equivalent.size }) : initialized;
+    if (!equivalent?.size) return initialized;
+    const value = imageParameterAccepts(sizeField, equivalent.size) ? equivalent.size : equivalent.ratio;
+    return value !== initialized.size.default && imageParameterAccepts(sizeField, value) ? updateImageParameterSize(initialized, { ...initialized.size, default: value }) : initialized;
 }
 
 export function initializeImageRatioDefaults(profile: ImageCapabilityConfig, definitions: ImageParameter[], tiers?: string[], preferredRatios = DEFAULT_IMAGE_RATIOS, protocol?: string): ImageCapabilityConfig {
@@ -216,9 +225,9 @@ export function initializeImageRatioDefaults(profile: ImageCapabilityConfig, def
         .flatMap((tier) =>
             ratios.flatMap((ratio) => {
                 try {
-                    const exact = declaredPresets.find((p) => p.tier === tier && p.ratio === ratio);
+                    const exact = declaredPresets.find((p) => p.tier === tier.toLowerCase() && p.ratio === ratio);
                     if (declaredPresets.length && !exact && definition.values?.length) return [];
-                    return [exact || { ...imagePresetForRatio(tier, ratio), ratio }];
+                    return [{ ...(exact || imagePresetForRatio(tier.toLowerCase(), ratio)), tier, ratio }];
                 } catch {
                     // 保留待填写项，避免没有换算规则的档位静默丢失已选比例。
                     return [{ tier, ratio, width: 0, height: 0, size: "" }];

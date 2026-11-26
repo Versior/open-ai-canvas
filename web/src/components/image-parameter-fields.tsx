@@ -1,11 +1,12 @@
 import { Input, InputNumber, Switch } from "antd";
 import { useEffect, useRef, useState } from "react";
-import { ImageSizePresetsEditor } from "./image-size-presets-editor";
+import { ImageDefaultOutput, ImageSizePresetsEditor } from "./image-size-presets-editor";
 import { ImageSizePicker } from "./image-size-picker";
 import { protocolImageSizePresets } from "@/lib/protocol-image-presets";
+import { parseImageDimensions } from "@/services/api/image-validation";
 import { imageSingleSizeTier, imageSizeConfigWithPresets, imageSizePresets } from "@/lib/image-size-presets";
 import { Select } from "@/components/ui/base/select";
-import { commonImageParameter, imageHostControls, imageParameterAccepts, parseImageParameters, updateImageParameterSchema, updateImageParameterSize, type ImageParameter, type ImageParameterValue } from "@/lib/image-parameters";
+import { commonImageParameter, imageHostControls, imageParameterAccepts, initialImageResolution, parseImageParameters, updateImageParameterSchema, updateImageParameterSize, type ImageParameter, type ImageParameterValue } from "@/lib/image-parameters";
 import type { ImageCapabilityConfig } from "@/lib/model-capabilities";
 import { cn } from "@/lib/utils";
 import { Check, ChevronDown, ChevronUp, Plus, Star } from "lucide-react";
@@ -86,7 +87,7 @@ export function ImageParameterInput({
             />
         );
     }
-    if (field.type === "boolean") return <Switch aria-label={field.label} disabled={disabled} checked={value === true} onChange={onChange} />;
+    if (field.type === "boolean") return <Switch className="justify-self-start" aria-label={field.label} disabled={disabled} checked={value === true} onChange={onChange} />;
     if (field.type === "integer" || field.type === "number")
         return (
             <InputNumber
@@ -343,48 +344,57 @@ export function ImageParameterSchemaEditor({ definitions, parameters, disabled, 
                 const common = commonImageParameter(field.name);
                 const definition = common ? { ...common, required: declared.required } : declared;
                 const offersChoices = field.type === "string" || Boolean(definition.values?.length || field.values?.length);
-                const suggestions = declared.values?.length ? declared.values : field.name === "imageResolution" ? ["1k", "1.5k", "2k", "4k"] : [];
+                const numericRange = (field.type === "number" || field.type === "integer") && !definition.values?.length;
+                const resolution = field.name === "imageResolution";
+                const suggestions = declared.values?.length ? declared.values : resolution ? initialImageResolution(declared).values : [];
                 return (
-                    <section key={field.name} aria-label={field.label} className="min-w-0 space-y-2 border-b border-border pb-4">
+                    <section key={field.name} aria-label={field.label} className="@container min-w-0 space-y-2 border-b border-border pb-4">
                         <div className="flex items-center justify-between gap-3">
                             <div>
                                 <span className="text-sm font-medium">{field.label}</span>
                                 <code className="ml-2 text-xs text-muted-foreground">{field.name}</code>
                                 {definition.pricing ? <span className="ml-2 text-xs text-foreground/50">可计价</span> : null}
                             </div>
-                            <Switch aria-label={`启用${field.label}`} checked={field.enabled !== false} disabled={disabled || definition.required} onChange={(enabled) => update(field.name, { enabled })} />
+                            <Switch
+                                aria-label={`启用${field.label}`}
+                                checked={field.enabled !== false}
+                                disabled={disabled || definition.required}
+                                onChange={(enabled) => update(field.name, { enabled, ...(enabled && resolution && !field.values?.length ? initialImageResolution(declared) : {}) })}
+                            />
                         </div>
                         {field.description ? <p className="text-xs text-foreground/55">{field.description}</p> : null}
-                        {field.enabled !== false ? (
-                            <div className="grid min-w-0 gap-3">
-                                {offersChoices && <ImageParameterChoices field={field} definition={definition} suggestions={suggestions} disabled={disabled} update={(patch) => update(field.name, patch)} />}
-                                {(field.type === "number" || field.type === "integer") && !definition.values?.length ? (
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <label className="space-y-2 text-xs">
+                        {field.enabled !== false || resolution ? (
+                            <div className={cn("grid min-w-0 gap-3", numericRange && "grid-cols-2 @min-[28rem]:grid-cols-4 [&>label]:grid [&>label]:min-w-0 [&>label]:gap-1.5 [&_.ant-input-number]:w-full!")}>
+                                {offersChoices && (
+                                    <div className="col-span-full">
+                                        <ImageParameterChoices field={field} definition={definition} suggestions={suggestions} disabled={disabled || field.enabled === false} update={(patch) => update(field.name, patch)} />
+                                    </div>
+                                )}
+                                {numericRange ? (
+                                    <>
+                                        <label className="text-xs">
                                             <span>最小值</span>
                                             <InputNumber className="w-full" aria-label={`${field.label}最小值`} disabled={disabled} max={field.max} value={field.min} onChange={(min) => update(field.name, { min: min ?? definition.min })} />
                                         </label>
-                                        <label className="space-y-2 text-xs">
+                                        <label className="text-xs">
                                             <span>最大值</span>
                                             <InputNumber className="w-full" aria-label={`${field.label}最大值`} disabled={disabled} min={field.min} value={field.max} onChange={(max) => update(field.name, { max: max ?? definition.max })} />
                                         </label>
-                                    </div>
+                                        <label className="text-xs">
+                                            <span>步长</span>
+                                            <InputNumber
+                                                className="w-full"
+                                                aria-label={`${field.label}步长`}
+                                                disabled={disabled}
+                                                min={field.type === "integer" ? 1 : undefined}
+                                                value={field.step}
+                                                onChange={(step) => update(field.name, { step: step ?? undefined })}
+                                            />
+                                        </label>
+                                    </>
                                 ) : null}
-                                {(field.type === "number" || field.type === "integer") && !definition.values?.length ? (
-                                    <label className="space-y-1.5 text-xs">
-                                        <span>步长</span>
-                                        <InputNumber
-                                            className="w-full"
-                                            aria-label={`${field.label}步长`}
-                                            disabled={disabled}
-                                            min={field.type === "integer" ? 1 : undefined}
-                                            value={field.step}
-                                            onChange={(step) => update(field.name, { step: step ?? undefined })}
-                                        />
-                                    </label>
-                                ) : null}
-                                {!field.values?.length && (
-                                    <div className="space-y-2 text-xs">
+                                {!field.values?.length && field.enabled !== false && (
+                                    <div className="grid min-w-0 gap-1.5 text-xs">
                                         <span>默认值</span>
                                         <ImageParameterInput field={definition.values?.length ? { ...field, values: definition.values } : field} value={field.default} disabled={disabled} onChange={(value) => update(field.name, { default: value })} />
                                     </div>
@@ -429,16 +439,16 @@ export function ImageParameterSizeEditor({
             ),
         );
     const updateSize = (size: ImageCapabilityConfig["size"]) => {
-        if (!grouped) {
+        if (!grouped && size.presets !== profile.size.presets) {
             const retained = (profile.size.presets || []).filter((p) => p.tier !== (singleTier ?? ""));
-            const merged = imageSizeConfigWithPresets(profile, [...retained, ...(size.presets || [])]);
+            const merged = imageSizeConfigWithPresets(profile, [...retained, ...(size.presets || []).filter((p) => p.tier === (singleTier ?? ""))]);
             onChange(updateImageParameterSize(profile, { ...merged, default: size.default, defaultTier: singleTier }));
         } else onChange(updateImageParameterSize(profile, size));
     };
-    const ratios = [...new Set([...(declared.values || []), ...profile.size.values].map(String))];
+    const ratios = [...new Set([...(declared.values || []), ...profile.size.values].map(String))].filter((value) => !parseImageDimensions(value));
     const toggle = (ratio: string) => {
         const values = profile.size.values.includes(ratio) ? profile.size.values.filter((v) => v !== ratio) : [...profile.size.values, ratio];
-        updateField({ values, default: values.includes(profile.size.default) ? profile.size.default : values[0] });
+        updateField({ values, default: field.default === undefined || values.includes(String(field.default)) ? field.default : values[0] });
     };
     const addRatio = () => {
         const value = draft.trim().replace(/\s/g, "").replace("：", ":");
@@ -451,8 +461,7 @@ export function ImageParameterSizeEditor({
         setDraft("");
         setError("");
     };
-    const activePresets = imageSizePresets(profile);
-    const editorProfile = !grouped && pixelSize && activePresets.length ? { ...profile, size: imageSizeConfigWithPresets(profile, activePresets) } : profile;
+    const clearDefault = !definition.required ? () => updateField({ default: undefined }) : undefined;
     return (
         <section className="min-w-0 space-y-3 border-b border-border pb-4">
             <div className="flex items-center justify-between gap-3">
@@ -473,7 +482,7 @@ export function ImageParameterSizeEditor({
                     </p>
                 ) : grouped || pixelSize ? (
                     <ImageSizePresetsEditor
-                        profile={editorProfile}
+                        profile={profile}
                         tiers={tiers}
                         grouped={grouped}
                         ratios={
@@ -491,7 +500,7 @@ export function ImageParameterSizeEditor({
                         defaultPresets={protocolImageSizePresets(protocol)}
                         allowCustomRatio
                         disabled={disabled}
-                        onClearDefault={!definition.required ? () => updateField({ default: undefined }) : undefined}
+                        onClearDefault={clearDefault}
                         onChange={updateSize}
                     />
                 ) : (
@@ -506,27 +515,23 @@ export function ImageParameterSizeEditor({
                             </div>
                         </div>
                         <div className="image-size-preset-add">
-                            <Input aria-label="自定义比例" placeholder="其他比例，如 17:11" value={draft} disabled={disabled} onChange={(e) => setDraft(e.target.value)} onPressEnter={addRatio} />
+                            <Input
+                                aria-label="自定义比例"
+                                placeholder="其他比例，如 17:11"
+                                value={draft}
+                                disabled={disabled}
+                                onChange={(e) => setDraft(e.target.value)}
+                                onPressEnter={(event) => {
+                                    event.preventDefault();
+                                    if (!event.nativeEvent.isComposing) addRatio();
+                                }}
+                            />
                             <button type="button" disabled={disabled || !draft.trim()} onClick={addRatio}>
                                 添加
                             </button>
                         </div>
                         {error ? <p role="alert">{error}</p> : null}
-                        <div className="image-size-defaults">
-                            <strong>默认输出</strong>
-                            <div className="image-size-default-options" role="group" aria-label="默认输出">
-                                {!definition.required && (
-                                    <button type="button" disabled={disabled} aria-pressed={field.default === undefined} onClick={() => updateField({ default: undefined })}>
-                                        跟随模型默认
-                                    </button>
-                                )}
-                                {profile.size.values.map((value) => (
-                                    <button type="button" key={value} disabled={disabled} aria-pressed={value === field.default} onClick={() => updateField({ default: value })}>
-                                        {value}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
+                        <ImageDefaultOutput profile={profile} disabled={disabled} onClearDefault={clearDefault} onChange={updateSize} />
                     </>
                 )
             ) : null}

@@ -5,6 +5,7 @@ import type { ChannelModel } from "../src/services/api/wallet";
 import { copyChannelModelConfiguration, initialChannelModelValues } from "../src/pages/admin/components/channel-model-editor-form";
 import { identifyChannelModelConfiguration } from "../src/pages/admin/components/channel-model-identification";
 import { priceTierPayloadFromForm } from "../src/pages/admin/components/channel-model-price-tier-form";
+import { priceSelectorIssues } from "../src/pages/admin/components/channel-model-templates";
 
 const protocols: ModelProtocolDefinition[] = [
     { value: "chat-completion", label: "Chat", capability: "text", create: "POST /v1/chat/completions", contentType: "application/json", media: "url" },
@@ -40,36 +41,64 @@ const source: ChannelModel = {
 };
 const target = { ...initialChannelModelValues(null, protocols), modelKey: "target-product", providerModelKey: "target-upstream", channelLabel: "目标渠道", enabled: false };
 
-test("complete copying replaces configured targets and deeply clones all settings while retaining target identity", () => {
+test("完整复制按来源固定发行版校验规格价，不用新版规则替代，也不复制已卸载的绑定", () => {
+    const field = { name: "style", label: "风格", type: "string" as const, binding: "providerOptions.image.style", values: ["ink"], pricing: true, enabled: true };
+    const release = { pluginId: "image", version: "1.0", sha256: "a".repeat(64), current: false, create: protocols[1].create, imageParameters: [field] };
+    const catalog = [{ ...protocols[1], imageParameters: [], releases: [release, { ...release, version: "2.0", sha256: "b".repeat(64), imageParameters: [], current: true }] }];
+    const config = defaultModelCapabilityConfig("openai-image");
+    config.image!.parameters = [field];
+    const item = { ...source, capability: "image" as const, billingMode: "fixed_request" as const, protocol: "image", protocolRelease: release.sha256, capabilityConfig: config };
+    const copied = copyChannelModelConfiguration(target, item, catalog);
+    const priced = { ...copied, protocols: catalog, priceTiers: [{ ...copied.priceTiers[0], matchMode: "advanced" as const, imageSelector: { style: "ink" } }] };
+    expect(priceSelectorIssues(priced)).toEqual([]);
+    expect(priceSelectorIssues({ ...priced, protocolRelease: catalog[0].releases[1].sha256 })).not.toEqual([]);
+    expect(() => copyChannelModelConfiguration(target, { ...item, protocolRelease: "uninstalled" }, catalog)).toThrow("发行版");
+});
+
+test("整套复制不能用默认图片能力代替未读到的来源参数；未固定的来源使用当前发行版而非目标旧版", () => {
+    const release = { pluginId: "image", version: "1", current: false, sha256: "a".repeat(64), create: protocols[1].create };
+    const current = { ...release, version: "2", current: true, sha256: "b".repeat(64) };
+    const catalog = [{ ...protocols[1], releases: [release, current] }];
+    const item = { ...source, capability: "image" as const, protocol: "image", billingMode: "fixed_request" as const, capabilityConfig: defaultModelCapabilityConfig("openai-image") };
+    const oldTarget = { ...target, capability: item.capability, protocol: item.protocol, protocolRelease: release.sha256 };
+    for (const capabilityConfig of [undefined, { version: 1 }]) {
+        const incomplete = { ...item, capabilityConfig };
+        expect(() => copyChannelModelConfiguration(oldTarget, incomplete, catalog)).toThrow("来源模型的能力参数");
+    }
+    expect(copyChannelModelConfiguration(oldTarget, item, catalog).protocolRelease).toBeUndefined();
+    expect(copyChannelModelConfiguration(oldTarget, { ...item, protocolRelease: release.sha256 }, catalog).protocolRelease).toBe(release.sha256);
+});
+
+test("复制仅替换协议、能力、价格，目标所有展示资料和来源记录不变", () => {
+    const identity = { ...target, displayName: "目标分组", description: "目标说明", tags: [{ text: "目标", color: "blue" as const }], icon: "target-icon" };
     const configured = structuredClone(source);
     configured.capabilityConfig = { version: 1, text: configured.capabilityConfig!.text };
     configured.capabilityConfig!.text!.references.maxImages = 4;
     configured.capabilityConfig!.text!.streaming = false;
     configured.capabilityConfig!.mediaTransport = { image: "base64" };
-    const next = copyChannelModelConfiguration({ ...target, capability: "image", protocol: "image", capabilityConfig: defaultModelCapabilityConfig("image") }, configured, protocols);
+    const next = copyChannelModelConfiguration({ ...identity, capability: "image", protocol: "image", capabilityConfig: defaultModelCapabilityConfig("image") }, configured, protocols);
     expect(next).toMatchObject({
         modelKey: target.modelKey,
         providerModelKey: target.providerModelKey,
         channelLabel: target.channelLabel,
         enabled: false,
-        displayName: source.displayName,
-        tags: source.tags,
-        description: source.description,
-        icon: source.icon,
+        displayName: identity.displayName,
+        tags: identity.tags,
+        description: identity.description,
+        icon: identity.icon,
         capability: "text",
         protocol: source.protocol,
         priceCurrency: "USD",
         capabilityConfig: { text: { streaming: false, references: { maxImages: 4 } }, mediaTransport: { image: "base64" } },
     });
     expect(next.priceTiers[0]).toMatchObject({ providerModelKey: "", billingMode: "token", inputTokenPrice: 1, outputTokenPrice: 2, cachedTokenPrice: 0.3, cacheWriteTokenPrice: 0.4 });
-    next.tags[0].text = "变更";
     next.capabilityConfig!.text!.references.maxImages = 8;
     expect(configured.tags![0].text).toBe("推荐");
     expect(configured.capabilityConfig!.text!.references.maxImages).toBe(4);
     expect(next.capabilityConfig!.image).toBeUndefined();
 });
 
-test("complete copy preserves Token rules, costs, reference video billing and optionally independent SKU routes", () => {
+test("复制保留 Token 规则、成本、参考视频计费；同规格沿用目标路由，绝不继承来源 SKU", () => {
     const video = {
         ...source,
         capability: "video" as const,
@@ -109,12 +138,13 @@ test("complete copy preserves Token rules, costs, reference video billing and op
             },
         ],
     };
-    for (const copyRoutes of [false, true]) {
-        const next = copyChannelModelConfiguration(target, video, protocols, copyRoutes);
+    for (const ownRoute of ["", "target-video-sku"]) {
+        const videoTarget = { ...target, capability: "video" as const, priceTiers: [{ ...target.priceTiers[0], providerModelKey: ownRoute }] };
+        const next = copyChannelModelConfiguration(videoTarget, video, protocols);
         const payload = priceTierPayloadFromForm(next.capability, next.priceTiers[0], target.providerModelKey, next.capabilityConfig);
         expect(next.referenceVideoBilling).toBe(true);
         expect(payload).toMatchObject({
-            providerModelKey: copyRoutes ? "independent-sku" : target.providerModelKey,
+            providerModelKey: ownRoute || target.providerModelKey,
             outputTokenPriceMicrocredits: 6_000_000,
             referenceVideoOutputTokenPriceMicrocredits: 9_000_000,
             enabled: false,
@@ -147,7 +177,7 @@ test("complete copy preserves Token rules, costs, reference video billing and op
             },
         ],
     };
-    const next = copyChannelModelConfiguration(target, text, protocols, true);
+    const next = copyChannelModelConfiguration(target, text, protocols);
     expect(next.priceTiers[0].providerModelKey).toBe("");
     const payload = priceTierPayloadFromForm("text", next.priceTiers[0], target.providerModelKey, next.capabilityConfig);
     expect(payload.tokenPriceRules).toEqual(text.priceTiers[0].tokenPriceRules);
@@ -157,6 +187,8 @@ test("complete copy preserves Token rules, costs, reference video billing and op
 test("complete copy refuses unavailable protocols and invalid source prices without changing the target", () => {
     expect(() => copyChannelModelConfiguration(target, { ...source, protocol: "missing" }, protocols)).toThrow("已启用");
     expect(() => copyChannelModelConfiguration(target, { ...source, unitPriceMicrocredits: -1, billingMode: "fixed_request" }, protocols)).toThrow("有效数值");
+    expect(() => copyChannelModelConfiguration(target, { ...source, priceTiers: [], priceConfigured: false }, protocols)).toThrow("未配置价格");
+    expect(copyChannelModelConfiguration(target, { ...source, billingMode: "fixed_request", unitPriceMicrocredits: 0 }, protocols).priceTiers[0].unitPrice).toBe(0);
     expect(target.protocol).toBe("chat-completion");
 });
 

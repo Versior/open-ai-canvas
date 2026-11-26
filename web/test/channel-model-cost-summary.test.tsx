@@ -100,7 +100,7 @@ test("specification labels prefer canonical selectors and additional tiers remai
     expect(html).toContain("图生视频 / 1080P / 10 秒");
     expect(html).not.toContain("720P");
     expect(html).toContain("<details");
-    expect(html).toContain("其余 1 个规格价格");
+    expect(html).toContain("4 个规格价格");
 });
 
 test("disabled tiers are excluded and empty costs are explicit", () => {
@@ -110,7 +110,7 @@ test("disabled tiers are excluded and empty costs are explicit", () => {
 
 test("model list uses the cost component without gating it on user prices", async () => {
     const source = await Bun.file(new URL("../src/pages/admin/components/channel-model-manager.tsx", import.meta.url)).text();
-    expect(source).toContain('title: "规格成本价 / 销售价 / 加价"');
+    expect(source).toContain('title: "价格与成本"');
     expect(source).toContain("<ChannelModelCostSummary item={item} />");
     expect(source).not.toContain("billingSummary(item)");
 });

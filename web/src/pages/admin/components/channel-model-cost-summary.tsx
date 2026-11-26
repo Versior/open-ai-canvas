@@ -7,6 +7,8 @@ import { formatModelMarkup, formatModelPrice, modelPriceFields } from "./channel
 export function ChannelModelCostSummary({ item }: { item: ChannelModel }) {
     const tiers = item.priceTiers?.filter((tier) => tier.enabled) || [];
     if (!tiers.length) return <AdminStatusBadge label="无已启用规格" tone="warning" />;
+    const first = tiers[0];
+    const summary = tiers.length === 1 && first.billingMode === "fixed_request" && first.priceConfigured ? `售价 ${formatModelPrice(first.unitPriceMicrocredits)} ${priceCurrencyUnit(item.priceCurrency)} / 次` : `${tiers.length} 个规格价格`;
     const renderTier = (tier: ChannelModelPriceTier) => (
         <div className="admin-model-cost-tier" key={tier.id}>
             <div className="admin-model-cost-spec">{specificationLabel(tier)}</div>
@@ -14,15 +16,13 @@ export function ChannelModelCostSummary({ item }: { item: ChannelModel }) {
         </div>
     );
     return (
-        <div className="admin-model-cost-summary">
-            {tiers.slice(0, 3).map(renderTier)}
-            {tiers.length > 3 ? (
-                <details className="admin-model-cost-more">
-                    <summary>其余 {tiers.length - 3} 个规格价格</summary>
-                    {tiers.slice(3).map(renderTier)}
-                </details>
-            ) : null}
-        </div>
+        <details className="admin-model-cost-more">
+            <summary>{summary}</summary>
+            <div className="admin-model-cost-summary">
+                {tiers.map(renderTier)}
+                <small className="admin-model-cost-unit">价格版本 v{item.priceVersion}</small>
+            </div>
+        </details>
     );
 }
 

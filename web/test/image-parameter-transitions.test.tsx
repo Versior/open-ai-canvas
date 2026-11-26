@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
+import { Window } from "happy-dom";
 import { ImageParameterSizeEditor } from "../src/components/image-parameter-fields";
 import { imageParameterRequest, projectImageParameters, resolveImageParameters, updateImageParameterSchema, updateImageParameterSize, type ImageParameter } from "../src/lib/image-parameters";
 import { IMAGE_RATIOS, imagePresetForRatio, imageSizeConfigWithPresets } from "../src/lib/image-size-presets";
@@ -38,6 +39,63 @@ function expectRatios(profile: ImageCapabilityConfig, tier: string, ratios = IMA
 }
 
 describe("图片尺寸与分辨率配置顺序", () => {
+    test("像素枚举的比例按钮反映真实选中项，不把同一个预设再标为自定义", () => {
+        const base = defaultImageCapabilityConfig();
+        const preset = imagePresetForRatio("1k", "1:1");
+        base.size.presets = [preset];
+        const field = { ...definitions[0], values: [preset.size], default: preset.size };
+        const profile = projectImageParameters(base, [field]);
+        const doc = new Window().document;
+        doc.body.innerHTML = renderToStaticMarkup(<ImageParameterSizeEditor profile={profile} definition={field} onChange={() => {}} />);
+        const group = doc.querySelector('[aria-label="默认输出"]')!;
+        expect(group.querySelector('[aria-pressed="true"]')!.textContent).toBe("1:1");
+        expect(group.querySelector('[aria-haspopup="dialog"]')!.textContent).toBe("自定义尺寸");
+    });
+
+    test.each([undefined, "auto"])("不把跟随模型默认和显式自动混为一谈：%s", (value) => {
+        for (const values of [[], ["auto", "1:1"]]) {
+            const profile = projectImageParameters(defaultImageCapabilityConfig(), [{ ...definitions[0], values, default: value }]);
+            expect(imageParameterRequest(profile, {}, true)).toEqual(value ? { size: value } : {});
+        }
+    });
+
+    test.each([true, false])("混合尺寸合同只展示一次比例，不把已有精确默认值改成比例（分组 %s）", (grouped) => {
+        const base = defaultImageCapabilityConfig();
+        base.size.presets = [imagePresetForRatio("1k", "1:1"), imagePresetForRatio("2k", "1:1")];
+        base.size.defaultTier = "1k";
+        const field = { ...definitions[0], values: ["auto", "1:1", "1024x1024", "2048x2048", "1600x960"], default: "1024x1024" };
+        const profile = projectImageParameters(base, [field, { ...definitions[1], enabled: grouped, values: ["1k", "2k"], default: "1k" }]);
+        const before = structuredClone(profile);
+        const doc = new Window().document;
+        doc.body.innerHTML = renderToStaticMarkup(
+            <ImageParameterSizeEditor
+                profile={profile}
+                definition={definitions[0]}
+                onChange={() => {
+                    throw Error("不应在打开时写入");
+                }}
+            />,
+        );
+        const group = doc.querySelector('[role="group"][aria-label="默认输出"]')!;
+        const buttons = [...group.querySelectorAll("button")];
+        expect(buttons.map((b) => b.textContent)).not.toContain("1024x1024");
+        expect(buttons.filter((b) => b.textContent === "1:1")).toHaveLength(1);
+        expect(buttons.find((b) => b.textContent?.includes("自定义尺寸"))?.getAttribute("aria-pressed")).toBe("true");
+        expect(group.textContent).toContain("1024 × 1024");
+        expect(profile).toEqual(before);
+    });
+
+    test("纯比例协议不铺旧像素值，也不承诺自定义像素", () => {
+        const field = { ...definitions[0], encoding: "ratio" as const, values: ["auto", "1:1", "1024x1024"], default: "1:1" };
+        const profile = projectImageParameters(defaultImageCapabilityConfig(), [field]);
+        const doc = new Window().document;
+        doc.body.innerHTML = renderToStaticMarkup(<ImageParameterSizeEditor profile={profile} definition={field} onChange={() => {}} />);
+        expect(doc.querySelector('[aria-label="默认输出"]')!.textContent).not.toContain("1024x1024");
+        expect(doc.querySelector('[aria-label="支持的宽高比"]')!.textContent).not.toContain("1024x1024");
+        expect(doc.body.textContent).not.toContain("自定义尺寸");
+        expect(doc.querySelector('[aria-label="自定义比例"]')).not.toBeNull();
+    });
+
     for (const encoding of ["pixels", "ratio"] as const) {
         test(`${encoding}: 两种开关顺序得到相同的完整配置`, () => {
             const initial = disabledProfile(encoding);
@@ -102,6 +160,42 @@ describe("图片尺寸与分辨率配置顺序", () => {
             expect(updated.parameters!.find((field) => field.name === "size")!.default).toBe(initial && larger.size);
             expect(updated.size.presets).toEqual(base.size.presets);
         }
+    });
+
+    test("混合像素合同切换首选档位只替换已映射的精确默认值", () => {
+        const presets = [imagePresetForRatio("1k", "1:1"), imagePresetForRatio("2k", "1:1")];
+        const base = defaultImageCapabilityConfig();
+        base.size.presets = presets;
+        for (const [before, after] of [
+            ["1024x1024", "2048x2048"],
+            ["1088x1088", "1088x1088"],
+            ["1:1", "1:1"],
+            [undefined, undefined],
+        ]) {
+            const values = ["auto", "1:1", "1024x1024", "2048x2048", "1088x1088"];
+            const profile = projectImageParameters(base, [
+                { ...definitions[0], values, default: before },
+                { ...definitions[1], values: ["1k", "2k"], default: "1k" },
+            ]);
+            const changed = change(profile, "imageResolution", { default: "2k" });
+            expect(changed.parameters![0].default).toBe(after);
+            expect(changed.size.values).toEqual(values);
+            expect(changed.size.presets).toEqual(presets);
+        }
+    });
+
+    test("切换首选档时，目标像素不在支持值中则使用已声明的同一比例", () => {
+        const base = defaultImageCapabilityConfig();
+        base.size.presets = [imagePresetForRatio("1k", "1:1"), imagePresetForRatio("2k", "1:1")];
+        const values = ["1:1", "1024x1024"];
+        const profile = projectImageParameters(base, [
+            { ...definitions[0], values, default: "1024x1024" },
+            { ...definitions[1], values: ["1k", "2k"], default: "1k" },
+        ]);
+        const changed = change(profile, "imageResolution", { default: "2k" });
+        expect(changed.parameters![0].default).toBe("1:1");
+        expect(changed.size.values).toEqual(values);
+        expect(imageParameterRequest(changed, {}, true)).toEqual({ size: "1:1", imageResolution: "2k" });
     });
 
     test("像素支持值也能通过已有预设继承比例，保留原始像素", () => {

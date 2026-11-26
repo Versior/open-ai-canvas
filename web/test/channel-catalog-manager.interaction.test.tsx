@@ -261,7 +261,8 @@ test("网站共享筛选重置各组分页和选择，排序仍使用对应 Key"
                     id: `${key}-${i}`,
                     modelKey: `${key}-model-${i}`,
                     displayName: `${key}-name-${i}`,
-                    capability: "image",
+                    capability: i % 2 ? "text" : "image",
+                    protocol: i % 2 ? "openai-chat" : "openai-image",
                     enabled: true,
                     priceVersion: 1,
                     priceTiers: [],
@@ -292,6 +293,15 @@ test("网站共享筛选重置各组分页和选择，排序仍使用对应 Key"
         await act(async () => root.render(render("")));
         const a = host.querySelector('[data-group="a"]')!;
         const b = host.querySelector('[data-group="b"]')!;
+        const row = b.querySelector('[aria-label="从其他模型复制配置到 b-model-0"]')!.closest("tr")!;
+        for (const i of [0, 1]) {
+            const group = b.querySelector(`[role="group"][aria-label="b-model-${i} 操作"]`);
+            expect(group).not.toBeNull();
+            expect([...group!.querySelectorAll("button")].map((button) => button.textContent)).toEqual([i ? "编辑" : "编辑参数", "", "停用", "删除"]);
+        }
+        expect(row.querySelector('[aria-label="停用模型 b-model-0"]')?.textContent).toContain("停用");
+        expect(row.querySelector('[aria-label="删除模型 b-model-0"]')?.textContent).toContain("删除");
+        expect(row.querySelector('[aria-haspopup="menu"]')).toBeNull();
         expect(host.querySelectorAll(".admin-list-toolbar")).toHaveLength(0);
         expect(b.querySelector(".admin-table-pagination")).toBeNull();
         await act(async () => (a.querySelector('[aria-label="下一页"]') as HTMLButtonElement).click());

@@ -210,7 +210,7 @@ export function ChannelModelBatchEditDialog({ channelId, items, currentItems, co
                     <ModelDisplayNameInput
                         aria-label="批量模型展示名"
                         className="w-full"
-                        placeholder={selected.displayName ? "留空归入未分类" : "不修改"}
+                        placeholder={selected.displayName ? "留空使用各模型的完整型号" : "不修改"}
                         disabled={saving || !selected.displayName}
                         value={displayName}
                         onChange={(value) => {

@@ -67,14 +67,9 @@ func (s *Service) autoConfigureNewChannelModel(channel *model.ModelChannel, req 
 		if req.Icon == "" {
 			req.Icon = template.Icon
 		}
-		if req.DisplayName == "" && template.DisplayName != "未分类" {
-			req.DisplayName = template.DisplayName
-		}
 	}
-	category, icon := modelpreset.Identity(id)
-	if req.DisplayName == "" {
-		req.DisplayName = category
-	}
+	_, icon := modelpreset.Identity(id)
+	req.DisplayName = channelModelGroup(req.DisplayName, strings.TrimPrefix(strings.TrimSpace(req.ModelKey), "models/"))
 	if req.Icon == "" {
 		req.Icon = icon
 	}

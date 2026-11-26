@@ -279,7 +279,7 @@ func (s *Service) sanitizeChannelModel(cm *model.ChannelModel) (PublicChannelMod
 		ChannelLabel:     firstNonEmpty(cm.ChannelLabel, cm.ProviderModelKey, cm.ModelKey),
 		Tags:             cm.Tags,
 		Description:      cm.Description,
-		DisplayName:      cm.DisplayName,
+		DisplayName:      channelModelGroup(cm.DisplayName, cm.ModelKey),
 		SortOrder:        cm.SortOrder,
 		Icon:             cm.Icon,
 		Capability:       cm.Capability,

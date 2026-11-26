@@ -34,7 +34,7 @@ import {
 } from "@/lib/model-capabilities";
 import type { ModelProtocol, ModelProtocolDefinition, ModelProtocolWorkflow } from "@/lib/model-protocols";
 import { ImageParameterChoices, ImageParameterSchemaEditor, ImageParameterSizeEditor } from "@/components/image-parameter-fields";
-import { updateImageParameterSchema, resolveImageParameters, type ImageParameter } from "@/lib/image-parameters";
+import { imageParameterAppliesTo, updateImageParameterSchema, resolveImageParameters, type ImageParameter } from "@/lib/image-parameters";
 import { cleanVideoScreenSpecValues, findProtocolWorkflow, resolveWorkflowVideoScreenSpec, updateWorkflowVideoScreenSpec } from "@/lib/video-screen-specs";
 import { VideoCapabilityOptions, VideoCapabilityPreview, VideoDurationOptions, VideoOperationOptions } from "./video-capability-options";
 import { ModelCapabilityPreview } from "./model-capability-preview";
@@ -511,7 +511,10 @@ function ImageCapabilityEditor({
     if (section !== "references" && profile.parameters) {
         // 模板声明的是可编辑范围，不能反过来成为编辑器的固定上限。
         // 只使用参数身份和类型；实际协议的约束留到目标模型应用/保存时检查。
-        const definitions = templateEditing ? profile.parameters.map(({ name, label, type, binding, encoding, pricing, description }) => ({ name, label, type, binding, encoding, pricing, description })) : profile.parameters;
+        const definitions = profile.parameters.map(({ name, label, type, binding, encoding, pricing, description }) => {
+            const declared = !templateEditing && imageParameters?.find((p) => p.name === name && imageParameterAppliesTo(p, model));
+            return declared || { name, label, type, binding, encoding, pricing, description };
+        });
         const size = profile.parameters.find((p) => p.name === "size");
         const specs = profile.parameters.filter((field) => field.name === "imageResolution" || field.name === "quality");
         const outputs = profile.parameters.filter((field) => field !== size && !specs.includes(field));
@@ -524,7 +527,6 @@ function ImageCapabilityEditor({
                 {(specs.length > 0 || size) && (
                     <section aria-label="画面规格" className="min-w-0 space-y-3">
                         <h3 className="text-sm font-semibold">画面规格</h3>
-                        <p className="text-xs text-muted-foreground">点选支持值，星标设为默认。</p>
                         <ImageParameterSchemaEditor definitions={definitions} parameters={specs} disabled={disabled} onChange={changeParameters} />
                         {size && <ImageParameterSizeEditor profile={profile} protocol={protocol} definition={definitions.find((field) => field.name === "size") || size} disabled={disabled} onChange={(image) => onChange?.({ version: 1, image })} />}
                     </section>

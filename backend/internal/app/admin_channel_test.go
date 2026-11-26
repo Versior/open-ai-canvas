@@ -12,6 +12,7 @@ import (
 
 	"yingce/backend/internal/model"
 	"yingce/backend/internal/outbound/outboundtest"
+	"yingce/backend/internal/protocol"
 	"yingce/backend/internal/repository"
 
 	"gorm.io/driver/sqlite"
@@ -336,7 +337,7 @@ func TestFetchAdminChannelModelsReaddsDeletedModel(t *testing.T) {
 	if active.ID == deleted.ID || active.Enabled || active.PriceConfigured {
 		t.Fatalf("re-added model = %#v", active)
 	}
-	if active.DisplayName != "未分类" || active.ProviderModelKey != "model-a" {
+	if active.DisplayName != "model-a" || active.ProviderModelKey != "model-a" {
 		t.Fatalf("discovered model defaults = %#v", active)
 	}
 	var total int64
@@ -392,7 +393,7 @@ func TestImportAdminChannelModelsOnlyImportsSelectedModels(t *testing.T) {
 	if len(imported) != 1 || imported[0].ModelKey != "model-b" {
 		t.Fatalf("imported models = %#v, want only model-b", imported)
 	}
-	if imported[0].DisplayName != "未分类" || imported[0].ProviderModelKey != "model-b" {
+	if imported[0].DisplayName != "model-b" || imported[0].ProviderModelKey != "model-b" {
 		t.Fatalf("imported defaults = %#v", imported)
 	}
 	// 已有分组即使与模型 ID 相同，也不能被重复导入重置。
@@ -458,8 +459,204 @@ func TestSaveAdminChannelModelRejectsActiveDuplicateKey(t *testing.T) {
 	enabled := true
 	_, err := svc.SaveAdminChannelModel(admin, channel.ID, items[0].ID, ChannelModelRequest{ModelKey: "model-b", DisplayName: "Duplicate", Capability: "text", Protocol: string(model.ChannelInterfaceChatCompletion), BillingMode: "fixed_request", Enabled: &enabled})
 	var authErr *AuthError
-	if !errors.As(err, &authErr) || authErr.Status != http.StatusBadRequest || authErr.Message != "该渠道已存在模型 model-b，请直接编辑已有模型" {
+	if !errors.As(err, &authErr) || authErr.Status != http.StatusBadRequest || authErr.Message != "该渠道已存在模型 model-b，请直接编辑已有模型" || authErr.Details["field"] != "modelKey" {
 		t.Fatalf("SaveAdminChannelModel() error = %#v", err)
+	}
+}
+
+func TestCopyChannelModelKeepsIndependentPricingAndExistingTarget(t *testing.T) {
+	svc, db := newChannelModelTestService(t)
+	admin := &model.User{ID: "admin", Role: model.UserRoleAdmin}
+	ch := model.ModelChannel{ID: "copy-channel", UserID: admin.ID, Scope: model.ChannelScopeSystem, APIFormat: "openai", ModelsJSON: `[]`}
+	if err := db.Create(&ch).Error; err != nil {
+		t.Fatal(err)
+	}
+	const key = "gpt-image-2.6"
+	disabled, enabled := false, true
+	placeholder := model.ChannelModel{ID: "imported", ChannelID: ch.ID, ModelKey: key, ProviderModelKey: key, Enabled: false, PriceVersion: 1}
+	if err := db.Create(&placeholder).Error; err != nil {
+		t.Fatal(err)
+	}
+	req := ChannelModelRequest{ModelKey: "image-source", ProviderModelKey: "vendor-image", Capability: "image", Protocol: string(model.ChannelInterfaceOpenAIImage), Enabled: &enabled,
+		CapabilityConfig: DefaultModelCapabilityConfigForModel(string(model.ChannelInterfaceOpenAIImage), "vendor-image"),
+		PriceTiers:       []ChannelModelPriceTierRequest{{BillingMode: "fixed_request", UnitPriceMicrocredits: 17_000_000, PriceConfigured: true, Enabled: &enabled}, {Selector: map[string]string{"operation": "text_to_image"}, ProviderModelKey: "vendor-sku", BillingMode: "fixed_request", UnitPriceMicrocredits: 23_000_000, PriceConfigured: true, Enabled: &enabled}}}
+	source, err := svc.SaveAdminChannelModel(admin, ch.ID, "", req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.ModelKey = " models/" + key + " "
+	var conflict *AuthError
+	if _, err = svc.SaveAdminChannelModel(admin, ch.ID, "", req); !errors.As(err, &conflict) || conflict.Details["field"] != "modelKey" {
+		t.Fatalf("expected field conflict with disabled row, got %v", err)
+	}
+	req.ModelKey = source.ModelKey + "-copy"
+	alias, err := svc.SaveAdminChannelModel(admin, ch.ID, "", req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.ModelKey, req.ProviderModelKey, req.Enabled = key, key, &disabled
+	req.ExpectedUpdatedAt, req.ExpectedPriceVersion = placeholder.UpdatedAt, placeholder.PriceVersion
+	req.PriceTiers[1].ProviderModelKey = ""
+	req.PriceTiers[0].UnitPriceMicrocredits = 19_000_000
+	if _, err = svc.SaveAdminChannelModel(admin, ch.ID, placeholder.ID, req); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = svc.SaveAdminChannelModel(admin, ch.ID, placeholder.ID, req); err == nil {
+		t.Fatal("a stale copy must not overwrite the target")
+	}
+	rows, err := svc.repo.ChannelModels(ch.ID, true)
+	if err != nil || len(rows) != 3 {
+		t.Fatalf("persisted rows = %d, error = %v", len(rows), err)
+	}
+	tierIDs := map[string]bool{}
+	for _, row := range rows {
+		wantUpstream, wantSKU, wantPrice, wantVersion := "vendor-image", "vendor-sku", int64(17_000_000), int64(1)
+		if row.ID == placeholder.ID {
+			wantUpstream, wantSKU, wantPrice, wantVersion = key, key, 19_000_000, 2
+		} else if (row.ID != source.ID || row.ModelKey != "image-source") && (row.ID != alias.ID || row.ModelKey != "image-source-copy") {
+			t.Fatal("wrong record identity")
+		}
+		if row.ProviderModelKey != wantUpstream || row.PriceVersion != wantVersion || row.Enabled != (row.ID != placeholder.ID) || len(row.PriceTiers) != 2 || row.Protocol != source.Protocol {
+			t.Fatalf("incorrect saved configuration for %s", row.ModelKey)
+		}
+		for _, tier := range row.PriceTiers {
+			route, price := wantUpstream, wantPrice
+			if tier.Selector["operation"] == "text_to_image" {
+				route, price = wantSKU, 23_000_000
+			}
+			if tier.ProviderModelKey != route || tier.UnitPriceMicrocredits != price || tier.ChannelModelID != row.ID || tier.ID == "" || tierIDs[tier.ID] {
+				t.Fatalf("incorrect persisted price or shared tier for %s", row.ModelKey)
+			}
+			tierIDs[tier.ID] = true
+		}
+	}
+}
+
+func TestConfigurationOnlyUpdatesExistingTargetWithoutWritingIdentity(t *testing.T) {
+	svc, db := newChannelModelTestService(t)
+	admin := &model.User{ID: "admin", Role: model.UserRoleAdmin}
+	channel := model.ModelChannel{ID: "config", UserID: admin.ID, Scope: model.ChannelScopeSystem, APIFormat: "openai", ModelsJSON: `[]`}
+	if err := db.Create(&channel).Error; err != nil {
+		t.Fatal(err)
+	}
+	target := model.ChannelModel{ID: "target", ChannelID: channel.ID, ModelKey: "gpt-image-2.6", ProviderModelKey: "vendor-2.6", DisplayName: "目标分组", ChannelLabel: "目标名称", Description: "目标描述", Icon: "target", SortOrder: 42, Enabled: false, PriceVersion: 1}
+	if err := db.Create(&target).Error; err != nil {
+		t.Fatal(err)
+	}
+	protocol := string(model.ChannelInterfaceOpenAIImage)
+	var req ChannelModelRequest
+	if err := json.Unmarshal([]byte(`{"configurationOnly":true}`), &req); err != nil {
+		t.Fatal(err)
+	}
+	req.ExpectedUpdatedAt, req.ExpectedPriceVersion = target.UpdatedAt, target.PriceVersion
+	req.Capability, req.Protocol = "image", protocol
+	req.CapabilityConfig = DefaultModelCapabilityConfigForModel(protocol, target.ProviderModelKey)
+	req.PriceTiers = []ChannelModelPriceTierRequest{{BillingMode: "fixed_request", PriceConfigured: true, UnitPriceMicrocredits: 17000000}}
+	// Identity fields are not part of this operation, even if an old client includes them.
+	yes := true
+	req.ModelKey, req.ProviderModelKey, req.DisplayName, req.Enabled = "gpt-image-2.5", "vendor-2.5", "来源分组", &yes
+	if _, err := svc.SaveAdminChannelModel(admin, channel.ID, "", req); err == nil {
+		t.Fatal("configuration-only save must not create a model")
+	}
+	for _, missing := range []string{"protocol", "capabilityConfig", "priceTiers"} {
+		incomplete := req
+		switch missing {
+		case "protocol":
+			incomplete.Protocol = ""
+		case "capabilityConfig":
+			incomplete.CapabilityConfig = nil
+		case "priceTiers":
+			incomplete.PriceTiers = nil
+		}
+		if _, err := svc.SaveAdminChannelModel(admin, channel.ID, target.ID, incomplete); err == nil {
+			t.Fatalf("accepted missing %s", missing)
+		}
+	}
+	saved, err := svc.SaveAdminChannelModel(admin, channel.ID, target.ID, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.ModelKey != target.ModelKey || saved.ProviderModelKey != target.ProviderModelKey || saved.DisplayName != target.DisplayName || saved.ChannelLabel != target.ChannelLabel || saved.Description != target.Description || saved.Icon != target.Icon || saved.SortOrder != target.SortOrder || saved.Enabled != target.Enabled || saved.ID != target.ID {
+		t.Fatal("target identity changed")
+	}
+	if saved.Protocol != model.ChannelInterfaceOpenAIImage || saved.Capability != "image" || len(saved.PriceTiers) != 1 || saved.PriceTiers[0].ProviderModelKey != target.ProviderModelKey || saved.PriceTiers[0].UnitPriceMicrocredits != 17000000 {
+		t.Fatal("configuration was not saved to the target")
+	}
+	if _, err := svc.SaveAdminChannelModel(admin, channel.ID, target.ID, req); err == nil {
+		t.Fatal("stale version must be rejected")
+	}
+}
+
+func TestConfigurationOnlyKeepsTargetSKUsAndSourceReleasePolicy(t *testing.T) {
+	svc, db := newChannelModelTestService(t)
+	admin := &model.User{ID: "admin", Role: model.UserRoleAdmin}
+	const provider = "openai-image"
+	adapter, ok := svc.protocolRegistry().Resolve(provider)
+	if !ok {
+		t.Fatal("fixture image protocol unavailable")
+	}
+	registry, err := protocol.NewRegistry(adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old, current := strings.Repeat("1", 64), strings.Repeat("2", 64)
+	for i, digest := range []string{old, current} {
+		if err := registry.RegisterRelease(provider, strconv.Itoa(i+1)+".0.0", digest, i == 1, true, []protocol.Adapter{adapter}, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	svc.pluginRuntime = &pluginRuntime{registry: registry}
+	channel := model.ModelChannel{ID: "import-test", UserID: admin.ID, Scope: model.ChannelScopeSystem, APIFormat: "openai", ModelsJSON: `[]`}
+	if err := db.Create(&channel).Error; err != nil {
+		t.Fatal(err)
+	}
+	req := ChannelModelRequest{ModelKey: "gpt-image-2.6", Protocol: provider, ProtocolRelease: old, Capability: "image", CapabilityConfig: &ModelCapabilityConfig{Version: 1, Image: DefaultImageCapabilityConfig(provider, "gpt-image-2.6")}}
+	req.PriceTiers = []ChannelModelPriceTierRequest{{BillingMode: "fixed_request", ProviderModelKey: "target-default-sku", PriceConfigured: true, UnitPriceMicrocredits: 7}}
+	target, err := svc.SaveAdminChannelModel(admin, channel.ID, "", req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.ConfigurationOnly = true
+	req.PriceTiers[0].ProviderModelKey = "source-default-sku"
+	req.PriceTiers = append(req.PriceTiers, ChannelModelPriceTierRequest{BillingMode: "fixed_request", Selector: map[string]string{"operation": "image_to_image"}, ProviderModelKey: "source-edit-sku", PriceConfigured: true, UnitPriceMicrocredits: 29})
+	for _, digest := range []string{old, "", current} {
+		req.ExpectedUpdatedAt, req.ExpectedPriceVersion = target.UpdatedAt, target.PriceVersion
+		req.ProtocolRelease = digest
+		target, err = svc.SaveAdminChannelModel(admin, channel.ID, target.ID, req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if target.ProtocolRelease != digest {
+			t.Fatalf("source release policy not preserved: got %q, want %q", target.ProtocolRelease, digest)
+		}
+		if len(target.PriceTiers) != 2 || target.PriceTiers[0].ProviderModelKey != "target-default-sku" || target.PriceTiers[1].ProviderModelKey != "gpt-image-2.6" {
+			t.Fatal("target SKU matching or fallback incorrect")
+		}
+	}
+}
+
+func TestAdminCopySourceDoesNotInventMissingStoredImageConfig(t *testing.T) {
+	svc, db := newChannelModelTestService(t)
+	admin := &model.User{ID: "admin", Role: model.UserRoleAdmin}
+	channel := model.ModelChannel{ID: "incomplete-config", UserID: admin.ID, Scope: model.ChannelScopeSystem, APIFormat: "openai", ModelsJSON: `[]`}
+	if err := db.Create(&channel).Error; err != nil {
+		t.Fatal(err)
+	}
+	for i, raw := range []string{"", `{"version":1}`, `{"video":{}}`} {
+		key := "missing-image-" + strconv.Itoa(i)
+		row := model.ChannelModel{ID: key, ChannelID: channel.ID, ModelKey: key, ProviderModelKey: key, Capability: "image", Protocol: model.ChannelInterfaceOpenAIImage, CapabilityConfigJSON: raw, PriceVersion: 1}
+		if err := db.Create(&row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows, err := svc.AdminChannelModels(admin, channel.ID)
+	if err != nil || len(rows) != 3 {
+		t.Fatalf("unexpected list: %d, %v", len(rows), err)
+	}
+	for _, row := range rows {
+		if row.CapabilityConfig["image"] != nil {
+			t.Fatalf("invented source parameters for %s", row.ModelKey)
+		}
 	}
 }
 

@@ -1,4 +1,5 @@
 import { canonicalize } from "json-canonicalize";
+import { modelGroupName } from "@/lib/model-group-name";
 import { catalogCapabilityConfig, type ChannelModelCatalogItem } from "@/lib/channel-model-catalog";
 import { defaultModelCapabilityConfig, pluginWorkflowCapabilityConfig } from "@/lib/model-capabilities";
 import { applyModelMetadataPreset, matchingModelPresets, modelFamilyIdentity, modelMatchScore, presetApplicationError, type ModelMetadataPreset } from "@/lib/model-metadata-presets";
@@ -52,12 +53,13 @@ export function identifyChannelModelConfiguration(values: ChannelModelFormValues
         sources.push(`上游模型目录 ${metadata.id}`);
     }
     const identity = modelFamilyIdentity(id);
+    const modelKey = values.modelKey.trim() || id.replace(/^models\//, "");
     let next: ChannelModelFormValues = {
         ...values,
-        modelKey: values.modelKey.trim() || id.replace(/^models\//, ""),
+        modelKey,
         providerModelKey: values.providerModelKey?.trim() || metadata?.id || id,
         channelLabel: values.channelLabel?.trim() || id,
-        displayName: values.displayName?.trim() && values.displayName !== "未分类" ? values.displayName : template?.displayName || identity?.category || "未分类",
+        displayName: modelGroupName(modelKey, values.displayName),
         icon: values.icon?.trim() || template?.icon || identity?.icon || "",
         capability,
         protocol: protocol.value,

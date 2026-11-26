@@ -22,6 +22,7 @@ export function PriceTierFields({
     protocol,
     capabilityConfig,
     modelUpstream,
+    lockUpstream,
     onDirty,
     onRemove,
 }: {
@@ -32,6 +33,7 @@ export function PriceTierFields({
     protocol: ModelProtocol | undefined;
     capabilityConfig?: ModelCapabilityConfig;
     modelUpstream: string;
+    lockUpstream?: boolean;
     onDirty: () => void;
     onRemove: () => void;
 }) {
@@ -167,7 +169,7 @@ export function PriceTierFields({
                                     </Form.Item>
                                 ) : null}
                                 <Form.Item className="admin-price-tier-upstream mb-0" name={[index, "providerModelKey"]} label="命中后使用的上游模型 ID">
-                                    <Input placeholder="留空则使用模型默认上游 ID" />
+                                    <Input disabled={lockUpstream} placeholder="留空则使用模型默认上游 ID" />
                                 </Form.Item>
                             </div>
                         </section>
@@ -266,6 +268,7 @@ export function PriceTierFields({
                         action={
                             <Button
                                 size="small"
+                                disabled={lockUpstream}
                                 onClick={() => {
                                     onDirty();
                                     form.setFieldValue(["priceTiers", index, "providerModelKey"], "");

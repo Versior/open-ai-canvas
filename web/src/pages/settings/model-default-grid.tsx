@@ -2,6 +2,7 @@ import { AudioLines, Check, Film, Image, MessageSquareText } from "lucide-react"
 import { useTranslation } from "react-i18next";
 
 import { ModelIcon } from "@/components/model-picker";
+import { modelGroupName } from "@/lib/model-group-name";
 import { isDirectSystemModel, modelChannelLabel } from "@/lib/model-picker-groups";
 import { configuredModelDisplayName } from "@/lib/model-selection";
 import { currentLocale } from "@/i18n";
@@ -53,7 +54,7 @@ export function ModelDefaultGrid({ config, onChange }: { config: AiConfig; onCha
                                     const cost = channel.modelCosts?.find((item) => item.model === modelOptionName(model));
                                     const directSystemModel = isDirectSystemModel(config, model);
                                     const modelName = directSystemModel ? modelChannelLabel(config, model) : configuredModelDisplayName(config, model);
-                                    const groupName = directSystemModel ? cost?.displayName?.trim() || t("account.settings.models.uncategorized") : "";
+                                    const groupName = directSystemModel ? modelGroupName(modelOptionName(model), cost?.displayName) : "";
                                     return (
                                         <button
                                             key={model}

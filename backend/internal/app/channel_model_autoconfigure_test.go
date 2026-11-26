@@ -28,7 +28,7 @@ func TestNewChannelModelAutomaticallyFillsMetadataAndPrices(t *testing.T) {
 	}
 	preset, _ := modelpreset.Find(item.ProviderModelKey)
 	config, err := DecodeModelCapabilityConfig(item.CapabilityConfigJSON)
-	if err != nil || config.Text.ContextWindowTokens != preset.Context || config.Text.MaxOutputTokens != preset.Output || item.Icon != "Gemini" || item.DisplayName != "Gemini" {
+	if err != nil || config.Text.ContextWindowTokens != preset.Context || config.Text.MaxOutputTokens != preset.Output || item.Icon != "Gemini" || item.DisplayName != "new-alias" {
 		t.Fatal("metadata was not persisted correctly")
 	}
 	if item.Protocol != source.Protocol || !item.PriceConfigured || len(item.PriceTiers) != 1 {
@@ -83,7 +83,7 @@ func TestImportChannelModelsPersistsReusedTierAndPreservesExistingModel(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if imported.Enabled || !imported.PriceConfigured || imported.Icon != "Gemini" || imported.DisplayName != "Gemini" || len(imported.PriceTiers) != 1 {
+	if imported.Enabled || !imported.PriceConfigured || imported.Icon != "Gemini" || imported.DisplayName != imported.ModelKey || len(imported.PriceTiers) != 1 {
 		t.Fatal("imported metadata/price tier missing or unexpectedly enabled")
 	}
 	got := imported.PriceTiers[0]
@@ -110,7 +110,7 @@ func TestNewChannelModelIdentityIndependentOfExplicitCapabilities(t *testing.T) 
 	profile := DefaultModelCapabilityConfig("gemini-image")
 	req := ChannelModelRequest{ModelKey: "models/Gemini_9_Image-preview", Capability: "image", Protocol: "gemini-image", CapabilityConfig: profile}
 	got := svc.autoConfigureNewChannelModel(channel, req, nil)
-	if got.DisplayName != "Gemini" || got.Icon != "Gemini" || got.CapabilityConfig != profile {
+	if got.DisplayName != "Gemini_9_Image-preview" || got.Icon != "Gemini" || got.CapabilityConfig != profile {
 		t.Fatal("identity must not depend on text catalog or replace explicit capabilities")
 	}
 	req.DisplayName, req.Icon = "商品图", "Qwen"

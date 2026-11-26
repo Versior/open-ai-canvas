@@ -13,6 +13,7 @@ import { ModelCapabilityEditor } from "@/components/model-capability-editor";
 import { defaultModelCapabilityConfig, normalizeModelCapabilityConfig, type ModelCapabilityConfig } from "@/lib/model-capabilities";
 import { definitionForRelease, type ModelProtocolDefinition } from "@/lib/model-protocols";
 import { createAdminChannelModel, fetchAdminChannelModelMetadata, getAdminChannelProtocolSuggestion, testAdminChannelModel, updateAdminChannelModel, type ChannelModel, type ChannelProtocolSuggestion } from "@/services/api/wallet";
+import { ApiError } from "@/services/api/request";
 import type { ModelChannel } from "@/stores/use-config-store";
 import { priceCurrencyOptions } from "@/services/api/user-groups";
 import { defaultPriceTier, normalizeUpstreamModelKey, priceTierPayloadFromForm } from "./channel-model-price-tier-form";
@@ -20,7 +21,8 @@ import { PriceTierFields } from "./channel-model-price-tier-fields";
 import { TokenPriceRulesSection } from "./channel-model-token-rules";
 import { ChannelModelTagsEditor } from "./channel-model-tags-editor";
 import { ChannelModelPresetPicker } from "./channel-model-preset-picker";
-import { applyModelMetadataPreset, loadModelMetadataPresets, modelFamilyIdentity } from "@/lib/model-metadata-presets";
+import { applyModelMetadataPreset, loadModelMetadataPresets } from "@/lib/model-metadata-presets";
+import { modelGroupName } from "@/lib/model-group-name";
 import { autoConfigureChannelModel, copyChannelModelConfiguration, copyChannelModelPrices } from "./channel-model-editor-form";
 import { CapabilityTemplatePanel, PricingTemplatePanel } from "./channel-model-template-panels";
 import { priceSelectorIssues } from "./channel-model-templates";
@@ -34,6 +36,7 @@ import {
     initialChannelModelValues,
     opensModelParameters,
     replaceChannelModelFormValues,
+    reuseChannelModelDraft,
     updateChannelModelUpstreamCapabilities,
     validateChannelModelPrices,
     validateChannelModelProtocol,
@@ -48,10 +51,12 @@ export function ChannelModelEditor({
     existingModels = noExistingModels,
     editing,
     draftValues,
+    copiedFrom,
     protocols,
     protocolLoading,
     protocolError,
     onRetryProtocols,
+    onReuseForExisting,
     onClose,
     onSaved,
 }: {
@@ -59,10 +64,12 @@ export function ChannelModelEditor({
     existingModels?: ChannelModel[];
     editing: ChannelModel | null;
     draftValues?: FormValues;
+    copiedFrom?: string;
     protocols: ModelProtocolDefinition[];
     protocolLoading: boolean;
     protocolError: string;
     onRetryProtocols: () => void;
+    onReuseForExisting?: (target: ChannelModel, draft: FormValues) => void;
     onClose: () => void;
     onSaved: () => Promise<void>;
 }) {
@@ -71,24 +78,32 @@ export function ChannelModelEditor({
     const [form] = Form.useForm<FormValues>();
     const enabledHintId = useId();
     const [initialValues] = useState(() => draftValues ?? initialChannelModelValues(editing, protocols));
-    const [editVersion] = useState(() => (editing ? { expectedUpdatedAt: editing.updatedAt, expectedPriceVersion: editing.priceVersion } : {}));
+    const copying = Boolean(draftValues && !editing);
+    const [editVersion] = useState(() => (editing ? { expectedUpdatedAt: editing.updatedAt, expectedPriceVersion: editing.priceVersion } : undefined));
     const previousUpstream = useRef(normalizeUpstreamModelKey(initialValues.providerModelKey || initialValues.modelKey));
-    const [activeSection, setActiveSection] = useState<EditorSection>(opensModelParameters(editing) ? "capabilities" : "identity");
+    const [activeSection, setActiveSection] = useState<EditorSection>(!draftValues && opensModelParameters(editing) ? "capabilities" : "identity");
     const [saving, setSaving] = useState(false);
     const [testing, setTesting] = useState(false);
     const [configurationChange, setConfigurationChange] = useState<"capability" | "protocol" | "parameters" | null>(null);
     const busyRef = useRef(false);
-    const dirtyRef = useRef(false);
+    const dirtyRef = useRef(Boolean(draftValues && (editing || copiedFrom)));
+    const [fullCopySource, setFullCopySource] = useState(copiedFrom);
+    const importing = Boolean(editing && fullCopySource);
     const explicitProtocol = useRef(false);
-    const preserveConfiguredProtocol = useRef(false);
-    const preserveTemplateCapability = useRef(false);
+    const preserveConfiguredProtocol = useRef(Boolean(copiedFrom));
+    const preserveTemplateCapability = useRef(Boolean(copiedFrom));
     const [protocolSuggestion, setProtocolSuggestion] = useState<ChannelProtocolSuggestion>();
     const [suggestionError, setSuggestionError] = useState("");
     const modelCapability = Form.useWatch("capability", form);
     const modelProtocol = Form.useWatch("protocol", form);
     const protocolRelease = Form.useWatch("protocolRelease", form);
-    const modelKey = Form.useWatch("modelKey", form) || "";
-    const providerModelKey = Form.useWatch("providerModelKey", form) || "";
+    const modelKey = Form.useWatch("modelKey", { form, preserve: true }) || "";
+    const providerModelKey = Form.useWatch("providerModelKey", { form, preserve: true }) || "";
+    const modelWithKey = (value: string) => {
+        const key = normalizeUpstreamModelKey(value);
+        return key ? existingModels.find((item) => item.channelId === channel.id && item.id !== editing?.id && normalizeUpstreamModelKey(item.modelKey) === key) : undefined;
+    };
+    const copyTarget = copying ? modelWithKey(modelKey) : undefined;
     const capabilityConfig = Form.useWatch("capabilityConfig", form);
     const modelEnabled = Form.useWatch("enabled", form) !== false;
     const referenceVideoBilling = Form.useWatch("referenceVideoBilling", form) === true;
@@ -105,7 +120,7 @@ export function ChannelModelEditor({
     const protectedFields = useRef(new Set<string>(["protocol"]));
     const [autoSource, setAutoSource] = useState("");
     useEffect(() => {
-        if (editing || draftValues || !modelUpstream || busy || protocolLoading || protocolError) return;
+        if (editing || draftValues || fullCopySource || !modelUpstream || busy || protocolLoading || protocolError) return;
         let active = true;
         const timer = setTimeout(() => {
             void loadModelMetadataPresets()
@@ -124,7 +139,7 @@ export function ChannelModelEditor({
             active = false;
             clearTimeout(timer);
         };
-    }, [modelUpstream, editing, draftValues, busy, protocolLoading, protocolError, protocols, existingModels, form]);
+    }, [modelUpstream, editing, draftValues, fullCopySource, busy, protocolLoading, protocolError, protocols, existingModels, form]);
     const protocolFamily = protocols.find((item) => item.value === modelProtocol);
     const protocolDefinition = definitionForRelease(protocolFamily, protocolRelease);
     const releases = protocolFamily?.releases || [];
@@ -142,7 +157,7 @@ export function ChannelModelEditor({
             form.setFieldValue("capabilityConfig", { ...next, mediaTransport: form.getFieldValue(["capabilityConfig", "mediaTransport"]) });
         },
     };
-    const selectorIssues = modelCapability ? priceSelectorIssues({ capability: modelCapability, protocol: modelProtocol, capabilityConfig, priceTiers, protocols }) : [];
+    const selectorIssues = modelCapability ? priceSelectorIssues({ capability: modelCapability, protocol: modelProtocol, protocolRelease, capabilityConfig, priceTiers, protocols }) : [];
 
     useEffect(() => {
         // 复制草稿保留预填协议，但预填本身不构成新的明确选择事件。
@@ -219,6 +234,7 @@ export function ChannelModelEditor({
                 form.setFieldValue("channelLabel", upstream);
             }
             previousUpstream.current = upstream;
+            if (fullCopySource) return;
             const next = updateChannelModelUpstreamCapabilities(values, protocols);
             if (canonicalize(next.capabilityConfig) !== canonicalize(values.capabilityConfig)) {
                 form.setFieldValue("capabilityConfig", next.capabilityConfig);
@@ -229,6 +245,8 @@ export function ChannelModelEditor({
 
     const applyConfiguration = (next: FormValues) => {
         const previous = form.getFieldsValue(true);
+        // 复制时产品标识独立于识别、上游目录和参数预设，即使管理员主动清空也不回填。
+        if (copying) next = { ...next, modelKey: previous.modelKey };
         // 复制和识别保留配置，不向上游记录为用户手动选定的协议。
         preserveConfiguredProtocol.current = Boolean(next.protocol);
         preserveTemplateCapability.current = Boolean(next.capabilityConfig);
@@ -278,6 +296,11 @@ export function ChannelModelEditor({
         }
     };
 
+    const focusField = (name: (string | number)[]) => {
+        setActiveSection(editorSectionForField(name));
+        requestAnimationFrame(() => form.scrollToField(name, { block: "center", focus: true }));
+    };
+
     const validateEditor = async (names?: string[]): Promise<FormValues | undefined> => {
         busyRef.current = true;
         try {
@@ -286,8 +309,7 @@ export function ChannelModelEditor({
         } catch (error) {
             const fields = (error as { errorFields?: { name: (string | number)[] }[] }).errorFields;
             if (fields?.length) {
-                setActiveSection(editorSectionForField(fields[0].name));
-                requestAnimationFrame(() => form.scrollToField(fields[0].name, { block: "center", focus: true }));
+                focusField(fields[0].name);
                 message.warning("请检查标记的配置项后重试");
             } else message.error(error instanceof Error ? error.message : "表单校验失败");
             return undefined;
@@ -298,7 +320,7 @@ export function ChannelModelEditor({
 
     const save = async () => {
         if (busyRef.current) return;
-        if (!editing && !draftValues) {
+        if (!editing && !draftValues && !fullCopySource) {
             try {
                 if (preserveTemplateCapability.current) protectedFields.current.add("capabilityConfig");
                 const presets = await loadModelMetadataPresets();
@@ -317,15 +339,7 @@ export function ChannelModelEditor({
         busyRef.current = true;
         setSaving(true);
         try {
-            const payload = {
-                ...editVersion,
-                modelKey: values.modelKey.trim(),
-                providerModelKey: upstreamModel,
-                displayName: values.displayName?.trim() || "未分类",
-                channelLabel: values.channelLabel?.trim() || upstreamModel,
-                tags: (values.tags || []).map((tag) => ({ text: tag.text.trim(), color: tag.color })),
-                description: values.description?.trim() || "",
-                icon: values.icon?.trim() || "",
+            const configuration = {
                 capability: values.capability,
                 protocol: values.protocol,
                 protocolRelease: values.protocolRelease,
@@ -333,11 +347,27 @@ export function ChannelModelEditor({
                 priceTiers: values.priceTiers.map((tier) => priceTierPayloadFromForm(values.capability, tier, upstreamModel, capabilityConfig)),
                 priceCurrency: values.priceCurrency || "credits",
                 referenceVideoBilling: values.capability === "video" && values.referenceVideoBilling === true,
-                enabled: values.enabled !== false,
                 capabilityConfig,
             };
-            if (editing) await updateAdminChannelModel(channel.id, editing.id, payload);
-            else await createAdminChannelModel(channel.id, payload);
+            if (importing) {
+                if (!editing || !editVersion) throw new Error("缺少目标模型的编辑版本，请重新打开配置");
+                await updateAdminChannelModel(channel.id, editing.id, { ...editVersion, ...configuration, protocolSelectionExplicit: false, configurationOnly: true });
+            } else {
+                const payload = {
+                    ...editVersion,
+                    ...configuration,
+                    modelKey: values.modelKey.trim(),
+                    providerModelKey: upstreamModel,
+                    enabled: values.enabled !== false,
+                    displayName: modelGroupName(values.modelKey, values.displayName),
+                    channelLabel: values.channelLabel?.trim() || upstreamModel,
+                    tags: (values.tags || []).map((tag) => ({ text: tag.text.trim(), color: tag.color })),
+                    description: values.description?.trim() || "",
+                    icon: values.icon?.trim() || "",
+                };
+                if (editing) await updateAdminChannelModel(channel.id, editing.id, payload);
+                else await createAdminChannelModel(channel.id, payload);
+            }
             try {
                 await onSaved();
             } catch {
@@ -346,7 +376,10 @@ export function ChannelModelEditor({
             onClose();
             message.success(editing ? "模型配置已更新" : "模型已添加");
         } catch (error) {
-            message.error(error instanceof Error ? error.message : "保存模型失败");
+            if (error instanceof ApiError && error.details?.field === "modelKey") {
+                form.setFields([{ name: "modelKey", errors: [error.message] }]);
+                focusField(["modelKey"]);
+            } else message.error(error instanceof Error ? error.message : "保存模型失败");
         } finally {
             busyRef.current = false;
             setSaving(false);
@@ -385,9 +418,9 @@ export function ChannelModelEditor({
             open
             title={
                 <div className="admin-model-editor-title">
-                    <span>{draftValues ? "复制模型" : editing ? "编辑模型" : "新增模型"}</span>
+                    <span>{importing ? "核对目标模型配置" : editing ? "编辑模型" : copying ? "创建同上游别名" : "新增模型"}</span>
                     <p>
-                        {channel.name} · {editing?.displayName || editing?.modelKey || draftValues?.displayName || "配置调用方式与用户积分价格"}
+                        {channel.name} · {fullCopySource ? `${fullCopySource} → ${modelKey || "待填写目标标识"}` : editing?.modelKey || draftValues?.modelKey || "配置调用方式与用户积分价格"}
                     </p>
                 </div>
             }
@@ -403,35 +436,41 @@ export function ChannelModelEditor({
             styles={{ body: { minHeight: 0, flex: 1 }, header: { margin: 0 }, footer: { margin: 0 } }}
             footer={
                 <>
-                    <label className="admin-model-editor-footer-status">
-                        <Switch
-                            aria-label="启用模型"
-                            aria-describedby={enabledHintId}
-                            checked={modelEnabled}
-                            disabled={busy}
-                            onChange={(checked) => {
-                                dirtyRef.current = true;
-                                form.setFieldValue("enabled", checked);
-                            }}
-                        />
-                        <span>启用模型</span>
-                        <small id={enabledHintId}>保存后生效</small>
-                    </label>
+                    {importing ? (
+                        <span className="admin-model-editor-footer-status">目标保持{editing?.enabled ? "启用" : "停用"}</span>
+                    ) : (
+                        <label className="admin-model-editor-footer-status">
+                            <Switch
+                                aria-label="启用模型"
+                                aria-describedby={enabledHintId}
+                                checked={modelEnabled}
+                                disabled={busy}
+                                onChange={(checked) => {
+                                    dirtyRef.current = true;
+                                    form.setFieldValue("enabled", checked);
+                                }}
+                            />
+                            <span>启用模型</span>
+                            <small id={enabledHintId}>保存后生效</small>
+                        </label>
+                    )}
                     <div className="admin-model-editor-footer-primary">
-                        <Button
-                            type="text"
-                            icon={<FlaskConical className="size-4" />}
-                            loading={testing}
-                            disabled={saving || identifying || protocolLoading || Boolean(protocolError)}
-                            onClick={() => modal.confirm({ title: "测试模型连接？", content: "测试会向上游发送真实请求，可能产生供应商费用；不会保存当前修改。", okText: "开始测试", cancelText: "取消", onOk: testModel })}
-                        >
-                            测试模型
-                        </Button>
+                        {!importing && (
+                            <Button
+                                type="text"
+                                icon={<FlaskConical className="size-4" />}
+                                loading={testing}
+                                disabled={saving || identifying || protocolLoading || Boolean(protocolError)}
+                                onClick={() => modal.confirm({ title: "测试模型连接？", content: "测试会向上游发送真实请求，可能产生供应商费用；不会保存当前修改。", okText: "开始测试", cancelText: "取消", onOk: testModel })}
+                            >
+                                测试模型
+                            </Button>
+                        )}
                         <Button type="text" disabled={busy} onClick={requestClose}>
                             取消
                         </Button>
                         <Button type="primary" loading={saving} disabled={testing || identifying || protocolLoading || Boolean(protocolError) || selectorIssues.length > 0} onClick={() => void save()}>
-                            {editing ? "保存修改" : "添加模型"}
+                            {editing ? "保存修改" : copying ? "创建副本" : "添加模型"}
                         </Button>
                     </div>
                 </>
@@ -451,56 +490,39 @@ export function ChannelModelEditor({
                     items={[
                         {
                             key: "identity",
-                            label: "基本信息",
+                            label: importing ? "调用协议" : "基本信息",
                             forceRender: true,
                             children: (
                                 <div className="admin-model-editor-tab-content">
-                                    {!editing && !draftValues && (
+                                    {!editing && !draftValues && !fullCopySource && (
                                         <p className="text-xs text-foreground/60" role="status">
                                             {autoSource || "填写模型 ID 后自动补齐参数，并参考当前渠道同类模型的接口与价格。"}
                                         </p>
                                     )}
-                                    <div className="admin-model-editor-assists">
-                                        <ChannelModelPresetPicker
-                                            modelId={providerModelKey || modelKey}
-                                            capability={modelCapability || initialValues.capability}
-                                            disabled={busy}
-                                            identifying={identifying}
-                                            status={identificationStatus}
-                                            error={identificationError}
-                                            upstreamModels={upstreamCatalog}
-                                            onIdentify={(id) => void identifyModel(id)}
-                                            onReadUpstream={() => void identifyModel(undefined, true)}
-                                            onApply={(preset) => {
-                                                const values = form.getFieldsValue(true);
-                                                const next = applyModelMetadataPreset(
-                                                    {
-                                                        ...values,
-                                                        modelKey: values.modelKey.trim() || preset.id,
-                                                        providerModelKey: values.providerModelKey?.trim() || preset.id,
-                                                        channelLabel: values.channelLabel?.trim() || values.providerModelKey?.trim() || preset.id,
-                                                    },
-                                                    preset,
-                                                );
-                                                if (!values.displayName?.trim() || values.displayName === "未分类") next.displayName = modelFamilyIdentity(preset.id)?.category || "未分类";
-                                                applyConfiguration(next);
-                                                setIdentificationStatus(`参数预设 ${preset.id} 已填入，保存后生效。`);
-                                                setIdentificationError("");
-                                                message.success("模型预设已填入，保存后生效");
-                                            }}
-                                        />
+                                    {copying && !copiedFrom && <p className="text-xs text-foreground/65">同上游别名：副本有独立产品标识，默认仍请求原上游。若要更换上游，可在模型身份中修改。</p>}
+                                    {fullCopySource && (
+                                        <div className="admin-model-copy-receipt" role="status">
+                                            <strong>配置已填入 · 尚未保存</strong>
+                                            <span>
+                                                {fullCopySource} → {modelKey || "待填写目标标识"}。只复制调用协议、模型能力、价格与成本。目标上游仍为 {modelUpstream || "待填写"}。
+                                            </span>
+                                        </div>
+                                    )}
+                                    {!copiedFrom && (
                                         <ChannelModelCopyPicker
                                             mode="configuration"
                                             channel={channel}
                                             models={existingModels}
                                             target={editing}
+                                            targetKey={modelKey}
+                                            upstream={modelUpstream}
                                             capability={modelCapability || initialValues.capability}
                                             protocols={protocols}
                                             disabled={busy || protocolLoading || Boolean(protocolError)}
-                                            onApply={(source, copySkuRoutes) => {
+                                            onApply={(source) => {
                                                 try {
-                                                    applyConfiguration(copyChannelModelConfiguration(form.getFieldsValue(true), source, protocols, copySkuRoutes));
-                                                    setAutoSource(`完整配置来自 ${source.providerModelKey || source.modelKey}`);
+                                                    applyConfiguration(copyChannelModelConfiguration(editing ? initialChannelModelValues(editing, protocols) : form.getFieldsValue(true), source, protocols));
+                                                    setFullCopySource(source.modelKey);
                                                     setConfigurationChange(null);
                                                     message.success("完整模型配置已填入，保存后生效");
                                                 } catch (error) {
@@ -508,64 +530,129 @@ export function ChannelModelEditor({
                                                 }
                                             }}
                                         />
-                                    </div>
-                                    <section className="admin-model-editor-section">
-                                        <SectionHeading title="模型身份" description="区分产品侧展示标识与上游实际调用 ID。" />
-                                        <div className="admin-model-editor-section-content admin-model-identity-grid admin-model-identity-grid-with-icon">
-                                            <Form.Item
-                                                name="modelKey"
-                                                label="产品模型标识"
-                                                tooltip="不同渠道使用相同标识时，创作端归为同一个产品模型。不同版本（例如 Fast）应使用不同标识；请勿为分组随意修改已有标识。"
-                                                rules={[{ required: true, whitespace: true, message: "请输入产品模型标识" }]}
-                                            >
-                                                <Input
-                                                    prefix={
-                                                        <span className="grid size-6 place-items-center">
-                                                            <ModelIcon model={modelKey} />
-                                                        </span>
-                                                    }
-                                                    placeholder="例如：seedance-2-5"
+                                    )}
+                                    {!importing && (
+                                        <>
+                                            <details className="admin-model-preset-disclosure">
+                                                <summary>辅助工具：自动识别与参数预设</summary>
+                                                <ChannelModelPresetPicker
+                                                    modelId={providerModelKey || modelKey}
+                                                    capability={modelCapability || initialValues.capability}
+                                                    disabled={busy}
+                                                    identifying={identifying}
+                                                    status={identificationStatus}
+                                                    error={identificationError}
+                                                    upstreamModels={upstreamCatalog}
+                                                    onIdentify={(id) => void identifyModel(id)}
+                                                    onReadUpstream={() => void identifyModel(undefined, true)}
+                                                    onApply={(preset) => {
+                                                        const values = form.getFieldsValue(true);
+                                                        const next = applyModelMetadataPreset(
+                                                            {
+                                                                ...values,
+                                                                modelKey: values.modelKey.trim() || preset.id,
+                                                                providerModelKey: values.providerModelKey?.trim() || preset.id,
+                                                                channelLabel: values.channelLabel?.trim() || values.providerModelKey?.trim() || preset.id,
+                                                            },
+                                                            preset,
+                                                        );
+                                                        next.displayName = modelGroupName(next.modelKey, values.displayName);
+                                                        applyConfiguration(next);
+                                                        setIdentificationStatus(`参数预设 ${preset.id} 已填入，保存后生效。`);
+                                                        setIdentificationError("");
+                                                        message.success("模型预设已填入，保存后生效");
+                                                    }}
                                                 />
-                                            </Form.Item>
-                                            <Form.Item name="providerModelKey" label="上游模型 ID" tooltip="实际发送给供应商；留空时使用产品模型标识。价格档可配置独立上游 ID，命中时优先于此处。">
-                                                <Input placeholder="留空则使用产品模型标识" />
-                                            </Form.Item>
-                                            <Form.Item name="displayName" label="模型展示名（一级目录）" tooltip="跨所有系统渠道按此名称分组；新模型默认未分类。同名模型归入同一组，不改变调用 ID。">
-                                                <ModelDisplayNameInput />
-                                            </Form.Item>
-                                            <Form.Item
-                                                name="channelLabel"
-                                                label="渠道展示名（二级目录）"
-                                                tooltip="默认跟随上游模型 ID；手动名称最多 80 字。"
-                                                rules={[
-                                                    {
-                                                        validator: async (_, value: string | undefined) => {
-                                                            if (value?.trim() !== modelUpstream && Array.from(value?.trim() || "").length > 80) throw new Error("渠道展示名不能超过 80 字");
-                                                        },
-                                                    },
-                                                ]}
-                                            >
-                                                <Input maxLength={80} placeholder={modelUpstream || "默认使用上游模型 ID"} />
-                                            </Form.Item>
-                                            <Form.Item name="icon" label="模型 Logo">
-                                                <ModelIconPicker />
-                                            </Form.Item>
-                                        </div>
-                                        {tiersWithOwnUpstream.length ? (
-                                            <Alert
-                                                type="info"
-                                                showIcon
-                                                title={`${tiersWithOwnUpstream.length} 个价格档配置了独立上游模型 ID`}
-                                                description="命中的请求会优先使用价格档的上游 ID；修改上方上游模型 ID 时，只有与旧值相同的档位会自动跟随更新，其余保持不变。"
-                                            />
-                                        ) : null}
-                                        <ChannelModelTagsEditor />
-                                        <Form.Item name="description" label="模型描述" extra="在创作端二级渠道选项中常驻显示，可说明适用场景、渠道差异和注意事项。" rules={[{ max: 500, message: "模型描述不能超过 500 字" }]}>
-                                            <Input.TextArea rows={3} maxLength={500} showCount placeholder="填写此渠道模型的使用说明" />
-                                        </Form.Item>
-                                    </section>
+                                            </details>
+                                            <section className="admin-model-editor-section">
+                                                <SectionHeading title="模型身份" />
+                                                <div className="admin-model-editor-section-content admin-model-identity-grid admin-model-identity-grid-with-icon">
+                                                    <Form.Item
+                                                        name="modelKey"
+                                                        label="产品模型标识"
+                                                        tooltip="不同渠道使用相同标识时，创作端归为同一个产品模型。不同版本（例如 Fast）应使用不同标识；请勿为分组随意修改已有标识。"
+                                                        rules={[
+                                                            { required: true, transform: normalizeUpstreamModelKey, message: "请输入产品模型标识" },
+                                                            {
+                                                                validator: async (_, value) => {
+                                                                    const existing = modelWithKey(value);
+                                                                    if (existing) throw new Error(`本渠道已有产品标识 ${existing.modelKey}（${existing.enabled ? "已启用" : "已停用"}）。新建副本请使用其他标识；复用参数请编辑已有模型。`);
+                                                                },
+                                                            },
+                                                        ]}
+                                                        extra={
+                                                            copyTarget && onReuseForExisting ? (
+                                                                <div>
+                                                                    <p>
+                                                                        本渠道已有 {copyTarget.modelKey}（{copyTarget.enabled ? "已启用" : "已停用"}）。切换后保留目标标识、上游、渠道展示名和启停状态；价格档跟随目标上游。保存修改后才生效。
+                                                                    </p>
+                                                                    <Button
+                                                                        size="small"
+                                                                        disabled={busy}
+                                                                        onClick={() => {
+                                                                            const draft: FormValues = form.getFieldsValue(true);
+                                                                            onReuseForExisting(
+                                                                                copyTarget,
+                                                                                reuseChannelModelDraft(initialChannelModelValues(copyTarget, protocols), { ...draft, priceTiers: draft.priceTiers.map((tier) => ({ ...tier, providerModelKey: "" })) }),
+                                                                            );
+                                                                        }}
+                                                                    >
+                                                                        将当前配置用于已有模型
+                                                                    </Button>
+                                                                </div>
+                                                            ) : undefined
+                                                        }
+                                                    >
+                                                        <Input
+                                                            prefix={
+                                                                <span className="grid size-6 place-items-center">
+                                                                    <ModelIcon model={modelKey} />
+                                                                </span>
+                                                            }
+                                                            placeholder="例如：seedance-2-5"
+                                                        />
+                                                    </Form.Item>
+                                                    <Form.Item name="providerModelKey" label="上游模型 ID" tooltip="实际发送给供应商；留空时使用产品模型标识。价格档可配置独立上游 ID，命中时优先于此处。">
+                                                        <Input placeholder="留空则使用产品模型标识" />
+                                                    </Form.Item>
+                                                    <Form.Item name="displayName" label="模型展示名（一级目录）" tooltip="跨系统渠道按此名称分组。留空使用本模型的完整型号，不改变调用 ID。">
+                                                        <ModelDisplayNameInput />
+                                                    </Form.Item>
+                                                    <Form.Item
+                                                        name="channelLabel"
+                                                        label="渠道展示名（二级目录）"
+                                                        tooltip="默认跟随上游模型 ID；手动名称最多 80 字。"
+                                                        rules={[
+                                                            {
+                                                                validator: async (_, value: string | undefined) => {
+                                                                    if (value?.trim() !== modelUpstream && Array.from(value?.trim() || "").length > 80) throw new Error("渠道展示名不能超过 80 字");
+                                                                },
+                                                            },
+                                                        ]}
+                                                    >
+                                                        <Input maxLength={80} placeholder={modelUpstream || "默认使用上游模型 ID"} />
+                                                    </Form.Item>
+                                                    <Form.Item name="icon" label="模型 Logo">
+                                                        <ModelIconPicker />
+                                                    </Form.Item>
+                                                </div>
+                                                {tiersWithOwnUpstream.length ? (
+                                                    <Alert
+                                                        type="info"
+                                                        showIcon
+                                                        title={`${tiersWithOwnUpstream.length} 个价格档配置了独立上游模型 ID`}
+                                                        description="命中的请求会优先使用价格档的上游 ID；修改上方上游模型 ID 时，只有与旧值相同的档位会自动跟随更新，其余保持不变。"
+                                                    />
+                                                ) : null}
+                                                <ChannelModelTagsEditor />
+                                                <Form.Item name="description" label="模型描述" extra="在创作端二级渠道选项中常驻显示，可说明适用场景、渠道差异和注意事项。" rules={[{ max: 500, message: "模型描述不能超过 500 字" }]}>
+                                                    <Input.TextArea rows={3} maxLength={500} showCount placeholder="填写此渠道模型的使用说明" />
+                                                </Form.Item>
+                                            </section>
+                                        </>
+                                    )}
                                     <section className="admin-model-editor-section">
-                                        <SectionHeading title="能力与协议" description="先选任务类型，再选择对应的调用协议；更换后请核对参数与价格。" />
+                                        <SectionHeading title="能力与协议" />
                                         <div className="admin-model-editor-section-content admin-model-protocol-grid">
                                             <Form.Item name="capability" label="模型能力" rules={[{ required: true }]}>
                                                 <Segmented
@@ -586,10 +673,17 @@ export function ChannelModelEditor({
                                                     name="protocolRelease"
                                                     label="插件发行版本"
                                                     tooltip={selectedRelease ? `${selectedRelease.pluginId} · SHA-256 ${selectedRelease.sha256}` : undefined}
-                                                    extra={protocolRelease && !selectedRelease ? "原绑定版本在当前实例不可用，请选择已安装版本。" : "保存后绑定到本模型。已经入队的任务继续使用提交时的版本。"}
+                                                    extra={
+                                                        protocolRelease && !selectedRelease
+                                                            ? "原绑定版本在当前实例不可用，请选择已安装版本。"
+                                                            : importing && !protocolRelease
+                                                              ? "未固定版本，保存后跟随该协议的当前发行版。"
+                                                              : "保存后绑定到本模型。已经入队的任务继续使用提交时的版本。"
+                                                    }
                                                     rules={[
                                                         {
                                                             validator: async (_, digest) => {
+                                                                if (importing && !digest && releases.some((release) => release.current)) return;
                                                                 if (!releases.some((release) => release.sha256 === digest)) throw new Error("请选择已安装的插件发行版本");
                                                             },
                                                         },
@@ -598,7 +692,8 @@ export function ChannelModelEditor({
                                                     <Select
                                                         aria-label="插件发行版本"
                                                         disabled={busy}
-                                                        placeholder="选择已安装版本"
+                                                        allowClear={importing}
+                                                        placeholder={importing ? "未固定 · 跟随当前发行版" : "选择已安装版本"}
                                                         options={releases.map((release) => ({ value: release.sha256, label: `v${release.version} · ${release.sha256.slice(0, 12)}${release.current ? "（当前发行版）" : ""}` }))}
                                                     />
                                                 </Form.Item>
@@ -670,7 +765,7 @@ export function ChannelModelEditor({
                                             modelCapability &&
                                             modelCapability !== "audio" && (
                                                 <section className="admin-model-editor-section admin-model-editor-section-stacked admin-model-editor-references">
-                                                    <SectionHeading title="引用与限制" description="按媒体类型设置数量、大小和时长。" />
+                                                    <SectionHeading title="引用与限制" />
                                                     <Form.Item name={["capabilityConfig", "mediaTransport"]} label="参考素材发送方式" extra="优先使用模型设置，其次渠道默认值，最后使用协议默认行为。">
                                                         <MediaTransportFields channel={channel.mediaTransport || {}} />
                                                     </Form.Item>
@@ -685,7 +780,7 @@ export function ChannelModelEditor({
                                                 <ModelCapabilityEditor {...capabilityEditorProps} capability={modelCapability} disabled={busy} section="protocol" />
                                             ) : (
                                                 <section className="admin-model-editor-section admin-model-editor-section-stacked admin-model-editor-parameters">
-                                                    <SectionHeading title="协议参数" description="配置可发送参数、支持值与默认值；仅影响当前模型。" />
+                                                    <SectionHeading title="协议参数" />
                                                     <div className="admin-model-editor-section-content">
                                                         <ModelCapabilityEditor {...capabilityEditorProps} capability={modelCapability} disabled={busy} section="protocol" />
                                                     </div>
@@ -811,6 +906,7 @@ export function ChannelModelEditor({
                                                             validateChannelModelPrices({
                                                                 capability: form.getFieldValue("capability"),
                                                                 protocol: form.getFieldValue("protocol"),
+                                                                protocolRelease: form.getFieldValue("protocolRelease"),
                                                                 priceTiers: value,
                                                                 capabilityConfig: form.getFieldValue("capabilityConfig"),
                                                                 protocols,
@@ -833,6 +929,7 @@ export function ChannelModelEditor({
                                                                     protocol={modelProtocol}
                                                                     capabilityConfig={capabilityConfig}
                                                                     modelUpstream={modelUpstream}
+                                                                    lockUpstream={importing}
                                                                     onDirty={() => {
                                                                         dirtyRef.current = true;
                                                                         protectedFields.current.add("priceTiers");
@@ -925,11 +1022,11 @@ function CapabilitySections({ capability, protocol, templates, inputs, parameter
     );
 }
 
-function SectionHeading({ title, description }: { title: string; description: string }) {
+function SectionHeading({ title, description }: { title: string; description?: string }) {
     return (
         <header className="admin-model-editor-section-heading">
             <h2>{title}</h2>
-            <p>{description}</p>
+            {description && <p>{description}</p>}
         </header>
     );
 }

@@ -530,7 +530,7 @@ func applyImageParameterValues(config *providerConfig, profile *ImageCapabilityC
 		// Free pixel parameters must carry the encoded value to the adapter;
 		// ratio enums retain their declared value for plugin validation.
 		for _, field := range profile.Parameters {
-			if field.Name == "size" && field.Accepts(config.Size) {
+			if field.Name == "size" && config.Size != "" && field.Accepts(config.Size) {
 				config.ImageParameters["size"] = config.Size
 			}
 		}

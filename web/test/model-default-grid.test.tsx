@@ -69,7 +69,7 @@ test("missing labels fall back to recognizable model names without channel encod
     const personal = createModelChannel({ id: "personal", name: "个人渠道", scope: "user", models: ["custom-text"] });
     const options = cards(fixture([platform, personal]));
     expect(options[0]).toContain('title="unknown-text"');
-    expect(options[0]).toContain("未分类");
+    expect(options[0]).not.toContain("未分类");
     expect(options[0]).not.toContain("platform::unknown-text");
     expect(options[1]).toContain('title="custom-text"');
     expect(options[1]).toContain("个人渠道");

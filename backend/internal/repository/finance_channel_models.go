@@ -128,6 +128,12 @@ func (r *Repository) ChannelModelByKeyIncludingDisabled(channelID string, modelK
 	return &item, nil
 }
 
+func (r *Repository) ChannelModelKeyTaken(channelID, modelKey, exceptID string) (bool, error) {
+	var count int64
+	err := r.db.Model(&model.ChannelModel{}).Where("channel_id = ? AND model_key = ? AND id <> ?", channelID, modelKey, exceptID).Count(&count).Error
+	return count > 0, err
+}
+
 func (r *Repository) SaveChannelModel(item *model.ChannelModel) error {
 	return r.db.Save(item).Error
 }

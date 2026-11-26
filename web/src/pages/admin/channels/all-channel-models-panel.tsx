@@ -4,7 +4,8 @@ import { Pencil, Power, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 
-import { ModelIcon } from "@/components/model-picker";
+import { ChannelModelIdentityCell } from "../components/channel-model-identity-cell";
+import { modelGroupName } from "@/lib/model-group-name";
 import { Select } from "@/components/ui/base/select";
 import { type ModelProtocolDefinition } from "@/lib/model-protocols";
 import { fetchPluginProviderCatalog } from "@/services/api/plugin-catalog";
@@ -13,7 +14,6 @@ import type { ModelChannel } from "@/stores/use-config-store";
 import { AdminBatchBar, AdminDataTable, AdminStatusBadge, AdminTableEmpty, PaginationBar } from "../components/admin-ui";
 import { AdminSearchInput } from "../components/admin-search-input";
 import { ChannelModelCostSummary } from "../components/channel-model-cost-summary";
-import { ChannelModelDetailsCell } from "../components/channel-model-details-cell";
 import { ChannelModelEditor } from "../components/channel-model-editor";
 import { opensModelParameters } from "../components/channel-model-editor-form";
 import { ChannelModelHealthCell, channelModelHealthKey } from "../components/channel-model-health";
@@ -133,7 +133,7 @@ export function AllChannelModelsPanel({
         const query = keyword.trim().toLowerCase();
         return items
             .filter((item) => {
-                if (query && !`${item.modelKey} ${item.providerModelKey} ${item.displayName} ${item.channelLabel || ""}`.toLowerCase().includes(query)) return false;
+                if (query && !`${item.modelKey} ${item.providerModelKey} ${modelGroupName(item.modelKey, item.displayName)} ${item.channelLabel || ""}`.toLowerCase().includes(query)) return false;
                 if (capability !== "all" && item.capability !== capability) return false;
                 if (channelFilter !== "all" && item.channelId !== channelFilter) return false;
                 if (status === "enabled" && !(item.enabled && item.channelEnabled)) return false;
@@ -144,7 +144,10 @@ export function AllChannelModelsPanel({
                 }
                 return true;
             })
-            .sort((left, right) => (left.displayName || left.modelKey).localeCompare(right.displayName || right.modelKey, "zh-CN") || left.modelKey.localeCompare(right.modelKey) || left.channelName.localeCompare(right.channelName, "zh-CN"));
+            .sort(
+                (left, right) =>
+                    modelGroupName(left.modelKey, left.displayName).localeCompare(modelGroupName(right.modelKey, right.displayName), "zh-CN") || left.modelKey.localeCompare(right.modelKey) || left.channelName.localeCompare(right.channelName, "zh-CN"),
+            );
     }, [capability, channelFilter, health, items, keyword, status]);
 
     const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
@@ -170,7 +173,7 @@ export function AllChannelModelsPanel({
             return;
         }
         modal.confirm({
-            title: `停用 ${item.channelName} 的 ${item.displayName || item.modelKey}？`,
+            title: `停用 ${item.channelName} 的 ${item.modelKey}？`,
             content: "停用后新任务不再使用这个渠道的该模型，引用它的前台模型会切换到其他可用线路；配置保留，可随时重新启用。",
             okText: "确认停用",
             cancelText: "取消",
@@ -188,21 +191,8 @@ export function AllChannelModelsPanel({
             title: "模型",
             width: 240,
             fixed: screens.md ? "left" : undefined,
-            render: (_, item) => (
-                <div className="flex min-w-0 items-center gap-2">
-                    <span className="admin-channel-model-icon">
-                        <ModelIcon model={item.modelKey} icon={item.icon} />
-                    </span>
-                    <div className="min-w-0">
-                        <div className="truncate font-medium" title={item.displayName || item.modelKey}>
-                            {item.displayName || item.modelKey}
-                        </div>
-                        <div className="admin-monospace truncate text-xs text-foreground/45">{item.modelKey}</div>
-                    </div>
-                </div>
-            ),
+            render: (_, item) => <ChannelModelIdentityCell item={item} />,
         },
-        { title: "描述 / 标签", key: "details", width: 220, render: (_, item) => <ChannelModelDetailsCell description={item.description} tags={item.tags} /> },
         {
             title: "渠道",
             width: 170,
@@ -217,7 +207,7 @@ export function AllChannelModelsPanel({
         },
         { title: "能力", dataIndex: "capability", width: 72, render: (value: string) => capabilityOptions.find((option) => option.value === value)?.label || "待配置" },
         { title: "稳定性（24h）", key: "health", width: 150, render: (_, item) => <ChannelModelHealthCell health={health.get(channelModelHealthKey(item.channelId, item.modelKey))} loading={healthLoading} /> },
-        { title: "规格成本价 / 销售价 / 加价", width: 300, render: (_, item) => <ChannelModelCostSummary item={item} /> },
+        { title: "价格与成本", width: 180, render: (_, item) => <ChannelModelCostSummary item={item} /> },
         {
             title: "状态",
             width: 90,
@@ -313,7 +303,7 @@ export function AllChannelModelsPanel({
                     columns,
                     dataSource: paged,
                     pagination: false,
-                    scroll: { x: 1440 },
+                    scroll: { x: 1100 },
                 }}
                 empty={
                     loadError ? (

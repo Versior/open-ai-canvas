@@ -126,24 +126,12 @@
     font-size: var(--fs-body);
     font-weight: 500;
 }
-.image-size-mappings > summary span {
-    margin-inline-start: var(--space-2);
-    color: var(--muted-foreground);
-    font-size: var(--fs-caption);
-    font-weight: 400;
-}
 .image-size-mappings > summary:focus-visible {
     outline: 2px solid currentColor;
     outline-offset: 2px;
 }
 .image-size-preset-group.is-ungrouped {
     grid-template-columns: minmax(0, 1fr);
-}
-.image-size-editor-intro {
-    margin: 0 0 2px;
-    color: var(--muted-foreground);
-    font-size: var(--fs-label);
-    line-height: 1.6;
 }
 .image-size-preset-heading {
     display: flex;
@@ -175,8 +163,7 @@
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
 }
-.image-size-preset-heading div > span,
-.image-size-defaults-heading > span {
+.image-size-preset-heading div > span {
     display: block;
     color: var(--muted-foreground);
     font-size: var(--fs-label);
@@ -264,11 +251,13 @@
 .image-size-default-options button:hover:not(:disabled) {
     background: var(--library-surface-hover);
 }
-.image-size-presets-editor button[aria-pressed="true"] {
+.image-size-presets-editor button[aria-pressed="true"],
+.image-size-default-options button[aria-pressed="true"] {
     background: var(--library-surface-hover);
     box-shadow: inset 0 0 0 1px var(--library-selected-stroke);
 }
-.image-size-presets-editor button:focus-visible {
+.image-size-presets-editor button:focus-visible,
+.image-size-default-options button:focus-visible {
     outline: 2px solid currentColor;
     outline-offset: 2px;
 }
@@ -291,12 +280,22 @@
     padding-block: 8px;
     min-width: 0;
 }
-.image-size-defaults-heading {
-    display: flex;
-    align-items: baseline;
-    flex-wrap: wrap;
-    gap: 8px;
+.image-size-defaults > strong {
     font-size: var(--fs-label);
+}
+.image-size-custom-default {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+.image-size-custom-default label {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+    font-size: var(--fs-label);
+}
+.image-size-custom-default .image-size-error {
+    grid-column: 1 / -1;
 }
 .image-size-default-options {
     display: flex;

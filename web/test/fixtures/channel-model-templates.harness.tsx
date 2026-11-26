@@ -483,6 +483,7 @@ test("真实定价面板：新增空模板、取消与重新打开，未展开�
     }
 });
 const { ChannelModelEditor } = await import("../../src/pages/admin/components/channel-model-editor");
+const { ChannelModelTransferDialog } = await import("../../src/pages/admin/components/channel-model-transfer-dialog");
 const { AdminProvider } = await import("../../src/pages/admin/admin-context");
 const { apiClient } = await import("../../src/services/api/request");
 const { defaultTokenPriceRule } = await import("../../src/pages/admin/components/channel-model-price-tier-form");
@@ -558,7 +559,8 @@ async function inputValue(selector: string, value: string) {
     const input = document.querySelector(selector) as HTMLInputElement;
     expect(input).toBeTruthy();
     await act(async () => {
-        Object.getOwnPropertyDescriptor(dom.HTMLInputElement.prototype, "value")!.set!.call(input, value);
+        const prototype = input.tagName === "TEXTAREA" ? dom.HTMLTextAreaElement.prototype : dom.HTMLInputElement.prototype;
+        Object.getOwnPropertyDescriptor(prototype, "value")!.set!.call(input, value);
         input.dispatchEvent(new dom.Event("input", { bubbles: true }));
         input.dispatchEvent(new dom.Event("change", { bubbles: true }));
         await new Promise((resolve) => setTimeout(resolve, 10));
@@ -569,15 +571,21 @@ async function tab(name: string) {
     expect(found).toBeTruthy();
     await act(async () => (found as HTMLElement).click());
 }
-async function mountEditor(editing: ChannelModel | null, catalog = protocols, draftValues?: ChannelModelFormValues, initialProtocolLoading = false, existingModels: ChannelModel[] = []) {
+async function mountEditor(editing: ChannelModel | null, catalog = protocols, draftValues?: ChannelModelFormValues, initialProtocolLoading = false, existingModels: ChannelModel[] = [], transferTarget?: ChannelModel) {
     const originalRequest = apiClient.request;
     const saves: any[] = [];
+    const writes: string[] = [];
+    let saveError: { code: number; msg: string; details: { field: string } } | undefined;
     const suggestions: Array<{ config: any; resolve(value: any): void }> = [];
     apiClient.request = (async (config: any) => {
         if (config.url.includes("protocol-suggestion")) return new Promise((resolve) => suggestions.push({ config, resolve: (data) => resolve({ status: 200, data: { code: 0, data } }) }));
         if (config.url.endsWith("/model-metadata")) return { status: 200, data: { code: 0, data: { models: [] } } };
         if (config.url.endsWith("/references")) return { status: 200, data: { code: 0, data: { channels: [], users: [] } } };
-        if (["post", "put", "patch"].includes(config.method.toLowerCase())) saves.push(config.data);
+        if (["post", "put", "patch"].includes(config.method.toLowerCase())) {
+            writes.push(`${config.method.toUpperCase()} ${config.url}`);
+            saves.push(config.data);
+            if (saveError) return { status: 400, data: saveError };
+        }
         return { status: 200, data: { code: 0, data: {} } };
     }) as typeof apiClient.request;
     const host = document.createElement("div");
@@ -585,25 +593,54 @@ async function mountEditor(editing: ChannelModel | null, catalog = protocols, dr
     const root = createRoot(host);
     let closed = 0;
     let protocolLoading = initialProtocolLoading;
+    let copiedFrom: string | undefined;
+    const channel = { id: "test-channel", name: "测试 Key", baseUrl: "https://example.com/v1", apiKey: "", enabled: true, models: [] };
     const render = () =>
         root.render(
             <ConfigProvider theme={{ token: { motion: false } }}>
                 <App>
                     <AdminProvider>
-                        <ChannelModelEditor
-                            channel={{ id: "test-channel", name: "测试 Key", baseUrl: "https://example.com/v1", apiKey: "", enabled: true, models: [] }}
-                            editing={editing}
-                            existingModels={existingModels}
-                            draftValues={draftValues}
-                            protocols={catalog}
-                            protocolLoading={protocolLoading}
-                            protocolError=""
-                            onRetryProtocols={() => {}}
-                            onClose={() => {
-                                closed++;
-                            }}
-                            onSaved={async () => {}}
-                        />
+                        {transferTarget ? (
+                            <ChannelModelTransferDialog
+                                channel={channel}
+                                target={transferTarget}
+                                models={existingModels}
+                                protocols={catalog}
+                                protocolLoading={false}
+                                protocolError=""
+                                onRetryProtocols={() => {}}
+                                onClose={() => {}}
+                                onPrepare={(source, values) => {
+                                    copiedFrom = source.modelKey;
+                                    editing = transferTarget!;
+                                    transferTarget = undefined;
+                                    draftValues = values;
+                                    render();
+                                }}
+                            />
+                        ) : (
+                            <ChannelModelEditor
+                                key={editing?.id ?? "new"}
+                                channel={channel}
+                                editing={editing}
+                                existingModels={existingModels}
+                                draftValues={draftValues}
+                                copiedFrom={copiedFrom}
+                                protocols={catalog}
+                                protocolLoading={protocolLoading}
+                                protocolError=""
+                                onReuseForExisting={(target, values) => {
+                                    editing = target;
+                                    draftValues = values;
+                                    render();
+                                }}
+                                onRetryProtocols={() => {}}
+                                onClose={() => {
+                                    closed++;
+                                }}
+                                onSaved={async () => {}}
+                            />
+                        )}
                     </AdminProvider>
                 </App>
             </ConfigProvider>,
@@ -611,6 +648,10 @@ async function mountEditor(editing: ChannelModel | null, catalog = protocols, dr
     await act(async () => render());
     return {
         saves,
+        writes,
+        rejectSave: (error: typeof saveError) => {
+            saveError = error;
+        },
         suggestions,
         setProtocolLoading: async (value: boolean) => {
             protocolLoading = value;
@@ -653,6 +694,233 @@ function savedModel(values = draft()): ChannelModel {
         })),
     };
 }
+
+for (const configured of [false, true]) {
+    test(`从目标 2.6 导入 2.5 的三项配置：${configured ? "已配置" : "无协议"}的停用目标，保存前零写入`, async () => {
+        const sourceKey = "gpt-image-2.5";
+        const key = "gpt-image-2.6";
+        const release = { pluginId: "image-test", version: "1.7", sha256: "b".repeat(64), current: false, create: protocols[0].create, imageParameters: protocols[0].imageParameters };
+        const catalog = [{ ...protocols[0], releases: [release, { ...release, version: "2.0", sha256: "c".repeat(64), current: true }] }];
+        const values = { ...draft(), modelKey: sourceKey, providerModelKey: sourceKey, protocolRelease: release.sha256, description: "来源说明", tags: [{ text: "绘图", color: "green" as const }] };
+        Object.assign(values.capabilityConfig!.image!, { maxOutputs: 4 });
+        Object.assign(values.capabilityConfig!.image!.references, { maxImages: 3, maskSupported: true });
+        values.capabilityConfig!.mediaTransport = { image: "base64" };
+        values.priceTiers.push({ ...values.priceTiers[0], matchMode: "advanced", operation: "image_to_image", providerModelKey: "independent-edit", unitPrice: 31, costUnitPrice: 7 });
+        const source = savedModel(values);
+        const snapshot = structuredClone(source);
+        const target: ChannelModel = {
+            ...source,
+            id: "target",
+            modelKey: key,
+            providerModelKey: key,
+            displayName: "目标分组",
+            channelLabel: "目标展示名",
+            icon: "target",
+            description: "不能覆盖",
+            tags: [],
+            sortOrder: 9,
+            capability: configured ? "image" : "",
+            protocol: configured ? source.protocol : undefined,
+            protocolRelease: undefined,
+            capabilityConfig: configured ? source.capabilityConfig : undefined,
+            priceTiers: [],
+            priceConfigured: false,
+            enabled: false,
+            priceVersion: 12,
+            updatedAt: "2026-01-01T00:00:00Z",
+        };
+        const models = [{ ...source, id: "foreign-source", channelId: "other-channel" }, target, source];
+        const fixture = await mountEditor(null, catalog, undefined, false, models, target);
+        try {
+            expect(document.body.textContent).toContain(key);
+            expect(button("填入目标模型").disabled).toBe(true);
+            expect(document.querySelector('input[aria-label="目标产品标识"]')).toBeNull();
+            await choose("配置来源模型", sourceKey);
+            const preview = document.querySelector('[aria-label="复制预览"]')!;
+            for (const text of ["OpenAI Images", "1.7", "2 个价格档", "默认售价 17 USD / 次", "成本 3 积分 / 次", "3 张"]) expect(preview.textContent).toContain(text);
+            expect(document.querySelector(".admin-model-import-source .ant-select")?.textContent).toContain(sourceKey);
+            expect(document.querySelector(".admin-model-transfer-target strong")?.textContent).toBe(key);
+            expect(document.body.textContent).not.toContain("创建同上游别名");
+            await click("填入目标模型");
+            expect(fixture.writes).toEqual([]);
+            await click("保存修改");
+            expect(fixture.writes).toEqual(["PATCH /admin/channels/test-channel/models/target"]);
+            expect(fixture.saves[0]).toMatchObject({
+                configurationOnly: true,
+                expectedUpdatedAt: target.updatedAt,
+                expectedPriceVersion: 12,
+                protocol: source.protocol,
+                protocolSelectionExplicit: false,
+                protocolRelease: release.sha256,
+                capability: "image",
+                priceCurrency: "USD",
+                capabilityConfig: { mediaTransport: { image: "base64" }, image: { maxOutputs: 4, references: { maxImages: 3, maskSupported: true } } },
+                priceTiers: [
+                    { providerModelKey: key, unitPriceMicrocredits: 17_000_000, costPricing: { unitPriceMicrocredits: 3_000_000 } },
+                    { providerModelKey: key, selector: { operation: "image_to_image" }, unitPriceMicrocredits: 31_000_000, costPricing: { unitPriceMicrocredits: 7_000_000 } },
+                ],
+            });
+            for (const field of ["modelKey", "providerModelKey", "enabled", "displayName", "channelLabel", "description", "tags", "icon", "sortOrder"]) expect(fixture.saves[0]).not.toHaveProperty(field);
+            expect(source).toEqual(snapshot);
+        } finally {
+            await fixture.close();
+        }
+    });
+}
+
+test("目标行入口只接受已有来源，不能新建、指定自己或创建别名", async () => {
+    const source = savedModel();
+    const fixture = await mountEditor(null, protocols, undefined, false, [source], source);
+    try {
+        await inputValue('input[aria-label="配置来源模型"]', source.modelKey);
+        expect(button("填入目标模型").disabled).toBe(true);
+        expect(document.body.textContent).not.toContain("创建同上游别名");
+        expect(fixture.writes).toEqual([]);
+    } finally {
+        await fixture.close();
+    }
+});
+
+test("来源存在协议但能力读取不完整：预览说明原因，不允许复制或创建别名", async () => {
+    const source = { ...savedModel(), capabilityConfig: undefined, priceTiers: [], priceConfigured: false };
+    const target = { ...source, id: "target", modelKey: "gpt-image-2.6" };
+    const fixture = await mountEditor(null, protocols, undefined, false, [source, target], target);
+    try {
+        await choose("配置来源模型", source.modelKey);
+        expect(document.querySelector('[aria-label="复制预览"]')?.textContent).toContain("来源模型的能力参数");
+        expect(document.querySelector('[aria-label="复制预览"] [role="alert"]')?.textContent).toContain(source.modelKey);
+        expect(button("填入目标模型").disabled).toBe(true);
+        expect(fixture.writes).toEqual([]);
+    } finally {
+        await fixture.close();
+    }
+});
+
+test("来源有协议和图片能力但无价格时，不能用空价格覆盖已有目标", async () => {
+    const target = savedModel();
+    const source = { ...target, id: "no-price", modelKey: "source-without-pricing", priceTiers: [], priceConfigured: false };
+    const fixture = await mountEditor(null, protocols, undefined, false, [source, target], target);
+    try {
+        await choose("配置来源模型", source.modelKey);
+        expect(document.querySelector('[aria-label="复制预览"] [role="alert"]')?.textContent).toContain("未配置价格");
+        expect(button("填入目标模型").disabled).toBe(true);
+        expect(fixture.writes).toEqual([]);
+    } finally {
+        await fixture.close();
+    }
+});
+
+test("复制模型：停用的目标标识也被占用，返回基本信息，不发新增；新标识仍调用原上游", async () => {
+    const key = "gpt-image-2.6";
+    const source = savedModel({ ...draft(), modelKey: key, providerModelKey: key, enabled: false });
+    const fixture = await mountEditor(null, protocols, duplicateChannelModelValues(source, protocols, [source]), false, [source]);
+    try {
+        const local = document.querySelector<HTMLInputElement>("#modelKey")!;
+        await inputValue("#modelKey", ` models/${key} `);
+        await tab("积分定价");
+        await click("创建副本");
+        expect(fixture.saves).toHaveLength(0);
+        expect(document.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("基本信息");
+        expect(local.closest(".ant-form-item")?.textContent).toContain("已停用");
+        await inputValue("#modelKey", `${key}-copy`);
+        await click("创建副本");
+        expect(fixture.saves).toHaveLength(1);
+        expect(fixture.saves[0]).toMatchObject({ modelKey: `${key}-copy`, providerModelKey: key, enabled: false, priceCurrency: "USD", priceTiers: [{ providerModelKey: key, unitPriceMicrocredits: 17_000_000 }] });
+        expect(fixture.saves[0]).not.toHaveProperty("expectedPriceVersion");
+        expect(fixture.saves[0].priceTiers[0]).not.toHaveProperty("id");
+    } finally {
+        await fixture.close();
+    }
+});
+
+test("复制模型：列表加载后标识被占用，服务端字段错误保留草稿并可改名重试", async () => {
+    const source = savedModel();
+    const fixture = await mountEditor(null, protocols, duplicateChannelModelValues(source, protocols, [source]), false, [source]);
+    try {
+        await inputValue("#modelKey", "occupied-after-open");
+        await tab("能力与参数");
+        fixture.rejectSave({ code: 400, msg: "标识已在另一页面被占用", details: { field: "modelKey" } });
+        await click("创建副本");
+        expect(fixture.saves).toHaveLength(1);
+        expect(fixture.closed()).toBe(0);
+        expect(document.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("基本信息");
+        const field = document.querySelector<HTMLInputElement>("#modelKey")!;
+        expect(field.getAttribute("aria-invalid")).toBe("true");
+        const helpId = field.getAttribute("aria-describedby")!;
+        // Form.Item 与 ErrorList 分别在提交效果后更新；等待可访问的提示节点，而非等待固定时长。
+        const deadline = Date.now() + 1000;
+        while (!document.getElementById(helpId)?.textContent && Date.now() < deadline) await act(async () => Bun.sleep(0));
+        expect(document.getElementById(helpId)?.textContent).toContain("标识已在另一页面被占用");
+        fixture.rejectSave(undefined);
+        await inputValue("#modelKey", "available-now");
+        await click("创建副本");
+        expect(fixture.closed()).toBe(1);
+        expect(fixture.saves[1]).toMatchObject({ modelKey: "available-now", providerModelKey: source.providerModelKey, priceCurrency: "USD" });
+    } finally {
+        await fixture.close();
+    }
+});
+
+test("复制模型：明确转到停用的已有型号，只填草稿，保存使用目标版本、路由和启停状态", async () => {
+    const source = savedModel();
+    const target = {
+        ...source,
+        id: "imported",
+        modelKey: "gpt-image-2.6",
+        providerModelKey: "vendor-target",
+        channelLabel: "目标渠道",
+        enabled: false,
+        protocol: undefined,
+        priceTiers: [],
+        priceConfigured: false,
+        priceVersion: 4,
+        updatedAt: "2026-01-01T00:00:00Z",
+    };
+    const models = [source, target];
+    const fixture = await mountEditor(null, protocols, duplicateChannelModelValues(source, protocols, models), false, models);
+    try {
+        await inputValue("#description", "保留我刚改的参数说明");
+        await inputValue("#modelKey", target.modelKey);
+        await click("将当前配置用于已有模型");
+        expect(fixture.saves).toHaveLength(0);
+        expect((document.querySelector("#providerModelKey") as HTMLInputElement).value).toBe(target.providerModelKey);
+        await click("保存修改");
+        expect(fixture.saves).toHaveLength(1);
+        expect(fixture.saves[0]).toMatchObject({
+            modelKey: target.modelKey,
+            providerModelKey: target.providerModelKey,
+            channelLabel: target.channelLabel,
+            enabled: false,
+            expectedPriceVersion: 4,
+            expectedUpdatedAt: target.updatedAt,
+            description: target.description || "",
+            protocol: source.protocol,
+            priceTiers: [{ providerModelKey: target.providerModelKey, unitPriceMicrocredits: 17_000_000 }],
+        });
+    } finally {
+        await fixture.close();
+    }
+});
+
+test("复制模型：主动清空的产品标识不被上游识别回填，来源别名可以区分", async () => {
+    const source = savedModel();
+    const alias = { ...source, id: "alias", modelKey: "another-alias", priceTiers: null as unknown as ChannelModel["priceTiers"] };
+    const models = [source, alias];
+    const fixture = await mountEditor(null, protocols, duplicateChannelModelValues(source, protocols, models), false, models);
+    try {
+        await inputValue("#modelKey", "");
+        await inputValue("#providerModelKey", source.providerModelKey!);
+        await click("自动识别并填写");
+        expect((document.querySelector("#modelKey") as HTMLInputElement).value).toBe("");
+        await choose("配置来源模型", `${source.providerModelKey}（${alias.modelKey}） · openai-image · 1 个价格档`);
+        expect(button("复制完整配置到表单").disabled).toBe(false);
+        await click("复制完整配置到表单");
+        await click("创建副本");
+        expect(fixture.saves).toHaveLength(0);
+    } finally {
+        await fixture.close();
+    }
+});
 
 test("完整模型编辑器：模板实际金额与币种保存，能力及模型身份不变", async () => {
     const source = { ...draft(), priceCurrency: "CNY" as const };
@@ -773,7 +1041,7 @@ test("完整模型编辑器：复制或识别后迟到的建议不覆盖配置�
     const catalog = [...protocols, { ...protocols[0], value: "other-image", label: "另一图片协议", releases: [release, { ...release, current: true, sha256: "b".repeat(64) }] }];
     const sourceValues = { ...draft(), protocol: "other-image", protocolRelease: release.sha256 };
     sourceValues.capabilityConfig!.image!.references.maxImageBytes = 7 * 1024 * 1024;
-    const source = savedModel(sourceValues);
+    const source = { ...savedModel(sourceValues), modelKey: "source-local-id" };
     for (const action of ["copy", "identify"]) {
         const initial = { ...draft(), protocol: "", modelKey: "", providerModelKey: "" };
         const fixture = await mountEditor(null, catalog, initial, false, [source]);
@@ -781,7 +1049,7 @@ test("完整模型编辑器：复制或识别后迟到的建议不覆盖配置�
             await inputValue('input[id="modelKey"]', "gpt-image-2");
             expect(fixture.suggestions).toHaveLength(1);
             if (action === "copy") {
-                await choose("配置来源模型", `${source.channelLabel || source.providerModelKey || source.modelKey} · other-image · 1 个价格档`);
+                await choose("配置来源模型", `${source.providerModelKey}（${source.modelKey}） · other-image · 1 个价格档`);
                 await click("复制完整配置到表单");
             } else {
                 await click("自动识别并填写");
@@ -789,7 +1057,7 @@ test("完整模型编辑器：复制或识别后迟到的建议不覆盖配置�
             await act(async () => fixture.suggestions[0].resolve({ protocol: "openai-image", source: "selection", candidates: ["openai-image"] }));
             await tab("能力与参数");
             expect((document.querySelector(".choice-browser input:checked") as HTMLInputElement).value).toBe("other-image");
-            await click("添加模型");
+            await click("创建副本");
             expect(fixture.saves).toHaveLength(1);
             expect(fixture.saves[0]).toMatchObject({ protocol: "other-image", protocolRelease: release.sha256, protocolSelectionExplicit: false, capabilityConfig: { image: { references: { maxImageBytes: 7 * 1024 * 1024 } } } });
         } finally {
@@ -864,7 +1132,7 @@ for (const loading of [false, true]) {
                 }
                 expect(fixture.suggestions).toHaveLength(1);
                 await act(async () => fixture.suggestions[0].resolve({ protocol: "openai-image", source: "selection", candidates: ["openai-image"] }));
-                await click("添加模型");
+                await click("创建副本");
                 expect(fixture.saves).toHaveLength(1);
                 expect(fixture.saves[0]).toMatchObject({ protocol: "openai-image", protocolSelectionExplicit: false, capabilityConfig: { image: { references: { maxImageBytes: (undo ? 11 : 7) * 1024 * 1024 } } } });
             } finally {
@@ -873,6 +1141,55 @@ for (const loading of [false, true]) {
         });
     }
 }
+
+test("关闭分辨率不隐藏档位，首次启用直接有三档，移除最后一档不会弹回", async () => {
+    const editing = savedModel();
+    editing.capabilityConfig!.image!.parameters = [
+        { name: "imageResolution", label: "分辨率", type: "string", enabled: false },
+        { name: "size", label: "画幅", type: "string", encoding: "pixels", values: ["1:1"], default: "1:1" },
+    ];
+    const fixture = await mountEditor(editing);
+    try {
+        const preview = document.querySelector('aside[aria-label="画布节点预览"]')!;
+        for (const tier of ["1K", "2K", "4K"]) expect(button(`分辨率支持 ${tier}`).disabled).toBe(true);
+        expect(document.querySelector('[aria-label="分辨率支持 1.5K"]')).toBeNull();
+        await click("启用分辨率");
+        for (const tier of ["1K", "2K", "4K"]) expect(button(`分辨率支持 ${tier}`).getAttribute("aria-pressed")).toBe("true");
+        expect(button("设分辨率 1K 为默认").getAttribute("aria-pressed")).toBe("true");
+        expect([...preview.querySelectorAll('button[aria-pressed="true"]')].some((b) => b.textContent === "1K")).toBe(true);
+        for (const tier of ["4K", "2K", "1K"]) await click(`分辨率支持 ${tier}`);
+        expect(document.querySelector('[aria-label="设分辨率 1K 为默认"]')).toBeNull();
+        expect(button("分辨率支持 4K").getAttribute("aria-pressed")).toBe("false");
+        await click("分辨率支持 4K");
+        expect(button("设分辨率 4K 为默认").getAttribute("aria-pressed")).toBe("true");
+        expect(button("分辨率支持 1K").getAttribute("aria-pressed")).toBe("false");
+        expect(fixture.saves).toHaveLength(0);
+    } finally {
+        await fixture.close();
+    }
+});
+
+test("取消自定义尺寸后焦点回到当前模型的入口，不保存或关闭模型编辑器", async () => {
+    const fixture = await mountEditor(savedModel());
+    try {
+        const trigger = document.querySelector<HTMLButtonElement>('[aria-label="默认输出"] button[aria-haspopup="dialog"]')!;
+        expect(trigger).toBeTruthy();
+        const initial = trigger.textContent;
+        await act(async () => trigger.click());
+        const width = [...document.querySelectorAll("label")].find((label) => label.textContent === "宽度（px）")!.querySelector("input")!;
+        const dialog = width.closest<HTMLElement>('[role="dialog"]')!;
+        await act(async () => width.focus());
+        expect(document.activeElement).toBe(width);
+        await act(async () => [...dialog.querySelectorAll("button")].find((node) => node.textContent?.replace(/\s/g, "") === "取消")!.click());
+        expect(trigger.getAttribute("aria-expanded")).toBe("false");
+        expect(document.activeElement).toBe(trigger);
+        expect(trigger.textContent).toBe(initial);
+        expect(fixture.closed()).toBe(0);
+        expect(fixture.writes).toEqual([]);
+    } finally {
+        await fixture.close();
+    }
+});
 
 test("图片模型的分辨率默认值、画布预览与保存使用同一份能力草稿", async () => {
     const fresh = initialChannelModelValues({ ...savedModel(), capabilityConfig: undefined }, protocols).capabilityConfig!.image!;
@@ -1025,7 +1342,7 @@ test("完整模型编辑器：未操作保存保留参考视频计价及独立�
 for (const action of ["unchanged", "manual", "template", "undo"] as const) {
     test(`完整模型编辑器：复制预填与模板操作不记录协议选择，主动改协议才记录（${action}）`, async () => {
         const catalog = [...protocols, { ...protocols[0], value: "other-image", label: "另一图片协议" }];
-        const copied = duplicateChannelModelValues(savedModel(), catalog);
+        const copied = duplicateChannelModelValues(savedModel(), catalog, []);
         const fixture = await mountEditor(null, catalog, copied);
         try {
             await inputValue('input[id="modelKey"]', "gpt-image-copy");
@@ -1038,7 +1355,7 @@ for (const action of ["unchanged", "manual", "template", "undo"] as const) {
                 await click("应用能力模板");
                 if (action === "undo") await click("撤销能力模板");
             }
-            await click("添加模型");
+            await click("创建副本");
             expect(fixture.saves).toHaveLength(1);
             expect(fixture.saves[0]).toMatchObject({ protocol: action === "manual" ? "other-image" : "openai-image", protocolSelectionExplicit: action === "manual" });
         } finally {

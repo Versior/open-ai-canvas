@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { App, Button, Checkbox, Grid, Input, Popconfirm, Space } from "antd";
+import { App, Button, Checkbox, Grid, Input, Space } from "antd";
 import { AdminModal } from "@/pages/admin/ui/overlays";
 import { AntTooltip as Tooltip } from "@/components/ui/base/tooltip/ant-tooltip";
 import type { ColumnsType } from "antd/es/table";
-import { Copy, Pencil, Plus, Power, RefreshCw, Search, Trash2 } from "lucide-react";
+import { Copy, Pencil, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 
 import { PaginationBar } from "@/pages/admin/components/admin-ui";
-import { ModelIcon } from "@/components/model-picker";
 import { modelProtocolDefinition, modelProtocolLabel, type ModelProtocol } from "@/lib/model-protocols";
 import { fetchPluginProviderCatalog } from "@/services/api/plugin-catalog";
 import {
@@ -25,14 +24,16 @@ import {
 import { ChannelModelHealthCell, channelModelHealthKey } from "./channel-model-health";
 import type { ModelChannel } from "@/stores/use-config-store";
 import { ChannelModelEditor } from "./channel-model-editor";
+import { ChannelModelTransferDialog } from "./channel-model-transfer-dialog";
 import { AdminBatchBar, AdminDataTable, AdminFilterChip, AdminStatusBadge, AdminTableEmpty } from "./admin-ui";
 import { ChannelOrderDialog } from "./channel-order-dialog";
 import { ChannelModelCostSummary } from "./channel-model-cost-summary";
-import { ChannelModelDetailsCell } from "./channel-model-details-cell";
+import { ChannelModelIdentityCell } from "./channel-model-identity-cell";
+import { modelGroupName } from "@/lib/model-group-name";
 import { ChannelModelRepriceDialog } from "./channel-model-reprice-dialog";
 import { ChannelModelBatchEditDialog } from "./channel-model-batch-edit-dialog";
 import { deselectVisibleModels, filterImportModels, normalizeFetchModelKey, selectExistingImportModels, selectVisibleModels } from "./channel-model-import-selection";
-import { duplicateChannelModelValues, opensModelParameters, type ChannelModelFormValues } from "./channel-model-editor-form";
+import { opensModelParameters, type ChannelModelFormValues } from "./channel-model-editor-form";
 import { Select } from "@/components/ui/base/select";
 
 export type ChannelModelFilters = {
@@ -74,6 +75,8 @@ export function ChannelModelManager({
     const [batchEditItems, setBatchEditItems] = useState<ChannelModel[]>([]);
     const [editing, setEditing] = useState<ChannelModel | null>(null);
     const [copyDraft, setCopyDraft] = useState<ChannelModelFormValues | null>(null);
+    const [importTarget, setImportTarget] = useState<ChannelModel | null>(null);
+    const [copiedFrom, setCopiedFrom] = useState<string>();
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState("");
     const [fetching, setFetching] = useState(false);
@@ -136,6 +139,8 @@ export function ChannelModelManager({
         setEditing(null);
         setCopyDraft(null);
         setEditorOpen(false);
+        setImportTarget(null);
+        setCopiedFrom(undefined);
         setSelectedModelIds([]);
         setRepriceItems([]);
         resetFetchPreview();
@@ -249,11 +254,6 @@ export function ChannelModelManager({
         setCopyDraft(null);
         setEditorOpen(true);
     };
-    const startCopy = (item: ChannelModel) => {
-        setEditing(null);
-        setCopyDraft(duplicateChannelModelValues(item, availableProtocols));
-        setEditorOpen(true);
-    };
 
     const remove = async (item: ChannelModel) => {
         try {
@@ -287,7 +287,7 @@ export function ChannelModelManager({
             return;
         }
         modal.confirm({
-            title: `停用模型 ${item.displayName || item.modelKey}？`,
+            title: `停用模型 ${item.modelKey}？`,
             content: "停用后新任务不再使用该模型，引用它的前台模型会切换到其他可用线路；价格与配置保留，可随时重新启用。",
             okText: "确认停用",
             cancelText: "取消",
@@ -325,69 +325,60 @@ export function ChannelModelManager({
     const columns: ColumnsType<ChannelModel> = [
         {
             title: "模型",
-            width: 240,
+            width: 210,
+            render: (_, item) => <ChannelModelIdentityCell item={item} />,
+        },
+        {
+            title: "能力 / 状态",
+            width: 90,
             render: (_, item) => (
-                <div className="flex min-w-0 items-center gap-2">
-                    <span className="admin-channel-model-icon">
-                        <ModelIcon model={item.modelKey} icon={item.icon} />
-                    </span>
-                    <div className="min-w-0">
-                        <div className="truncate font-medium" title={item.displayName || item.modelKey}>
-                            {item.displayName || item.modelKey}
-                        </div>
-                        <div className="admin-monospace truncate text-xs text-foreground/45">{item.modelKey}</div>
-                        {item.channelLabel ? <div className="truncate text-xs text-foreground/60">渠道展示名：{item.channelLabel}</div> : null}
-                        {item.providerModelKey && item.providerModelKey !== item.modelKey ? <div className="admin-monospace truncate text-xs text-foreground/35">上游：{item.providerModelKey}</div> : null}
-                    </div>
+                <div className="grid justify-items-start gap-1">
+                    {capabilityLabel(item.capability)}
+                    <AdminStatusBadge label={item.enabled ? "启用" : "停用"} tone={item.enabled ? "success" : "neutral"} />
                 </div>
             ),
         },
-        { title: "描述 / 标签", key: "details", width: 220, render: (_, item) => <ChannelModelDetailsCell description={item.description} tags={item.tags} /> },
-        { title: "能力", dataIndex: "capability", width: 80, render: capabilityLabel },
-        { title: "稳定性（24h）", key: "health", width: 150, render: (_, item) => <ChannelModelHealthCell health={health?.get(channelModelHealthKey(channel.id, item.modelKey))} loading={healthLoading} /> },
+        { title: "稳定性（24h）", key: "health", width: 120, render: (_, item) => <ChannelModelHealthCell health={health?.get(channelModelHealthKey(channel.id, item.modelKey))} loading={healthLoading} /> },
         {
             title: "请求协议",
             dataIndex: "protocol",
-            width: 190,
-            render: (value: ModelProtocol) =>
-                value ? (
-                    <div>
-                        <div className="text-xs font-medium">{modelProtocolLabel(value, availableProtocols)}</div>
-                        <div className="truncate text-[var(--fs-tiny)] text-foreground/45">{modelProtocolDefinition(value, availableProtocols)?.create}</div>
-                    </div>
-                ) : (
-                    <AdminStatusBadge label="待配置" tone="warning" />
-                ),
+            width: 128,
+            render: (value: ModelProtocol) => (value ? <span title={modelProtocolDefinition(value, availableProtocols)?.create}>{modelProtocolLabel(value, availableProtocols)}</span> : <AdminStatusBadge label="待配置" tone="warning" />),
         },
-        { title: "规格成本价 / 销售价 / 加价", width: 310, render: (_, item) => <ChannelModelCostSummary item={item} /> },
-        { title: "价格版本", dataIndex: "priceVersion", width: 84, render: (value) => `v${value}` },
-        { title: "状态", dataIndex: "enabled", width: 85, render: (enabled) => <AdminStatusBadge label={enabled ? "启用" : "停用"} tone={enabled ? "success" : "neutral"} /> },
+        { title: "价格与成本", width: 155, render: (_, item) => <ChannelModelCostSummary item={item} /> },
         {
             title: "操作",
-            width: screens.md ? 248 : 148,
-            fixed: "right",
+            width: 236,
+            fixed: screens.md ? "right" : undefined,
             render: (_, item) => (
-                <Space size={4} wrap>
-                    <Button size="small" icon={<Pencil className="size-3.5" />} disabled={deletingSelected} onClick={() => startEdit(item)}>
+                <div className="admin-channel-row-actions" role="group" aria-label={`${item.modelKey} 操作`}>
+                    <Button type="text" size="small" icon={<Pencil className="size-3.5" />} disabled={deletingSelected} onClick={() => startEdit(item)}>
                         {opensModelParameters(item) ? "编辑参数" : "编辑"}
                     </Button>
-                    <Button size="small" danger={item.enabled} icon={<Power className="size-3.5" />} loading={togglingId === item.id} disabled={deletingSelected || (togglingId !== null && togglingId !== item.id)} onClick={() => toggleEnabled(item)}>
+                    <Tooltip title="从其他模型复制配置">
+                        <Button type="text" size="small" aria-label={`从其他模型复制配置到 ${item.modelKey}`} disabled={deletingSelected} icon={<Copy className="size-3.5" />} onClick={() => setImportTarget(item)} />
+                    </Tooltip>
+                    <Button size="small" type="text" aria-label={`${item.enabled ? "停用" : "启用"}模型 ${item.modelKey}`} loading={togglingId === item.id} disabled={deletingSelected || togglingId !== null} onClick={() => toggleEnabled(item)}>
                         {item.enabled ? "停用" : "启用"}
                     </Button>
-                    <Tooltip title="复制模型">
-                        <Button size="small" aria-label={`复制模型 ${item.displayName || item.modelKey}`} disabled={deletingSelected} icon={<Copy className="size-3.5" />} onClick={() => startCopy(item)} />
-                    </Tooltip>
-                    <Popconfirm title="删除模型" description="已被前台供应线路或进行中任务使用的模型不能删除；删除后模型不再显示，且不能在页面恢复。" okText="删除" cancelText="取消" onConfirm={() => void remove(item)}>
-                        <Button size="small" danger disabled={deletingSelected} title="删除模型" aria-label="删除模型" icon={<Trash2 className="size-3.5" />} />
-                    </Popconfirm>
-                </Space>
+                    <Button
+                        size="small"
+                        type="text"
+                        danger
+                        aria-label={`删除模型 ${item.modelKey}`}
+                        disabled={deletingSelected || togglingId === item.id}
+                        onClick={() => modal.confirm({ title: `删除模型 ${item.modelKey}？`, content: "使用中的模型不能删除；删除后无法在页面恢复。", okText: "删除", cancelText: "取消", okButtonProps: { danger: true }, onOk: () => remove(item) })}
+                    >
+                        删除
+                    </Button>
+                </div>
             ),
         },
     ];
 
     const filteredItems = items.filter((item) => {
         const query = keyword.trim().toLowerCase();
-        if (query && !`${item.modelKey} ${item.providerModelKey} ${item.displayName} ${item.channelLabel || ""}`.toLowerCase().includes(query)) return false;
+        if (query && !`${item.modelKey} ${item.providerModelKey} ${modelGroupName(item.modelKey, item.displayName)} ${item.channelLabel || ""}`.toLowerCase().includes(query)) return false;
         if (capability !== "all" && item.capability !== capability) return false;
         if (status === "enabled" && !item.enabled) return false;
         if (status === "disabled" && item.enabled) return false;
@@ -587,7 +578,7 @@ export function ChannelModelManager({
                     columns,
                     dataSource: pagedItems,
                     pagination: false,
-                    scroll: { x: 1650 },
+                    scroll: { x: 968 },
                 }}
                 footer={
                     filteredItems.length > pageSize ? (
@@ -709,18 +700,44 @@ export function ChannelModelManager({
                     </div>
                 </div>
             </AdminModal>
-            {editorOpen && (
-                <ChannelModelEditor
+            {importTarget && (
+                <ChannelModelTransferDialog
                     channel={channel}
-                    existingModels={items}
-                    editing={editing}
-                    draftValues={copyDraft ?? undefined}
+                    target={importTarget}
+                    models={items}
                     protocols={availableProtocols}
                     protocolLoading={protocolLoading}
                     protocolError={protocolError}
                     onRetryProtocols={() => void loadProtocols()}
+                    onClose={() => setImportTarget(null)}
+                    onPrepare={(source, values) => {
+                        setCopiedFrom(source.modelKey);
+                        setEditing(importTarget);
+                        setImportTarget(null);
+                        setCopyDraft(values);
+                        setEditorOpen(true);
+                    }}
+                />
+            )}
+            {editorOpen && (
+                <ChannelModelEditor
+                    key={editing?.id ?? "new"}
+                    channel={channel}
+                    existingModels={items}
+                    editing={editing}
+                    draftValues={copyDraft ?? undefined}
+                    copiedFrom={copiedFrom}
+                    protocols={availableProtocols}
+                    protocolLoading={protocolLoading}
+                    protocolError={protocolError}
+                    onReuseForExisting={(target, values) => {
+                        setEditing(target);
+                        setCopyDraft(values);
+                    }}
+                    onRetryProtocols={() => void loadProtocols()}
                     onClose={() => {
                         setEditorOpen(false);
+                        setCopiedFrom(undefined);
                         setCopyDraft(null);
                         setEditing(null);
                     }}
