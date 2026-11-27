@@ -198,7 +198,7 @@ test("text-free ordinary detail design expresses the evidence without inviting l
         .join("\n");
 
     expect(copyInstructions(compiled)).toMatch(forbidsCopy);
-    expect(guidance).toContain("用尺度、光影与疏密");
+    for (const aspect of ["尺度", "光影", "疏密", "证据"]) expect(guidance).toContain(aspect);
     expect(guidance).not.toMatch(/艺术字|图文关系|文字作用|字阶/);
     expect(compiled.layoutGuide).toBeUndefined();
 });
@@ -240,6 +240,7 @@ test("a reordered detail set sends the actual delivery position and distinct pur
         { scope: "detail" },
     ).plan;
     const orderedScreens = [screens[3], screens[0], screens[2], screens[5]];
+    const focalDetails = [["框沿", "眉线"], ["方框外沿"], ["鼻托的接触面"], ["外侧装饰", "框沿连接"]];
     const prompts = delivery(product);
 
     expect(prompts).toHaveLength(4);
@@ -250,7 +251,8 @@ test("a reordered detail set sends the actual delivery position and distinct pur
         expect(compiled.layers.find((layer) => layer.id === "planning-brief")?.text).not.toContain("屏型：");
         expect(compiled.prompt).toContain(orderedScreens[index].purchaseQuestion);
         expect(compiled.prompt).toContain(orderedScreens[index].displayContent);
-        expect(compiled.prompt).toContain(orderedScreens[index].visualFocus);
+        const visual = compiled.layers.find(({ id }) => id === "visual")!.text;
+        for (const detail of focalDetails[index]) expect(visual).toContain(detail);
         expect(compiled.references.map(({ resourceId }) => resourceId)).toEqual(["glasses-front"]);
         expect(copyInstructions(compiled)).toMatch(requiresCopy);
         expect(compiled.prompt).not.toContain("【整页衔接】");
@@ -278,7 +280,8 @@ test("relative product proportions do not invite invented measurements or a seco
     ).plan;
     const [, compiled] = delivery(product);
     expect(compiled.prompt).toContain("第 2/2 屏");
-    expect(compiled.prompt).toContain("出风口与机身的相对大小");
+    expect(compiled.prompt).toContain("端面与机身的相对大小");
+    expect(compiled.prompt).not.toContain("出风口");
     expect(compiled.prompt).toMatch(/所有新增文字[^。]*尺寸标注[^。]*只用简体中文/);
     expect(compiled.prompt).toMatch(/不混用其他语言[^。]*不沿用参考图或旧稿的外语/);
     expect(compiled.prompt).toContain("商品原有标识和印字保留原文");
@@ -498,7 +501,10 @@ test("a missing final detail screen uses unused confirmed selection evidence ins
         summary: "弧背餐椅",
         invariants: [],
         questions: [],
-        facts: [{ id: "seat-height", group: "spec", label: "坐高", value: "45 厘米", evidence: "confirmed" }],
+        facts: [
+            { id: "inferred-depth", group: "spec", label: "坐面长度", value: "48 厘米", evidence: "inferred" },
+            { id: "seat-height", group: "spec", label: "坐高", value: "45 厘米", evidence: "confirmed" },
+        ],
     };
     const result = parseDetailPlan(JSON.stringify({ screens: [{ role: "detail-hero", purchaseQuestion: "这是什么椅子？", displayContent: "整把弧背餐椅" }] }), product, ["detail-hero", "detail-size", "detail-closing"], planMeta, { scope: "detail" });
     product.brief.detailPlan = result.plan;
@@ -506,7 +512,8 @@ test("a missing final detail screen uses unused confirmed selection evidence ins
     const compiled = delivery(product)[1];
     expect(compiled.prompt).toContain("第 2/2 屏");
     expect(compiled.prompt).toContain("坐高 45 厘米");
-    expect(compiled.prompt).toContain("已确认的数值和单位照实写");
+    expect(compiled.prompt).not.toContain("48 厘米");
+    expect(copyInstructions(compiled)).toContain("已确认的数值和单位照实写");
     expect(compiled.layoutGuide).toBeUndefined();
 });
 

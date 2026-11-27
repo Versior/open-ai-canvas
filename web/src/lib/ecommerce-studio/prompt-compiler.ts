@@ -692,6 +692,8 @@ type StudioCopyPolicy = "none" | "locked" | "required" | "optional";
 function copyLayer(shot: StudioShot, brief: StudioBrief, policy: StudioCopyPolicy, platformRole: EcommerceImageRole, layoutLocked: boolean, food: boolean, nativeDetail: boolean, observationOnly: boolean): StudioPromptLayer {
     if (policy === "none") return { id: "copy", title: "无字成品", source: "出图设置与平台规范", text: "画面中不添加任何文字，只保留商品自带的标识和印字。构图不预留空的文字区。" };
     const language = studioLanguage(brief.language).name;
+    const languageRule = `所有新增文字（含尺寸标注、装饰字）只用${language}，不混用其他语言，不沿用参考图或旧稿的外语。商品原有标识和印字保留原文。${policy === "locked" ? "卖家锁定文案保留原文。" : ""}`;
+    const measuredCopy = "已确认的数值和单位照实写；没有已确认的数值，不从照片估算尺寸或百分比。";
     if (nativeDetail && policy === "required") {
         return {
             id: "copy",
@@ -700,7 +702,9 @@ function copyLayer(shot: StudioShot, brief: StudioBrief, policy: StudioCopyPolic
             text: [
                 `必须由图片模型看商品原图，依据本屏问题和真实证据，把清楚可读的${language}短文案实际画进图里，一次完成最终设计（排版、艺术字与特效）。`,
                 observationOnly ? "这是一张外观观察图。用你自己的话写一句能直接指给买家看的形态、纹理或连接关系，这就是完整答案；不再接一句它有什么好处。光影沿实物表面揭示结构，轮廓和字形承担装饰，不把光线画成从部件喷出的运动轨迹。" : "",
-                `独立于商品印字的短文案，由你用本屏部位或动作写出答案，不照抄问句。同一信息只表达一次，注释只补画面或标题没说明的事。字形与摄影共同构图，不是素材照加一行浮字。所有新增文字（含尺寸标注与装饰字）只用${language}，保留实物原印字。`,
+                "独立于商品印字的短文案，用本屏部位或动作写出答案，不照抄问句。同一信息只表达一次，注释不复述标题。字形与摄影共同构图，不是素材照加一行浮字。",
+                languageRule,
+                measuredCopy,
                 shot.role === "detail-hero" ? "让人在手机小图里就能读出这是什么、哪点让它可辨认。品类名和最有辨识度的实物特征就是文案素材；像‘一眼心动’这种能贴到别的商品上的话不算答案。不另配感想式副标题。" : "",
                 food ? "实拍能证明形态，不能证明鲜度、口感或已经处理。" : "可见特征不等于功能或效果。文案说出画中能指认的特征或动作；仅展示用法不代表更快、更省力。除非卖家确认，不写速度、耗时、档位或效果。",
             ]
@@ -709,7 +713,6 @@ function copyLayer(shot: StudioShot, brief: StudioBrief, policy: StudioCopyPolic
         };
     }
     const automatic = policy === "required";
-    const languageRule = `所有新增文字（含尺寸标注、装饰字）只用${language}，不混用其他语言，不沿用参考图或旧稿的外语。商品原有标识和印字保留原文。${policy === "locked" ? "卖家锁定文案保留原文。" : ""}`;
     const lockedLines = shot.lines.map((line) => line.trim()).filter(Boolean);
     const text =
         policy === "locked"
@@ -733,6 +736,7 @@ function copyLayer(shot: StudioShot, brief: StudioBrief, policy: StudioCopyPolic
         source: policy === "locked" ? "用户锁定文案" : "本屏展示内容与商品依据",
         text: [
             ...(automatic ? [...text, languageRule] : [languageRule, ...text]),
+            measuredCopy,
             food ? "实拍可证明形态和纹理，不能证明鲜度、口感、产地或已经处理。卖家没确认时只写可见信息。" : "",
             "文案限于可见事实、基本用法及卖家确认的信息。可见特征不等于功能或效果：展示动作不代表快速或省力，展示放置不代表省空间。数值、档位、刻度与配件只取确认资料。",
             layoutLocked ? "按卖家指定的图文关系完成字形、分行和特效，手机可读。" : automatic ? "" : "文字、构图和特效由图片模型按本屏证据决定，手机可读。",

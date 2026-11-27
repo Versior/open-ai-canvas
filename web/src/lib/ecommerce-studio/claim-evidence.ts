@@ -255,7 +255,7 @@ function workingDirectionPort(clause: string) {
 function neutralPortDescription(clause: string, sources: StudioClaimSource[]) {
     const unsupported = [...new Set([...clause.matchAll(flowPort)].map(([term]) => term))].filter((term) => !flowPortSource(normalize(clause), term, sources));
     if (!unsupported.length) return clause;
-    if (!/(?:格栅|环圈|网孔|圆环|形状|轮廓|配色|颜色|开口|外沿|圆形|侧面|正面|特写)/u.test(clause) || /(?:对[着准]|正对|朝向|吹向|作用于|送往|流向|对位)/u.test(clause)) return "";
+    if (!/(?:格栅|环圈|网孔|圆环|形状|轮廓|配色|颜色|开口|外沿|圆形|侧面|正面|特写|相对大小|大小关系|比例关系)/u.test(clause) || /(?:对[着准]|正对|朝向|吹向|作用于|送往|流向|对位)/u.test(clause)) return "";
     return unsupported.reduce((text, term) => text.replaceAll(term, term.includes("风") ? "端面" : "开口"), clause);
 }
 const guard = (word: string) => (/至少|不少于|不低于|≥/.test(word) ? "≥" : /不超过|至多|最多|≤/.test(word) ? "≤" : /约/.test(word) ? "约" : word);

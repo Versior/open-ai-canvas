@@ -23,6 +23,7 @@ func TestEcommerceArtworkTaskReachesOpenAIImageEdit(t *testing.T) {
 	allowLoopbackProviderTest(t)
 	const owner, channelID, modelKey = "user", "commerce-image-channel", "gpt-image-2"
 	const detail = `生成淘宝 / 天猫的手机端商品详情页成品。第 2/6 屏，回答镜腿连接处是什么样。先识别商品原图，展示可见铰链和镜腿的连接，证据为商品原图中的金属连接件。必须在成品中创作日文短文案，图文关系与排版由图片模型决定。`
+	const layoutGuidance = "沿商品可见的轮廓安排文字的节奏。"
 	for _, test := range []struct{ name, kind, role, prompt string }{
 		{"studio/detail", "detail", "detail-closeup", detail},
 		{"studio/main", "main", "main-selling", "淘宝 / 天猫搜索列表主图，从商品图识别透明眼镜，让小缩略图里的镜框轮廓能认清。用日文写一个短信息，文字与布局由图片模型完成。"},
@@ -63,6 +64,9 @@ func TestEcommerceArtworkTaskReachesOpenAIImageEdit(t *testing.T) {
 			var task *model.Task
 			if test.kind != "" {
 				if _, err := svc.EnsureBuiltinEcommerceKnowledge(); err != nil {
+					t.Fatal(err)
+				}
+				if err := db.Model(&model.EcommerceKnowledgeEntry{}).Where("id = ?", kb20LayoutID).Update("content_json", `{"guidance":"`+layoutGuidance+`"}`).Error; err != nil {
 					t.Fatal(err)
 				}
 				setting := defaultEcommerceSetting()
@@ -110,7 +114,7 @@ func TestEcommerceArtworkTaskReachesOpenAIImageEdit(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if stored.Prompt != prompt || strings.Contains(stored.InputJSON, "设计参考方法") {
+			if stored.Prompt != prompt || strings.Contains(stored.InputJSON, "设计参考方法") || strings.Contains(stored.InputJSON, layoutGuidance) {
 				t.Fatal("worker design knowledge must not be saved as task input")
 			}
 			result, _, err := svc.processTask(context.Background(), *stored)
@@ -124,7 +128,7 @@ func TestEcommerceArtworkTaskReachesOpenAIImageEdit(t *testing.T) {
 			case sent := <-requests:
 				if test.kind != "" {
 					const heading = "【设计参考方法，不是商品事实】"
-					if !strings.HasPrefix(sent.prompt, prompt+"\n\n"+heading) || strings.Count(sent.prompt, heading) != 1 || !strings.Contains(sent.prompt, "网格由内容产生，文字与摄影共同构图") {
+					if !strings.HasPrefix(sent.prompt, prompt+"\n\n"+heading) || strings.Count(sent.prompt, heading) != 1 || strings.Count(sent.prompt, layoutGuidance) != 1 {
 						t.Errorf("edit must receive the seller's brief followed by design guidance once: %q", sent.prompt)
 					}
 					if strings.Contains(sent.prompt, "固定左图右文") || strings.Contains(sent.prompt, "简体中文") {
