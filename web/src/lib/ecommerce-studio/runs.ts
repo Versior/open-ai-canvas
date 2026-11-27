@@ -73,6 +73,7 @@ export type StudioSetEntry = {
     purchaseQuestion?: string;
     displayContent?: string;
     visualBeat?: string;
+    transitionOut?: string;
     visualFocus?: string;
     imagePrompt?: string;
     negativePrompt?: string;
@@ -162,6 +163,7 @@ function planEntries(product: StudioProduct, plan: StudioDetailPlan): Omit<Studi
         ...(screen.purchaseQuestion ? { purchaseQuestion: screen.purchaseQuestion } : {}),
         ...(screen.displayContent ? { displayContent: screen.displayContent } : {}),
         ...(screen.visualBeat ? { visualBeat: screen.visualBeat } : {}),
+        ...(screen.transitionOut ? { transitionOut: screen.transitionOut } : {}),
         ...(screen.visualFocus ? { visualFocus: screen.visualFocus } : {}),
         ...(screen.imagePrompt ? { imagePrompt: screen.imagePrompt } : {}),
         ...(screen.negativePrompt ? { negativePrompt: screen.negativePrompt } : {}),
@@ -231,6 +233,10 @@ export function studioEntryRatio(entry: Pick<StudioSetEntry, "role" | "ratio">, 
     return entry.ratio && product.brief.ratio === "auto" && !product.brief.sameLayout ? entry.ratio : studioRunRatio(entry.role, product);
 }
 
+export function studioEntryTransition(entry: StudioSetEntry, next?: StudioSetEntry) {
+    return entry.planIndex !== undefined && next?.planIndex === entry.planIndex + 1 ? entry.transitionOut : undefined;
+}
+
 const EMPTY_COPY = { headline: "", subline: "", lines: [] as string[], sellingPointIds: [] as string[] };
 
 /** 清单里的一张变成出图记录里的一张：策划文案是可选素材，最终文案与排版交给图片模型。 */
@@ -261,6 +267,8 @@ function entryShot(entry: StudioSetEntry, product: StudioProduct, plan: StudioDe
                   ...(!ordinaryDetail && plannedScreen?.imagePrompt ? { imagePrompt: plannedScreen.imagePrompt } : {}),
                   ...(!ordinaryDetail && plannedScreen?.negativePrompt ? { negativePrompt: plannedScreen.negativePrompt } : {}),
                   evidenceRefs: [...(plannedScreen?.evidenceRefs || [])],
+                  ...(ordinaryDetail && plannedScreen?.detailSource ? { detailSource: plannedScreen.detailSource } : {}),
+                  ...(ordinaryDetail && plannedScreen?.styleReferenceResourceId ? { styleReferenceResourceId: plannedScreen.styleReferenceResourceId } : {}),
                   ...(entry.layout ? { layout: entry.layout } : {}),
                   ...(entry.composition ? { composition: entry.composition } : {}),
                   ...(entry.eyebrow && !entry.noText && !textless ? { eyebrow: entry.eyebrow } : {}),
@@ -320,7 +328,12 @@ export function createStudioRun(product: StudioProduct, createId: StudioIdFactor
             ...base,
             kind,
             ...(suite ? { suite } : {}),
-            shots: entries.map((entry, index) => ({ ...entryShot(entry, product, plan, createId, kind, index + 1), screenIndex: index + 1, screenCount: entries.length })),
+            shots: entries.map((entry, index) => ({
+                ...entryShot(entry, product, plan, createId, kind, index + 1),
+                screenIndex: index + 1,
+                screenCount: entries.length,
+                ...(brief.outputType === "detail-set" ? { transitionOut: studioEntryTransition(entry, entries[index + 1]) } : {}),
+            })),
         };
     }
     const types = studioSingleTypes(brief);
@@ -401,7 +414,8 @@ export function patchStudioRunShot(product: StudioProduct, runId: string, shotId
 }
 
 /** 同款版式只取第一张参考图；风格参考可以多张，受模型参考图上限约束。 */
-export function studioStyleReferences(product: Pick<StudioProduct, "references" | "brief">, limit: number): StudioPhoto[] {
+export function studioStyleReferences(product: Pick<StudioProduct, "references" | "brief">, limit: number, selectedResourceId?: string): StudioPhoto[] {
     if (limit <= 0) return [];
+    if (!product.brief.sameLayout && selectedResourceId) return product.references.filter((photo) => !photo.truth && photo.resourceId === selectedResourceId).slice(0, 1);
     return product.references.slice(0, product.brief.sameLayout ? 1 : limit);
 }

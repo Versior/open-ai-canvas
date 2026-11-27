@@ -13,6 +13,8 @@ const PLANNER_COPY_OR_LAYOUT =
 const EMBEDDED_COPY_DIRECTIVE = /(?:短文案|最终文案|图内文案|主标题|副标题|标语)\s*[：:]/i;
 const REVIEW_NOTE = /^(?:(?:图中|照片中|画面中|实拍中|原图中)?(?:没有拍到|未见|没(?:有)?看(?:到|清)|尚未(?:确认|核实)|未(?:确认|核实|提供)|待(?:核实|确认))|(?:核对|核实|核验|复核)备注|(?:图中|照片中|画面中)?到手(?:清单)?\s*[:：])/;
 const REVIEW_OBSERVATION = /(?:没有拍到|未见|没(?:有)?看(?:到|清)|尚未(?:确认|核实)|未(?:确认|核实|提供|出现)|待(?:核实|确认)|图中到手|到手清单)/;
+const UNCERTAIN_STRUCTURE = /(?:未拍清|不可见|看不清|无法看清|看不到)[^，,。；;]{0,18}(?:关节|铰链|转轴|接缝|插头|样式|刻度|标注)|(?:关节|铰链|转轴|接缝|插头|样式|刻度|标注)[^，,。；;]{0,12}(?:不(?:清楚|可见)|无法(?:读取|确认))/u;
+const SOURCE_PHOTO_NOTE = /^(?:原图|照片|实拍|画面)(?:中|里|上)?\s*(?:没有(?:任何)?|不含|无)(?:包装|标签|文字|文案|标注)|^(?:与|区别于|不同于|相比|而非|而不是)\s*(?:首屏|上一屏|前一屏|上一张)的/u;
 const CONTENT_CLAUSES = /(?:「[^」\r\n]*」|『[^』\r\n]*』|“[^”\r\n]*”|‘[^’\r\n]*’|"[^"\r\n]*"|[^，,。；;！!？?\r\n])+[，,。；;！!？?]?/gu;
 
 /**
@@ -57,7 +59,7 @@ export function commerceImageBriefContent(value: string | undefined, contentOnly
             if (!part) return false;
             if (!contentOnly) return true;
             const instruction = part.replace(/「[^」]*」|『[^』]*』|“[^”]*”|‘[^’]*’|"[^"]*"/gu, "「原文」");
-            return !REVIEW_OBSERVATION.test(instruction) && !DETAIL_PHOTO_ONLY.test(instruction) && !REVIEW_NOTE.test(instruction);
+            return !UNCERTAIN_STRUCTURE.test(instruction) && !REVIEW_OBSERVATION.test(instruction) && !DETAIL_PHOTO_ONLY.test(instruction) && !REVIEW_NOTE.test(instruction) && !SOURCE_PHOTO_NOTE.test(instruction);
         });
     if (content.length === parts.length) return text;
     return content
@@ -65,4 +67,13 @@ export function commerceImageBriefContent(value: string | undefined, contentOnly
         .filter(Boolean)
         .join("\n")
         .replace(/[，,；;]$/, "");
+}
+
+export function commerceVisibleObservation(value: string) {
+    const parts = value.match(CONTENT_CLAUSES) || [];
+    const kept = parts.filter((part) => {
+        const observable = part.replace(/「[^」]*」|『[^』]*』|“[^”]*”|‘[^’]*’|"[^"]*"/gu, "「原文」");
+        return !UNCERTAIN_STRUCTURE.test(observable) && !REVIEW_OBSERVATION.test(observable) && !SOURCE_PHOTO_NOTE.test(observable);
+    });
+    return kept.length === parts.length ? value : kept.join("").replace(/[\s，,；;]+$/, "");
 }

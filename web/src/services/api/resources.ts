@@ -633,9 +633,10 @@ export function playbackVariantUrl(id: string) {
     return `${base}/resources/${encodeURIComponent(id)}/file?variant=playback`;
 }
 
-export async function getResourceBlob(storageKey: string, purpose: ResourceAccessPurpose = "browser-process") {
+export async function getResourceBlob(storageKey: string, purpose: ResourceAccessPurpose = "browser-process", signal?: AbortSignal) {
     const id = resourceIdFromStorageKey(storageKey);
     if (!id) return null;
+    signal?.throwIfAborted();
     const access = await getResourceAccess(storageKey, purpose);
     // CDN/origin URLs carry their own authorization and must not receive the
     // application session cookie. Local/proxy delivery is intentionally
@@ -643,7 +644,8 @@ export async function getResourceBlob(storageKey: string, purpose: ResourceAcces
     // relative to the platform origin.
     const credentials = access.delivery === "platform-local" || access.delivery === "platform-proxy" ? "include" : "omit";
     // 同一签名地址可能已被 <img> 缓存为无 CORS 头的响应，读取原图时跳过 HTTP 缓存。
-    const response = await fetch(resolveResourceAccessURL(access.url), { credentials, mode: "cors", cache: "no-store", signal: AbortSignal.timeout(60_000) });
+    const timeout = AbortSignal.timeout(60_000);
+    const response = await fetch(resolveResourceAccessURL(access.url), { credentials, mode: "cors", cache: "no-store", signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
     if (!response.ok) throw new Error(`资源读取失败（${response.status}）`);
     return response.blob();
 }

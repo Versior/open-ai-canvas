@@ -1,7 +1,7 @@
 import { App, Button, Dropdown, Spin, Tooltip } from "antd";
 import { saveAs } from "file-saver";
-import { CircleStop, Download, Ellipsis, ImageOff, ImagePlus, Maximize2, RefreshCw, Rows3, Trash2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { CircleStop, Download, Ellipsis, ImageOff, ImagePlus, LocateFixed, Maximize2, RefreshCw, Rows3, Trash2 } from "lucide-react";
+import { Fragment, useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router";
 import { assertCurrentUserSession, captureUserSession, getActiveUserScope } from "@/lib/user-scope";
 import { workspacePath } from "@/lib/workspace-routes";
@@ -11,8 +11,8 @@ import { ImageGenerationPack } from "@/components/image-pack/image-generation-pa
 import { ImagePackProgress } from "@/components/image-pack/image-pack-progress";
 import { ecommercePlatform } from "@/lib/ecommerce/ecommerce-platform-specs";
 import { studioDisplayName } from "@/lib/ecommerce-studio/brief";
-import { studioImageSetupBlock } from "@/lib/ecommerce-studio/generation-input";
-import { studioAttemptActive, studioAttemptNeedsReview, studioPlanOf, studioShotApproved, studioShotLatestAttempt, studioShotOutputs, studioShotPreview } from "@/lib/ecommerce-studio/product";
+import { studioImageSetupBlock, type StudioImageEdit } from "@/lib/ecommerce-studio/generation-input";
+import { studioAttemptActive, studioAttemptForOutput, studioAttemptNeedsReview, studioPlanOf, studioShotApproved, studioShotLatestAttempt, studioShotOutputs, studioShotPreview } from "@/lib/ecommerce-studio/product";
 import { studioRunTitle } from "@/lib/ecommerce-studio/runs";
 import { studioGroupProgress, studioShotDisplay } from "@/lib/ecommerce-studio/task-display";
 import { STUDIO_PLAN_META } from "@/lib/ecommerce-studio/shot-specs";
@@ -24,7 +24,9 @@ import { downloadBrowserMedia } from "@/services/browser-download";
 import { resourceStorageKey } from "@/services/api/resources";
 import { queryGenerationTask, recoverGenerationTaskMedia, subscribeGenerationTasks, type GenerationTask } from "@/services/api/task-center";
 import { useEffectiveConfig } from "@/stores/use-config-store";
-import { bindStudioLongImage, composeStudioShots, downloadStudioComposed, exportStudioZip, releaseComposed, studioOutputNeedsLegacyTypeset, type StudioArchiveKind } from "./studio-delivery";
+import { bindStudioLongImage, composeStudioShots, downloadStudioComposed, exportStudioNativeDetail, exportStudioZip, releaseComposed, studioOutputNeedsLegacyTypeset, type StudioArchiveKind } from "./studio-delivery";
+import { prepareStudioDetailAssembly, type StudioDetailJoin } from "./studio-detail-assembly";
+import { inspectStudioFinishedDuplicates, type StudioFinishedDuplicate } from "./studio-finished-duplicates";
 import { inspectStudioDelivery } from "./studio-delivery-review";
 import type { StudioDeliveryReview } from "@/lib/ecommerce-studio/delivery-review";
 import { ratioStyle, studioImageUrl } from "./studio-parts";
@@ -33,6 +35,7 @@ import { useStudioStore } from "./use-studio-store";
 import "./studio-delivery.css";
 
 type Edit = (updater: (product: StudioProduct) => StudioProduct, options?: { immediate?: boolean }) => void;
+type StudioResultExport = StudioArchiveKind | "long" | "review" | "native-detail";
 
 /** 结果区里的一组图：表单生成的记录或助手排的方案，界面上按同一种卡片展示。 */
 export type StudioShotGroup = {
@@ -93,6 +96,15 @@ export function studioDetailResultTitle(group: StudioShotGroup, shot: StudioShot
 function downloadName(product: StudioProduct, shot: StudioShot, index: number) {
     const stem = `${studioDisplayName(product)}-${shot.title || "商品图"}`.replace(/[\\/:*?"<>|]+/g, "_").slice(0, 60);
     return `${stem}${index ? `-${index}` : ""}.png`;
+}
+
+function singleDetailExportSource(group: StudioShotGroup) {
+    if (group.kind || group.source?.brief.sameLayout || group.shots.length !== 1) return undefined;
+    const shot = group.shots[0];
+    const outputs = studioShotOutputs(shot);
+    const adopted = shot.adopted?.resourceId;
+    const selected = adopted ? outputs.find((output) => output.resourceId === adopted) : outputs.length === 1 ? studioShotPreview(shot) : undefined;
+    return selected && !studioOutputNeedsLegacyTypeset(group, shot, selected) ? selected : undefined;
 }
 
 async function downloadOutputs(items: { output: StudioOutput; fileName: string }[]) {
@@ -156,6 +168,286 @@ function StudioResultArtwork({ product, group, shot, output, full = false, title
     );
 }
 
+function studioJoinLabel(afterScreen: number, join?: StudioDetailJoin) {
+    const status = !join ? "未检查" : join.status === "unmatched" ? "未检出像素衔接" : join.status === "compatible" ? "仅背景色接近" : join.removedRows ? "重叠区域已匹配" : "接边结构吻合";
+    return `${afterScreen}→${afterScreen + 1} 屏 · ${status}`;
+}
+
+type StudioSeamRepair = (shot: StudioShot, output: StudioOutput, intent: "new" | "resume") => void;
+
+function StudioSeamAction({
+    group,
+    index,
+    tasks,
+    blocked,
+    acting,
+    onRepair,
+    onPreview,
+}: {
+    group: StudioShotGroup;
+    index: number;
+    tasks: Record<string, GenerationTask>;
+    blocked: string;
+    acting: string[];
+    onRepair: StudioSeamRepair;
+    onPreview: (output: StudioOutput) => void;
+}) {
+    const shot = group.shots[index];
+    const output = studioShotPreview(shot)!;
+    const previous = studioShotPreview(group.shots[index - 1]);
+    const attempt = studioShotLatestAttempt(shot);
+    const continuity = attempt?.input?.compiled.continuity;
+    const matchingRepair = continuity?.repair && continuity.anchor?.sourceResourceId === previous?.resourceId && attempt?.revisionResourceId === output.resourceId ? attempt : undefined;
+    const repaired = matchingRepair?.status === "succeeded" ? matchingRepair.outputs[0] : undefined;
+    const display = matchingRepair && studioShotDisplay(shot, tasks[matchingRepair.taskId || ""]);
+    const inFlight = Boolean(attempt && studioAttemptActive(attempt));
+    const needsReview = Boolean(matchingRepair && studioAttemptNeedsReview(matchingRepair)) || display?.state === "review";
+    const resume = display?.state === "recover" || Boolean(inFlight && matchingRepair?.error);
+    return (
+        <>
+            {repaired ? (
+                <Button size="small" onClick={() => onPreview(repaired)}>
+                    预览候选
+                </Button>
+            ) : needsReview ? (
+                <Link to={workspacePath("/tasks")}>到任务中心核对</Link>
+            ) : group.plannedDetail && !studioOutputNeedsLegacyTypeset(group, shot, output) ? (
+                <Tooltip title={resume ? undefined : blocked || "调用所选图片模型生成一张候选，不替换原图"}>
+                    <Button size="small" loading={acting.includes(shot.id) || Boolean(inFlight && matchingRepair && !resume)} disabled={!resume && (Boolean(blocked) || inFlight)} onClick={() => onRepair(shot, output, resume ? "resume" : "new")}>
+                        {display?.state === "recover" ? "继续保存" : resume ? "重新查询" : `精修第 ${index + 1} 屏`}
+                    </Button>
+                </Tooltip>
+            ) : null}
+            {matchingRepair?.error && (
+                <span className="es-delivery-join-error" role="status">
+                    {matchingRepair.error}
+                </span>
+            )}
+        </>
+    );
+}
+
+function StudioDetailReading({
+    product,
+    group,
+    tasks,
+    blocked,
+    acting,
+    onRepair,
+    onAdopt,
+}: {
+    product: StudioProduct;
+    group: StudioShotGroup;
+    tasks: Record<string, GenerationTask>;
+    blocked: string;
+    acting: string[];
+    onRepair: StudioSeamRepair;
+    onAdopt: (shot: StudioShot, output: StudioOutput) => void;
+}) {
+    const [comparison, setComparison] = useState<{ index: number; output: StudioOutput }>();
+    const [inspected, setInspected] = useState<number>();
+    const boundaryId = useId();
+    const boundaries = useRef(new Map<number, HTMLSpanElement>());
+    const [preview, setPreview] = useState<{ key: string; imageUrls: string[]; joins: StudioDetailJoin[] }>();
+    const [duplicateCheck, setDuplicateCheck] = useState<{ key: string; matches?: StudioFinishedDuplicate[]; failed?: true }>();
+    const [error, setError] = useState<{ key: string; message: string }>();
+    const previews = comparison ? group.shots.map((shot, index) => (index === comparison.index ? { ...shot, adopted: comparison.output } : shot)) : group.shots;
+    const key = JSON.stringify(previews.map((shot) => studioShotPreview(shot)?.resourceId));
+    const currentPreview = preview?.key === key ? preview : undefined;
+    const currentError = error?.key === key ? error.message : undefined;
+    useEffect(() => {
+        setPreview(undefined);
+        setError(undefined);
+        setDuplicateCheck(undefined);
+        const plan: StudioPlan = { id: group.key, kind: "detail", createdAt: group.createdAt, textMode: group.textMode, styleId: group.styleId, tone: group.tone, shots: previews };
+        const controller = new AbortController();
+        let original: Awaited<ReturnType<typeof composeStudioShots>> = [];
+        let assembled: Awaited<ReturnType<typeof prepareStudioDetailAssembly>> | undefined;
+        const read = async () => {
+            try {
+                original = await composeStudioShots(product, plan, controller.signal);
+                controller.signal.throwIfAborted();
+                assembled = await prepareStudioDetailAssembly(original, controller.signal, group.plannedDetail);
+                controller.signal.throwIfAborted();
+                setPreview({ key, imageUrls: assembled.imageUrls, joins: assembled.joins });
+                if (group.plannedDetail) {
+                    try {
+                        const matches = await inspectStudioFinishedDuplicates(original, controller.signal);
+                        if (!controller.signal.aborted) setDuplicateCheck({ key, matches });
+                    } catch {
+                        if (!controller.signal.aborted) setDuplicateCheck({ key, failed: true });
+                    }
+                }
+            } catch (error) {
+                if (!controller.signal.aborted) setError({ key, message: error instanceof Error ? error.message : "衔接检查失败" });
+            } finally {
+                if (controller.signal.aborted || !assembled) {
+                    assembled?.release();
+                    releaseComposed(original);
+                }
+            }
+        };
+        void read();
+        return () => {
+            controller.abort();
+            assembled?.release();
+            releaseComposed(original);
+        };
+    }, [key]);
+    const joins = currentPreview?.joins || [];
+    const duplicates = duplicateCheck?.key === key ? duplicateCheck : undefined;
+    const matches = duplicates?.matches || [];
+    const available = comparison ? joins.filter(({ afterScreen }) => afterScreen === comparison.index || afterScreen === comparison.index + 1) : joins;
+    const selected = available.find(({ afterScreen }) => afterScreen === inspected) || available.find(({ status }) => status === "unmatched") || available[0];
+    const locate = (index: number) => {
+        setInspected(index);
+        boundaries.current.get(index)?.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" });
+    };
+    useEffect(() => {
+        if (comparison && currentPreview) boundaries.current.get(comparison.index)?.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" });
+    }, [comparison, currentPreview]);
+    const comparisonStatus =
+        comparison &&
+        (currentPreview
+            ? [comparison.index, comparison.index + 1]
+                  .filter((index) => index < previews.length)
+                  .map((index) =>
+                      studioJoinLabel(
+                          index,
+                          joins.find(({ afterScreen }) => afterScreen === index),
+                      ),
+                  )
+                  .join("；")
+            : currentError
+              ? "未完成接边检查"
+              : "检查候选接边中…");
+    return (
+        <>
+            {currentError ? (
+                <p className="es-delivery-note" role="alert">
+                    衔接检查失败：{currentError}
+                </p>
+            ) : null}
+            {duplicates?.failed && (
+                <p className="es-delivery-note" role="status">
+                    未能完成成品查重
+                </p>
+            )}
+            {selected || comparison || matches.length ? (
+                <div className="es-delivery-joins" role="group" aria-label={comparison ? "候选接边" : "整页接边"}>
+                    {selected ? (
+                        <div className="es-delivery-join">
+                            <select aria-label="选择接边" value={selected.afterScreen} onChange={(event) => locate(Number(event.currentTarget.value))}>
+                                {available.map((join) => (
+                                    <option key={join.afterScreen} value={join.afterScreen}>
+                                        {studioJoinLabel(join.afterScreen, join)}
+                                    </option>
+                                ))}
+                            </select>
+                            <Button
+                                size="small"
+                                type="text"
+                                icon={<LocateFixed size={16} />}
+                                aria-label={`定位第 ${selected.afterScreen}→${selected.afterScreen + 1} 屏接边`}
+                                aria-controls={`${boundaryId}-${selected.afterScreen}`}
+                                onClick={() => locate(selected.afterScreen)}
+                            />
+                            {!comparison && selected.status === "unmatched" && (
+                                <StudioSeamAction
+                                    group={group}
+                                    index={selected.afterScreen}
+                                    tasks={tasks}
+                                    blocked={blocked}
+                                    acting={acting}
+                                    onRepair={onRepair}
+                                    onPreview={(output) => {
+                                        setInspected(selected.afterScreen);
+                                        setComparison({ index: selected.afterScreen, output });
+                                    }}
+                                />
+                            )}
+                        </div>
+                    ) : null}
+                    {comparison ? (
+                        <div className="es-delivery-join">
+                            <Button size="small" onClick={() => setComparison(undefined)}>
+                                返回原图
+                            </Button>
+                            <Button
+                                size="small"
+                                type="primary"
+                                disabled={!currentPreview}
+                                onClick={() => {
+                                    onAdopt(group.shots[comparison.index], comparison.output);
+                                    setComparison(undefined);
+                                }}
+                            >
+                                采用第 {comparison.index + 1} 屏候选
+                            </Button>
+                        </div>
+                    ) : null}
+                    {comparison && <p role="status">{comparisonStatus}</p>}
+                    {matches.length > 0 && (
+                        <details className="es-delivery-duplicates">
+                            <summary>成品重复提示 · {matches.length}</summary>
+                            {matches.map(({ first, second, kind }) => (
+                                <div key={second}>
+                                    <span>{kind === "identical" ? "相同成品" : "近乎同图"}</span>
+                                    {[first, second].map((index) => (
+                                        <Button
+                                            key={index}
+                                            size="small"
+                                            type="text"
+                                            aria-label={`定位第 ${index + 1} 屏成品`}
+                                            aria-controls={`${boundaryId}-art-${index}`}
+                                            onClick={(event) => {
+                                                const details = event.currentTarget.closest("details");
+                                                if (details) {
+                                                    details.open = false;
+                                                    details.querySelector("summary")?.focus({ preventScroll: true });
+                                                }
+                                                document.getElementById(`${boundaryId}-art-${index}`)?.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" });
+                                            }}
+                                        >
+                                            第 {index + 1} 屏
+                                        </Button>
+                                    ))}
+                                </div>
+                            ))}
+                        </details>
+                    )}
+                </div>
+            ) : null}
+            {previews.map((shot, index) => {
+                const output = studioShotPreview(shot)!;
+                const title = studioDetailResultTitle(group, shot, index) || shot.title;
+                const url = currentPreview?.imageUrls[index];
+                const removed = joins.find(({ afterScreen }) => afterScreen === index)?.removedRows || 0;
+                return (
+                    <Fragment key={shot.id}>
+                        {index > 0 && (
+                            <span
+                                id={`${boundaryId}-${index}`}
+                                className="es-delivery-boundary"
+                                aria-hidden="true"
+                                ref={(node) => {
+                                    if (node) boundaries.current.set(index, node);
+                                    else boundaries.current.delete(index);
+                                }}
+                            />
+                        )}
+                        {url ? (
+                            <img id={`${boundaryId}-art-${index}`} src={url} alt={title} loading="lazy" width={output.width} height={output.height ? output.height - removed : undefined} />
+                        ) : (
+                            <StudioResultArtwork product={product} group={group} shot={shot} output={output} title={title} full />
+                        )}
+                    </Fragment>
+                );
+            })}
+        </>
+    );
+}
+
 export function ResultTile({
     product,
     group,
@@ -192,7 +484,8 @@ export function ResultTile({
     const preview = studioShotPreview(shot);
     const active = Boolean(latest && studioAttemptActive(latest));
     const review = latest && studioAttemptNeedsReview(latest);
-    const display = studioShotDisplay(shot, task);
+    const display = studioShotDisplay(shot, task, group.shots[group.shots.indexOf(shot) - 1]);
+    const waiting = display.state === "waiting";
     const screenPurpose = showContext && !detailTitle ? shot.purchaseQuestion?.trim() : "";
     const syncAction = review ? (
         <Link to={workspacePath("/tasks")}>到任务中心核对</Link>
@@ -206,9 +499,9 @@ export function ResultTile({
     return (
         <figure className="es-tile-wrap" id={`studio-shot-${group.key}-${shot.id}`} data-shot-id={shot.id}>
             {/* 出好的图按实际宽高显示：模型给的比例和要求的不一样时也不裁掉。 */}
-            <div className="es-tile" style={ratioStyle(preview?.width && preview.height ? `${preview.width}:${preview.height}` : shot.ratio)} data-state={preview ? "done" : active ? "active" : failed ? "failed" : "idle"}>
+            <div className="es-tile" style={ratioStyle(preview?.width && preview.height ? `${preview.width}:${preview.height}` : shot.ratio)} data-state={preview ? "done" : active && !waiting ? "active" : failed ? "failed" : "idle"}>
                 <ImageGenerationPack
-                    pending={active && !review}
+                    pending={active && !review && !waiting}
                     disabled={group.shots.length > 1}
                     succeeded={studioShotApproved(shot) && status === "succeeded" && Boolean(latest?.outputs.some((output) => output.resourceId === preview?.resourceId))}
                     label={<ImagePackProgress task={task || { status: status === "queued" ? "queued" : "running", createdAt: latest?.createdAt }} phase={status === "submitting" ? "submitting" : undefined} />}
@@ -221,7 +514,11 @@ export function ResultTile({
                     ) : null}
                     {!preview && active ? (
                         <div className="es-tile-state">
-                            {review ? <span>回执待核对</span> : <ImagePackProgress task={task || { status: status === "queued" ? "queued" : "running", createdAt: latest?.createdAt }} phase={status === "submitting" ? "submitting" : undefined} />}
+                            {review || waiting ? (
+                                <span>{waiting ? display.label : "回执待核对"}</span>
+                            ) : (
+                                <ImagePackProgress task={task || { status: status === "queued" ? "queued" : "running", createdAt: latest?.createdAt }} phase={status === "submitting" ? "submitting" : undefined} />
+                            )}
                             {latest?.error && (
                                 <span className="es-tile-error" role="status">
                                     {latest.error}
@@ -326,7 +623,7 @@ function GroupCard({
     const { message, modal } = App.useApp();
     const blocked = studioImageSetupBlock(product, imageModel);
     const config = useEffectiveConfig();
-    const [exporting, setExporting] = useState<StudioArchiveKind | "long" | "review">();
+    const [exporting, setExporting] = useState<StudioResultExport>();
     const [reading, setReading] = useState(false);
     const [acting, setActing] = useState<string[]>([]);
     const [observation, setObservation] = useState(0);
@@ -356,6 +653,7 @@ function GroupCard({
     const progress = studioGroupProgress(shots, tasks);
     const done = shots.filter((shot) => studioShotPreview(shot)).length;
     const complete = done > 0 && done === shots.length;
+    const needsJoinCheck = complete && group.kind === "detail" && (group.plannedDetail || shots.some((shot) => Boolean(studioAttemptForOutput(shot, studioShotPreview(shot)!.resourceId)?.input?.compiled.continuity?.anchor)));
     const active = progress.active;
     const failed = shots.filter((shot) => {
         const latest = studioShotLatestAttempt(shot);
@@ -366,9 +664,9 @@ function GroupCard({
     const model = [...shots.flatMap((shot) => shot.attempts)].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]?.model;
     const platform = ecommercePlatform(product.platform)?.name;
     const isSet = Boolean(group.kind);
+    const nativeDetail = progress.done === 1 ? singleDetailExportSource(group) : undefined;
 
-    const rerun = async (shotIds: string[], intent: "new" | "resume" = "resume") => {
-        if (blocked) return void message.warning(blocked);
+    const rerun = async (shotIds: string[], intent: "new" | "resume" = "resume", imageEdit?: StudioImageEdit) => {
         if (acting.length) return;
         setActing(shotIds);
         try {
@@ -376,6 +674,7 @@ function GroupCard({
             const regenerate: string[] = [];
             let recovered = 0;
             let checked = 0;
+            let reconnect = false;
             for (const shot of shots.filter((item) => shotIds.includes(item.id))) {
                 const attempt = studioShotLatestAttempt(shot);
                 const task = attempt?.taskId ? await queryGenerationTask(attempt.taskId, { signal: session.signal }) : undefined;
@@ -383,6 +682,10 @@ function GroupCard({
                 const display = studioShotDisplay(shot, task);
                 if (display.state === "review" || (attempt && studioAttemptNeedsReview(attempt))) {
                     checked += 1;
+                    continue;
+                }
+                if (attempt && !attempt.taskId && studioAttemptActive(attempt)) {
+                    reconnect ||= intent === "resume" && Boolean(attempt.error);
                     continue;
                 }
                 if (task && (task.status === "queued" || task.status === "running" || (task.status === "succeeded" && intent === "resume") || (task.status === "failed" && task.canRecoverMedia))) {
@@ -397,12 +700,18 @@ function GroupCard({
                             })),
                         { immediate: true },
                     );
-                    const current = useStudioStore.getState().products.find((item) => item.id === product.id);
-                    if (current) runner.resume(current);
+                    reconnect = true;
                     recovered += 1;
                 } else regenerate.push(shot.id);
             }
-            if (regenerate.length) await runner.rerun(product.id, group.ref, regenerate, imageModel);
+            if (reconnect) {
+                const current = useStudioStore.getState().products.find((item) => item.id === product.id);
+                if (current) runner.resume(current);
+            }
+            if (regenerate.length) {
+                if (blocked) message.warning(blocked);
+                else await runner.rerun(product.id, group.ref, regenerate, imageModel, imageEdit);
+            }
             if (recovered) setObservation((value) => value + 1);
             if (recovered) message.success(`已接回 ${recovered} 个原任务，不会重新生成`);
             if (checked) message.warning("有原任务费用待核对，未重复提交");
@@ -413,7 +722,8 @@ function GroupCard({
         }
     };
 
-    const exportSet = async (mode: StudioArchiveKind | "long" | "review") => {
+    const exportSet = async (mode: StudioResultExport) => {
+        if (exportController.current) return;
         const plan: StudioPlan = { id: group.key, kind: group.kind || "main", createdAt: group.createdAt, textMode: group.textMode, shots, styleId: group.styleId, tone: group.tone };
         setExporting(mode);
         const controller = new AbortController();
@@ -423,19 +733,27 @@ function GroupCard({
         };
         let composed: Awaited<ReturnType<typeof composeStudioShots>> = [];
         try {
+            const stem = studioDisplayName(product).replace(/[\\/:*?"<>|]+/g, "_");
+            if (mode === "native-detail") {
+                if (!nativeDetail) throw new Error("请选择一张已完成的原图");
+                const archive = await exportStudioNativeDetail(product, nativeDetail, controller.signal);
+                assertCurrent();
+                saveAs(archive, `${stem}-详情长图.zip`);
+                return;
+            }
             composed = await composeStudioShots(product, plan, controller.signal);
             if (!composed.length) throw new Error("这一组还没有出好的图");
-            const checked = await inspectStudioDelivery(product, shots, composed, group.kind ?? "single", controller.signal);
             assertCurrent();
-            setReviewResult({ signature, report: checked });
-            if (mode === "review") return;
-            const stem = studioDisplayName(product).replace(/[\\/:*?"<>|]+/g, "_");
             if (mode === "long") {
-                const longImage = await bindStudioLongImage(product, plan, composed);
+                const longImage = await bindStudioLongImage(product, plan, composed, controller.signal, group.plannedDetail);
                 assertCurrent();
-                saveAs(longImage.dataUrl, `${stem}-完整原长图.png`);
+                saveAs(longImage.blob, `${stem}-完整原长图.png`);
             } else {
-                const zip = await exportStudioZip(product, plan, composed, mode, checked);
+                const checked = await inspectStudioDelivery(product, shots, composed, group.kind ?? "single", controller.signal);
+                assertCurrent();
+                setReviewResult({ signature, report: checked });
+                if (mode === "review") return;
+                const zip = await exportStudioZip(product, plan, composed, mode, checked, controller.signal, group.plannedDetail);
                 assertCurrent();
                 const name = mode === "draft" ? `分屏草稿-${composed.length}of${shots.length}` : mode === "originals" ? "原始分屏" : group.kind === "detail" ? "完整详情包" : "完整商品图";
                 saveAs(zip, `${stem}-${name}.zip`);
@@ -523,6 +841,7 @@ function GroupCard({
                             items: [
                                 { key: "review", label: "文件与文案诊断", disabled: !done || Boolean(exporting) },
                                 ...(!isSet ? [{ key: "download", icon: <Download size={14} />, label: "全部下载", disabled: !complete }] : []),
+                                ...(nativeDetail ? [{ key: "native-detail", icon: <Rows3 size={14} />, label: "按详情长图导出", disabled: Boolean(exporting) }] : []),
                                 ...(group.kind === "detail"
                                     ? [
                                           { key: "long", icon: <Rows3 size={14} />, label: "只下载完整原长图（不切片）", disabled: !complete || Boolean(exporting) },
@@ -535,14 +854,15 @@ function GroupCard({
                             onClick: ({ key }) => {
                                 if (key === "review") void exportSet("review");
                                 if (key === "download") downloadAll();
+                                if (key === "native-detail") void exportSet("native-detail");
                                 if (key === "long") void exportSet("long");
                                 if (key === "originals" || key === "draft") void exportSet(key);
                                 if (key === "remove") remove();
                             },
                         }}
                     >
-                        <button type="button" className="es-icon-btn" aria-label="更多操作">
-                            <Ellipsis size={15} />
+                        <button type="button" className="es-icon-btn" aria-label="更多操作" aria-busy={exporting === "native-detail" || undefined}>
+                            {exporting === "native-detail" ? <Spin size="small" /> : <Ellipsis size={15} />}
                         </button>
                     </Dropdown>
                 </div>
@@ -556,6 +876,7 @@ function GroupCard({
                         <span>
                             {[
                                 progress.active ? `${progress.active} 进行中` : "",
+                                progress.waiting ? `${progress.waiting} 待衔接` : "",
                                 progress.pending ? `${progress.pending} 待生成` : "",
                                 progress.recover ? `${progress.recover} 待保存` : "",
                                 progress.review ? `${progress.review} 待核对` : "",
@@ -588,17 +909,34 @@ function GroupCard({
             {group.kind === "detail" && reading ? (
                 <section className="es-delivery-reading" aria-label="消费者整页阅读预览">
                     <strong>{complete ? "整页阅读预览" : `草稿预览 · ${done}/${shots.length} 屏`}</strong>
-                    {shots.map((shot, index) => {
-                        const output = studioShotPreview(shot);
-                        const detailTitle = studioDetailResultTitle(group, shot, index);
-                        return output ? (
-                            <StudioResultArtwork key={shot.id} product={product} group={group} shot={shot} output={output} title={detailTitle} full />
-                        ) : (
-                            <div key={shot.id} className="es-delivery-missing">
-                                {detailTitle ? `${detailTitle} · 缺图` : `第 ${index + 1} 屏缺图 · ${shot.title}`}
-                            </div>
-                        );
-                    })}
+                    {needsJoinCheck ? (
+                        <StudioDetailReading
+                            key={JSON.stringify([scope, product.id, group.key, shots.map((shot) => studioShotPreview(shot)?.resourceId)])}
+                            product={product}
+                            group={group}
+                            tasks={tasks}
+                            blocked={blocked}
+                            acting={acting}
+                            onRepair={(shot, output, intent) => void rerun([shot.id], intent, { repairSeam: output.resourceId })}
+                            onAdopt={(shot, output) => edit((current) => patchStudioShotAt(current, group.ref, shot.id, (value) => ({ ...value, adopted: output })), { immediate: true })}
+                        />
+                    ) : (
+                        shots.map((shot, index) => {
+                            const output = studioShotPreview(shot);
+                            const detailTitle = studioDetailResultTitle(group, shot, index);
+                            return output ? (
+                                <StudioResultArtwork key={shot.id} product={product} group={group} shot={shot} output={output} title={detailTitle} full />
+                            ) : (
+                                <div key={shot.id} className="es-delivery-missing">
+                                    {progress.screens[index].state === "waiting"
+                                        ? `${detailTitle || `第 ${index + 1} 屏 · ${shot.title}`} · ${progress.screens[index].label}`
+                                        : detailTitle
+                                          ? `${detailTitle} · 缺图`
+                                          : `第 ${index + 1} 屏缺图 · ${shot.title}`}
+                                </div>
+                            );
+                        })
+                    )}
                 </section>
             ) : null}
             {review ? (

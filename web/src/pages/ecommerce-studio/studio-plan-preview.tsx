@@ -3,16 +3,39 @@ import { Button } from "antd";
 import { useState } from "react";
 import type { StudioClaimSource } from "@/lib/ecommerce-studio/claim-evidence";
 import { studioPlanEvidenceMatch } from "@/lib/ecommerce-studio/detail-plan-tasks";
-import type { StudioSetEntry } from "@/lib/ecommerce-studio/runs";
-import type { StudioDetailPlan } from "@/lib/ecommerce-studio/types";
+import { studioPhotoEvidenceId } from "@/lib/ecommerce-studio/reference-selection";
+import { studioEntryTransition, type StudioSetEntry } from "@/lib/ecommerce-studio/runs";
+import type { StudioDetailPlan, StudioPhoto } from "@/lib/ecommerce-studio/types";
+import { studioImageUrl } from "./studio-parts";
 import "./studio-plan-preview.css";
 
-function BriefPage({ plan, entry, index, detail, claimSources }: { plan: StudioDetailPlan; entry: StudioSetEntry; index: number; detail: boolean; claimSources: StudioClaimSource[] }) {
+function BriefPage({
+    plan,
+    entry,
+    index,
+    detail,
+    photos,
+    references,
+    claimSources,
+    transition,
+}: {
+    plan: StudioDetailPlan;
+    entry: StudioSetEntry;
+    index: number;
+    detail: boolean;
+    photos: StudioPhoto[];
+    references: StudioPhoto[];
+    claimSources: StudioClaimSource[];
+    transition?: string;
+}) {
     const design = entry.planIndex === undefined ? undefined : plan.screens[entry.planIndex];
     const title = (detail && (entry.purchaseQuestion || entry.purpose)) || entry.title;
     const content = detail ? entry.displayContent || entry.visual : entry.visual;
     const beat = detail && entry.visualBeat?.trim();
     const focus = detail ? entry.visualFocus || entry.elements : entry.elements;
+    const region = detail && design?.detailSource;
+    const photo = region && photos.find((item) => item.truth && item.resourceId && studioPhotoEvidenceId(item) === region.photo);
+    const reference = detail && design?.styleReferenceResourceId && references.find((item) => item.resourceId === design.styleReferenceResourceId);
     const evidence = detail ? [...new Set((design?.evidenceRefs || design?.facts || []).map((reference) => studioPlanEvidenceMatch(claimSources, reference)?.text).filter(Boolean))].join("、") : design?.facts.join("、");
     return (
         <article className="es-proof-item" aria-label={`第 ${index + 1} 屏：${title}`}>
@@ -24,18 +47,31 @@ function BriefPage({ plan, entry, index, detail, claimSources }: { plan: StudioD
             <div className="es-proof-brief-body">
                 {detail ? (
                     <>
-                        {beat && beat !== title ? <p className="es-proof-brief-content">{beat}</p> : null}
-                        {content && content !== title && content !== beat ? <p className="es-proof-brief-content">{content}</p> : null}
-                        {evidence ? (
-                            <p>
-                                <strong>依据</strong>
-                                {evidence}
-                            </p>
+                        {region && photo ? (
+                            <div className="es-proof-source-photo">
+                                <img src={studioImageUrl(photo.resourceId, true)} loading="lazy" alt={`本屏实拍取证范围：${focus || title}`} />
+                                <span aria-hidden="true" style={{ left: `${region.box[0]}%`, top: `${region.box[1]}%`, width: `${region.box[2] - region.box[0]}%`, height: `${region.box[3] - region.box[1]}%` }} />
+                            </div>
                         ) : null}
-                        {focus && focus !== content && focus !== beat ? (
+                        {content && content !== title ? <p className="es-proof-brief-content">{content}</p> : null}
+                        {reference ? (
+                            <a className="es-proof-design-link" href={studioImageUrl(reference.resourceId)} target="_blank" rel="noreferrer" aria-label={`打开设计参考：${reference.name || `第 ${index + 1} 屏`}`}>
+                                <img src={studioImageUrl(reference.resourceId, true)} alt={reference.name || "本屏设计参考"} loading="lazy" />
+                                设计参考
+                            </a>
+                        ) : null}
+                        {evidence || (focus && focus !== content) || (beat && beat !== content) ? (
+                            <details className="es-proof-evidence">
+                                <summary>依据</summary>
+                                {evidence ? <p>{evidence}</p> : null}
+                                {focus && focus !== title && focus !== content ? <p>{focus}</p> : null}
+                                {beat && beat !== title && beat !== content && beat !== focus ? <p>{beat}</p> : null}
+                            </details>
+                        ) : null}
+                        {transition ? (
                             <p>
-                                <strong>视觉重点</strong>
-                                {focus}
+                                <strong>接下一屏</strong>
+                                {transition}
                             </p>
                         ) : null}
                     </>
@@ -66,7 +102,7 @@ function BriefPage({ plan, entry, index, detail, claimSources }: { plan: StudioD
     );
 }
 
-export function StudioPlanPreview({ plan, entries, detail, claimSources }: { plan: StudioDetailPlan; entries: StudioSetEntry[]; detail: boolean; claimSources: StudioClaimSource[] }) {
+export function StudioPlanPreview({ plan, entries, detail, photos, references, claimSources }: { plan: StudioDetailPlan; entries: StudioSetEntry[]; detail: boolean; photos: StudioPhoto[]; references: StudioPhoto[]; claimSources: StudioClaimSource[] }) {
     const [open, setOpen] = useState(false);
     const selected = entries.filter((entry) => entry.included && entry.planIndex !== undefined);
     return (
@@ -81,7 +117,17 @@ export function StudioPlanPreview({ plan, entries, detail, claimSources }: { pla
                         <div className="es-proof-scroll" role="region" aria-label="连续页面内容滚动区" tabIndex={0}>
                             <div className="es-proof-long">
                                 {selected.map((entry, index) => (
-                                    <BriefPage key={entry.key} plan={plan} entry={entry} index={index} detail={detail} claimSources={claimSources} />
+                                    <BriefPage
+                                        key={entry.key}
+                                        plan={plan}
+                                        entry={entry}
+                                        index={index}
+                                        detail={detail}
+                                        photos={photos}
+                                        references={references}
+                                        claimSources={claimSources}
+                                        transition={detail ? studioEntryTransition(entry, selected[index + 1]) : undefined}
+                                    />
                                 ))}
                             </div>
                         </div>

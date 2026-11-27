@@ -117,7 +117,8 @@ test("逐屏展示内容与依据进入出图，策划模型给的美术蓝图�
     const run = createStudioRun(restored, () => `id-${++id}`);
     const compiled = compileStudioPrompt({ product: restored, shot: run.shots[0], brief: restored.brief, suite: run.suite, model: "gpt-image" });
     expect(compiled.prompt).toContain(displayContent);
-    expect(compiled.prompt).toContain("靠背弧面与坐垫的关系");
+    expect(compiled.prompt).toContain("靠背与坐垫之间的开放间隔");
+    expect(compiled.prompt).not.toContain("视觉入口：靠背弧面与坐垫的关系");
     expect(compiled.prompt).toMatch(/图片模型[^。\n]*排版[^。\n]*艺术字/);
     for (const stale of [visual, elements, designAnalysis, "奶油白底，深棕文字，橙棕强调"]) expect(compiled.prompt).not.toContain(stale);
     expect(compiled.references[0].resourceId).toBe("chair");

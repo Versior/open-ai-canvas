@@ -44,8 +44,56 @@ func TestStudioDetailDesignKnowledgeReachesPromptOnlyProtocol(t *testing.T) {
 	if !strings.HasPrefix(prompt, brief) || !strings.Contains(prompt, "文字与摄影共同构图") || strings.Contains(prompt, "简体中文") || strings.Contains(prompt, "本屏购买问题：") {
 		t.Fatalf("prompt-only protocol did not preserve the brief and add only the design reference: %q", prompt)
 	}
+	if !strings.Contains(prompt, "可见结构、真实动作") || strings.Contains(prompt, "purpose 与 facts") || strings.Contains(prompt, "留无字摄影") {
+		t.Fatalf("image task got planner-facing copy directions instead of artwork guidance: %q", prompt)
+	}
 	if !ecommercePrivateInstruction(input.Metadata) {
 		t.Fatal("worker-only knowledge requires private request diagnostics")
+	}
+}
+
+func TestStudioMaterialLightingDoesNotUseIncidentalCharacters(t *testing.T) {
+	for _, tc := range []struct {
+		name, category, materials, want, exclude string
+	}{
+		{"博锐吹风机", "吹风机", "外壳 浅薄荷绿哑光塑料；正面 有同心圆格栅；表面 开关", "kb20-light-gloss", "kb20-light-food"},
+		{"带发丝纹的吹风机", "吹风机", "外壳 淡绿塑料；侧面 有发丝纹理", "kb20-light-gloss", "kb20-light-fabric"},
+		{"番茄鸡蛋面", "面食", "表面 有蛋花和蔬菜", "kb20-light-food", "kb20-light-fabric"},
+		{"羊毛针织衫", "上衣", "羊毛和棉混纺；表面 针织", "kb20-light-fabric", "kb20-light-food"},
+		{"保温杯", "水杯", "外壁 涂层；内胆 不锈钢", "kb20-light-metal", "kb20-light-food"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ids := ecommerceStudioPlaybookIDs(tc.category, tc.name, "", tc.materials, "detail", nil)
+			if !slices.Contains(ids, tc.want) || slices.Contains(ids, tc.exclude) {
+				t.Fatalf("want %q without %q, got %v", tc.want, tc.exclude, ids)
+			}
+		})
+	}
+}
+
+func TestStudioArtworkKnowledgeFollowsPageUseAndFoodState(t *testing.T) {
+	svc, _, _, _ := ecommerceCreationTestService(t)
+	if _, err := svc.EnsureBuiltinEcommerceKnowledge(); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		kind, role, name, family, materials, id, want string
+	}{
+		{"main", "main-selling", "抽纸", "home", "纸纤维", kb20MainID, "搜索小图里也要辨认"},
+		{"single", "detail-campaign", "抽纸", "home", "纸纤维", "kb20-single-hero", "让商品与主题共同建立视觉记忆"},
+		{"detail", "detail-closeup", "小鱿鱼", "food", "乳白半透明；眼睛有金属光泽", "kb20-light-food", "照出实拍里的色泽与肌理"},
+	} {
+		input := canvasGenerationInput{Mode: "image", Prompt: "为本图位完成商品图文成品。", Metadata: map[string]any{
+			"source": ecommerceStudioSource, "studioStep": "image", "studioUseDesignKnowledge": true,
+			"studioPlanKind": test.kind, "studioRole": test.role, "studioProductName": test.name, "studioFamily": test.family, "studioMaterials": test.materials,
+		}}
+		ids := svc.applyEcommerceStudioImageDesign(&input)
+		if !slices.Contains(ids, test.id) || !strings.Contains(input.Prompt, test.want) {
+			t.Errorf("%s/%s did not receive %s: %v", test.kind, test.role, test.id, ids)
+		}
+		if test.family == "food" && (slices.Contains(ids, "kb20-light-transparent") || strings.Contains(input.Prompt, "热气、油光和酥脆的边缘")) {
+			t.Errorf("raw food received product-material or hot food staging: %v", ids)
+		}
 	}
 }
 

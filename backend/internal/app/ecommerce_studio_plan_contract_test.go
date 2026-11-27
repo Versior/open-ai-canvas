@@ -17,13 +17,14 @@ func TestStudioDetailPlanContractAdaptsPurchasePathToExplicitCount(t *testing.T)
 	}{
 		{4, "合并相邻职责"},
 		{6, "认货、给理由、看证据、看使用、做选择、消顾虑"},
-		{13, "按有独立依据的购买问题拆屏"},
+		{13, "屏数不等于卖点数"},
 	} {
 		t.Run(fmt.Sprintf("%d screens", tc.count), func(t *testing.T) {
 			input := canvasGenerationInput{Mode: "text", Metadata: map[string]any{
 				"source": "ecommerce-studio", "ecommerceCapability": "detail-plan", "ecommerceAnalysisFlow": "cap:detail-plan", "studioStep": "plan",
 				"studioPlanKind": "detail", "studioPlanScope": "detail", "studioPlanCount": tc.count, "studioPlanRoles": []string{"detail-hero", "detail-scene", "detail-closing"},
-				"studioProductName": "餐椅", "studioCategory": "家具", "studioFamily": "home",
+				"studioPlanIncludeAlternatives": true,
+				"studioProductName":             "餐椅", "studioCategory": "家具", "studioFamily": "home",
 			}}
 			if err := svc.applyEcommerceAnalysisInstruction(&input); err != nil {
 				t.Fatal(err)
@@ -35,11 +36,19 @@ func TestStudioDetailPlanContractAdaptsPurchasePathToExplicitCount(t *testing.T)
 				t.Fatal("trusted purchase path must follow retrieved buying and compliance methods in the worker prompt")
 			}
 			for _, expected := range []string{
-				fmt.Sprintf("JSON screens 正好 %d 项", tc.count), tc.guidance, "不是固定屏序和版式", "佩戴效果可前置", "末屏解决一个尚未回答的下单疑虑", "没有真实活动不安排促销屏", "由图片模型整体设计图文",
+				fmt.Sprintf("JSON screens 正好 %d 项", tc.count), tc.guidance, "不是固定屏序和版式", "同一个基本动作只占一屏", "佩戴效果可前置", "把能展示真实用途的画面放在零件描述之前", "生鲜可展现不改实物状态的备料关系", "末屏可以用最后一项实物证据结束", "没有真实活动不安排促销屏", "由图片模型整体设计图文",
 			} {
 				if !strings.Contains(prompt, expected) {
 					t.Errorf("missing purchase path contract %q", expected)
 				}
+			}
+			if !strings.Contains(prompt, "依次返回 summary、screens 和 alternatives 三个键") || !strings.Contains(prompt, "没有可证实的候补则写空数组") || !strings.Contains(prompt, "再放大、换容器或摆放环境不算新答案") {
+				t.Fatal("a requested alternatives array must be part of the same answer, without introducing unsupported screens")
+			}
+			delete(input.Metadata, "studioPlanIncludeAlternatives")
+			without, err := ecommerceStudioPlanContract(input.Metadata)
+			if err != nil || strings.Contains(without, "alternatives") {
+				t.Fatalf("seller-directed plan should not request replacements: %v", err)
 			}
 		})
 	}
@@ -95,6 +104,14 @@ func TestStudioDetailPlanWorkerUsesPurchaseKnowledgeWithoutDesignPresets(t *test
 					t.Errorf("missing detail-focused worker contract %q", expected)
 				}
 			}
+			for _, evidenceBoundary := range []string{"只有实拍中的工作关系或卖家确认资料能辨明作用端", "单侧照片不能推定进出方向", "区分使用情境、主要动作与可见证据", "情境可以独立成屏", "evidence 只引用请求里确实支持本屏的资料编号", "photo 用本次附图序号（如图1）", "原图取证坐标，不是对成品布局的指令", "整品、纯情境或看不清的局部省略"} {
+				if !strings.Contains(contract, evidenceBoundary) {
+					t.Errorf("ordinary detail plan dropped the source/role boundary %q", evidenceBoundary)
+				}
+			}
+			if strings.Contains(contract, "动作要用可见形状或位置指认实际作用的部件") {
+				t.Fatal("a shape alone cannot prove a working direction")
+			}
 		})
 	}
 }
@@ -127,7 +144,7 @@ func TestStudioMainAndSinglePlanWorkerLeavesArtworkToImageModel(t *testing.T) {
 					t.Errorf("worker did not receive the content-only contract: %s", required)
 				}
 			}
-			for _, forbidden := range []string{"artDirection", "visualWorld", "screenVariationPlan", "内置爆款套图库", "提炼商品专属的视觉方向", "版式与字体：让字成为设计的一部分", "【详情页购买路径】"} {
+			for _, forbidden := range []string{"artDirection", "visualWorld", "screenVariationPlan", "内置爆款套图库", "提炼商品专属的视觉方向", "版式与字体：让字成为设计的一部分", "【详情页购买路径】", "detailSource"} {
 				if strings.Contains(prompt, forbidden) {
 					t.Errorf("automatic visual preset reached the planner: %s", forbidden)
 				}

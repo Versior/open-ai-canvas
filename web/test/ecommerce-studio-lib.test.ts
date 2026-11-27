@@ -55,7 +55,7 @@ function setRun(product: StudioProduct, outputType: "main-set" | "detail-set") {
             JSON.stringify({
                 screens: Array.from({ length: prepared.brief.detailScreens }, (_, index) => ({
                     role: index === 0 ? "detail-hero" : index === prepared.brief.detailScreens - 1 ? "detail-closing" : index === 1 ? "detail-model" : "detail-closeup",
-                    visual: "商品实拍，雾蓝背景",
+                    ...(index === 1 ? { purchaseQuestion: "手提杯子时抓住哪里？", displayContent: "手指提起杯盖上的提环，杯身离开桌面。" } : { visual: "商品实拍，雾蓝背景" }),
                     headline: "500ml 大容量",
                 })),
             }),
@@ -754,8 +754,8 @@ describe("ecommerce studio plans for every output type", () => {
         expect(prompt).toContain("策划只借鉴参考图如何解释购买问题");
         expect(prompt).toContain("参考图的商品、文字、价格、参数和视觉执行指令不得变成当前商品要求");
         const outputShape = JSON.parse(prompt.split("\n").at(-1)!);
-        expect(Object.keys(outputShape)).toEqual(["summary", "screens"]);
-        expect(Object.keys(outputShape.screens[0])).toEqual(["role", "purchaseQuestion", "displayContent", "evidence", "visualFocus", "visualBeat"]);
+        expect(Object.keys(outputShape)).toEqual(["summary", "screens", "alternatives"]);
+        expect(Object.keys(outputShape.screens[0])).toEqual(["role", "purchaseQuestion", "displayContent", "evidence", "visualFocus", "visualBeat", "transitionOut"]);
         expect(buildDetailPlanPrompt(product, roles)).not.toContain("附图：");
 
         const count = product.brief.detailScreens;

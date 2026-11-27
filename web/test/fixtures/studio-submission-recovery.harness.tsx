@@ -290,6 +290,68 @@ test("旧详情回执原样查询，明确未受理就终止，不换请求编�
     expect(watch).not.toHaveBeenCalled();
 });
 
+test("同商品的任务监听重新挂载后接回原任务，隐藏再显示也不重发", async () => {
+    const { Activity } = await import("react");
+    const { default: EcommerceStudioPage } = await import("@/pages/ecommerce-studio");
+    const product = productWithPhoto("reattach-studio");
+    product.brief.outputType = "main-set";
+    const run = createStudioRun(product, () => crypto.randomUUID());
+    const taskId = "existing-image";
+    run.shots[0].attempts.push({ id: "known-image-attempt", taskId, status: "running", tweaks: [], model: imageModel, createdAt: now, outputs: [] });
+    product.runs.push(run);
+    let persisted = product;
+    spyOn(studioApi, "getStudioWorkspace").mockImplementation(async () => ({ revision: 1, products: [structuredClone(persisted)] }));
+    spyOn(studioApi, "getStudioProduct").mockImplementation(async () => structuredClone(persisted));
+    spyOn(studioApi, "saveStudioProduct").mockImplementation(async (updated, revision) => {
+        persisted = { ...updated, revision: revision + 1 };
+        return { revision: persisted.revision, product: structuredClone(persisted) };
+    });
+    spyOn(studioApi, "getStudioPrompts").mockResolvedValue({});
+    spyOn(quotes, "quoteModel").mockResolvedValue({ quote: { logicalModelId: "", billingMode: "fixed_request", quantity: 1, amountMicrocredits: 1_000_000, estimated: false } });
+    spyOn(http, "get").mockResolvedValue({ ...runningTask(taskId), status: "succeeded", type: "canvas_image" });
+    const submit = spyOn(http, "post").mockRejectedValue(new Error("不能重新提交已受理的生图任务"));
+    const completed = Promise.withResolvers<GenerationTask>();
+    const reads = spyOn(taskApi, "waitForGenerationTask").mockReturnValue(completed.promise);
+    const render = async (mode: "visible" | "hidden") => {
+        await act(async () =>
+            root.render(
+                <MemoryRouter initialEntries={[`/studio?product=${product.id}&view=results`]}>
+                    <QueryClientProvider client={client}>
+                        <ConfigProvider theme={{ token: { motion: false } }}>
+                            <App>
+                                <Activity mode={mode}>
+                                    <EcommerceStudioPage />
+                                </Activity>
+                            </App>
+                        </ConfigProvider>
+                    </QueryClientProvider>
+                </MemoryRouter>,
+            ),
+        );
+    };
+    const originalUpdate = store().update;
+    try {
+        await render("visible");
+        expect(reads.mock.calls.map(([id]) => id)).toEqual([taskId]);
+        await act(async () => useStudioStore.setState({ update: (...args) => originalUpdate(...args) }));
+        expect(reads.mock.calls[0][1]?.signal?.aborted).toBe(true);
+        expect(reads.mock.calls.map(([id]) => id)).toEqual([taskId, taskId]);
+        await render("hidden");
+        expect(reads.mock.calls[1][1]?.signal?.aborted).toBe(true);
+        await render("visible");
+        expect(reads.mock.calls.map(([id]) => id)).toEqual([taskId, taskId, taskId]);
+        await act(async () => {
+            completed.resolve({ ...runningTask(taskId), type: "canvas_image", status: "succeeded", resultJson: JSON.stringify({ images: [{ storageKey: "resource:ratified-output", width: 768, height: 1024 }] }) });
+            await completed.promise;
+        });
+        await act(async () => store().flush(product.id));
+        expect(persisted.runs[0].shots[0].attempts).toMatchObject([{ taskId, status: "succeeded", outputs: [{ resourceId: "ratified-output" }] }]);
+        expect(submit).not.toHaveBeenCalled();
+    } finally {
+        await act(async () => useStudioStore.setState({ update: originalUpdate }));
+    }
+});
+
 test("生图台顶栏保留商品、页签与创作工具，刷新时不重复生成", async () => {
     const { default: EcommerceStudioPage } = await import("@/pages/ecommerce-studio");
     const { studioPlanInputSignature } = await import("@/lib/ecommerce-studio/plan-input");

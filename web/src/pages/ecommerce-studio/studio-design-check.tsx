@@ -90,7 +90,7 @@ export function StudioArtworkCheck({ product, shot, output, onRevision, onReview
             }
             completed = true;
             if (getActiveUserScope() !== scope) return;
-            const result = parseStudioDesignCheck(text);
+            const result = parseStudioDesignCheck(text, { product, execution });
             update({ result, running: false });
             persistedReview.current = `${output.resourceId}:${JSON.stringify(result)}`;
             onReview?.(result);

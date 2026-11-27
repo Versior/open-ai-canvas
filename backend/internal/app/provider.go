@@ -308,9 +308,11 @@ func (s *Service) processCanvasGenerationTask(ctx context.Context, userID string
 			}
 			return runAgentToolTask(ctx, input)
 		}
-		if metadataString(input.Metadata, "source") == ecommerceStudioSource && metadataString(input.Metadata, "studioStep") == "plan" && task.ID != "" {
-			if ids, ok := input.Metadata[ecommercePlanningKnowledgeIDsKey].([]string); ok {
-				slog.Info("ecommerce studio planning knowledge injected", "taskId", task.ID, "entryIds", ids)
+		var studioKnowledgeIDs []string
+		if ecommerceStudioFinalPlan(input.Metadata) {
+			studioKnowledgeIDs, _ = input.Metadata[ecommercePlanningKnowledgeIDsKey].([]string)
+			if len(studioKnowledgeIDs) > 0 && task.ID != "" {
+				slog.Info("ecommerce studio planning knowledge injected", "taskId", task.ID, "entryIds", studioKnowledgeIDs)
 			}
 		}
 		var result map[string]interface{}
@@ -325,6 +327,12 @@ func (s *Service) processCanvasGenerationTask(ctx context.Context, userID string
 		}
 		if taskErr == nil && promptTemplateOperation != "" {
 			taskErr = validatePromptTemplateResult(promptTemplateOperation, result)
+		}
+		if taskErr == nil && len(studioKnowledgeIDs) > 0 {
+			result["studioKnowledgeReceipt"] = map[string]any{
+				"source": ecommerceStudioSource, "capability": ecommerceStudioDetailPlanCapability,
+				"version": input.Metadata[ecommercePlanningKnowledgeVersionKey], "ids": studioKnowledgeIDs,
+			}
 		}
 		return result, taskErr
 	case "video":

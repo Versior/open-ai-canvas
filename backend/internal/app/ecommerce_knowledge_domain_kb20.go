@@ -17,7 +17,7 @@ import (
 // 生图台出图策划按商品类型、名称和材质挑相关的几条，整段写进策划的系统提示词；也和其他内置知识一样进知识库，管理员可以停用或改写。
 const (
 	ecommerceKB20Domain  = "KB20"
-	ecommerceKB20Version = "kb20-v9-20261111"
+	ecommerceKB20Version = "kb20-v13-20261127"
 )
 
 // kb20DesignSpec 是一条设计策划知识；keywords 用来按商品类型、名称和材质挑选，为空的是每次都带的通用方法。

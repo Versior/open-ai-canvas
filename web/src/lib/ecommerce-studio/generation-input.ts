@@ -1,17 +1,20 @@
 import { DEFAULT_ECOMMERCE_BRIEF } from "@/lib/ecommerce/ecommerce-capabilities";
 import { buildEcommerceImageGeneration } from "@/lib/ecommerce/ecommerce-image-generation";
+import { imageSizePresets } from "@/lib/image-size-presets";
 import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
 import type { AiConfig } from "@/stores/use-config-store";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 import { studioRunRatio } from "./brief";
+import { studioArtworkMaterials } from "./claim-evidence";
 import { studioImageRequest } from "./image-options";
-import { compileStudioPrompt, type StudioCompiledPrompt } from "./prompt-compiler";
-import { studioPlanOf } from "./product";
-import { studioReferencePhotos } from "./reference-selection";
+import { compileStudioPrompt, compileStudioSeamRepair, renderStudioPrompt, type StudioCompiledPrompt, type StudioCompileInput } from "./prompt-compiler";
+import { studioAttemptForOutput, studioPlanOf, studioShotPreview } from "./product";
+import { studioPhotoEvidenceId, studioReferencePhotos } from "./reference-selection";
 import { studioRunOf } from "./runs";
-import type { StudioAttempt, StudioGenerationSource, StudioKnowledgeReceipt, StudioPlanKind, StudioProduct, StudioRun, StudioShot, StudioStylePresetId, StudioTextMode } from "./types";
+import type { StudioAttempt, StudioDetailSourceInput, StudioGenerationSource, StudioKnowledgeReceipt, StudioPlanKind, StudioProduct, StudioRun, StudioShot, StudioStylePresetId, StudioStyleWindow, StudioTextMode } from "./types";
 
 export type StudioShotRef = { runId: string } | { planKind: StudioPlanKind };
+export type StudioImageEdit = string | { repairSeam: string };
 export type StudioLocatedShot = {
     shot: StudioShot;
     pageKind?: StudioPlanKind | "single";
@@ -24,6 +27,7 @@ export type StudioLocatedShot = {
     suite?: StudioRun["suite"];
     knowledgeReceipt?: StudioKnowledgeReceipt;
     candidate?: { index: number; count: number };
+    detailContinuity?: { previous?: StudioShot };
 };
 
 export function studioImageSetupBlock(product: Pick<StudioProduct, "photos">, model: string) {
@@ -45,10 +49,12 @@ export function studioImageTaskMetadata(product: StudioProduct, located: StudioL
     const source = located.source ? { ...product, ...located.source } : product;
     const category = studioTaskMetadataText(source.brief.productType || source.dossier?.category, 80);
     const productName = studioTaskMetadataText(source.name || source.dossier?.name, 120);
-    const materials = (source.dossier?.facts || [])
-        .filter((fact) => ["material", "appearance", "structure"].includes(fact.group) && ["visible", "confirmed"].includes(fact.evidence))
-        .map((fact) => `${fact.label} ${fact.value}`)
-        .join("；");
+    const materials =
+        compiled.knowledgeMaterials ??
+        (source.dossier?.facts || [])
+            .filter((fact) => ["material", "appearance", "structure"].includes(fact.group) && ["visible", "confirmed"].includes(fact.evidence))
+            .map((fact) => `${fact.label} ${fact.value}`)
+            .join("；");
     const metadata: Record<string, unknown> = {
         source: "ecommerce-studio",
         studioStep: "image",
@@ -64,7 +70,7 @@ export function studioImageTaskMetadata(product: StudioProduct, located: StudioL
         ...(compiled.useDesignKnowledge ? { studioUseDesignKnowledge: true } : {}),
     };
     const detail = located.pageKind === "detail";
-    if (detail) {
+    if (detail && compiled.knowledgeMaterials === undefined) {
         const fields: [string, unknown, number][] = [
             ["studioPurchaseQuestion", located.shot.purchaseQuestion, 320],
             ["studioDisplayContent", located.shot.displayContent, 420],
@@ -86,6 +92,7 @@ export function studioLocateRunShot(run: StudioRun, index: number): StudioLocate
     return {
         shot: pageKind === "single" ? shot : { ...shot, screenIndex: index + 1, screenCount: run.shots.length },
         pageKind,
+        ...(run.type === "detail-set" ? { detailContinuity: { previous: run.shots[index - 1] } } : {}),
         ...(candidates.length > 1 ? { candidate: { index: candidates.indexOf(shot) + 1, count: candidates.length } } : {}),
         textMode: run.textMode,
         quality: run.quality,
@@ -118,38 +125,119 @@ export function locateStudioShot(product: StudioProduct, ref: StudioShotRef, sho
     };
 }
 
-export function compileStudioShot(product: StudioProduct, located: StudioLocatedShot, model: string, config: AiConfig, revisionResourceId?: string) {
+function studioSeamSource(located: StudioLocatedShot, resourceId: string) {
+    const previous = located.detailContinuity?.previous && studioShotPreview(located.detailContinuity.previous);
+    if (!previous) throw new Error("上一屏成品不可用，无法精修接边");
+    const current = studioShotPreview(located.shot);
+    if (current?.resourceId !== resourceId) throw new Error("当前采用的成品已变化，请重新打开整页预览");
+    const original = studioAttemptForOutput(located.shot, current.resourceId);
+    if (original?.textMode === "overlay") throw new Error("程序排字的历史成品不支持精修接边");
+    return { current, previous, original };
+}
+
+function addStyleWindow(compiled: StudioCompiledPrompt, index: number, count: number, attached: number, limits: { maxImages: number; promptMaxChars: number }): StudioStyleWindow | undefined {
+    if (attached >= limits.maxImages || !Number.isInteger(index) || index < 1 || index > count) return;
+    const sources = compiled.styleReferences.flatMap((photo, sourceIndex) => (photo.width && photo.height && photo.width > 0 && photo.height / photo.width > 2.5 ? [{ photo, sourceIndex, height: photo.height / photo.width }] : []));
+    if (!sources.length) return;
+    const position = count > 1 ? (index - 1) / (count - 1) : 0;
+    let offset = position * sources.reduce((sum, source) => sum + source.height, 0);
+    for (const [ordinal, source] of sources.entries()) {
+        if (offset >= source.height && ordinal < sources.length - 1) {
+            offset -= source.height;
+            continue;
+        }
+        const span = Math.min(1, 1.5 / source.height);
+        const top = Math.min(1 - span, Math.max(0, offset / source.height - span / 2));
+        const imageIndex = compiled.references.length + compiled.modelReferences.length + source.sourceIndex + 1;
+        const layers = [...compiled.layers, { id: "style-region" as const, title: "设计局部", source: "卖家上传的长图", text: `图${attached + 1}是图${imageIndex}的设计局部，只帮助看清图文关系，不复制其中的商品、品牌、文字或数字。` }];
+        const prompt = renderStudioPrompt(layers);
+        if (limits.promptMaxChars <= 0 || prompt.length > limits.promptMaxChars) return;
+        compiled.layers = layers;
+        compiled.prompt = prompt;
+        return { sourceResourceId: source.photo.resourceId, top, bottom: Math.min(1, top + span) };
+    }
+}
+
+export function compileStudioShot(product: StudioProduct, located: StudioLocatedShot, model: string, config: AiConfig, edit?: StudioImageEdit) {
     const profile = modelCapabilityConfigFor(config, model).image;
     const source = located.source ? { ...product, ...located.source } : product;
     const brief = located.fromForm ? source.brief : { ...source.brief, shooting: "auto" as const, sameLayout: false };
-    const ratio = located.pageKind === "detail" && brief.outputType === "detail-set" ? studioRunRatio(located.shot.role, { ...source, brief }) : located.shot.aspectRatio || located.shot.ratio;
+    const repair = typeof edit === "object" ? studioSeamSource(located, edit.repairSeam) : undefined;
+    const frame = repair?.current;
+    const originalSize = frame?.width && frame.height ? `${frame.width}x${frame.height}` : undefined;
+    const originalRatio = originalSize && frame ? (profile && imageSizePresets(profile).find(({ size }) => size === originalSize)?.ratio) || `${frame.width}:${frame.height}` : undefined;
+    const ratio = originalRatio || (located.pageKind === "detail" && brief.outputType === "detail-set" ? studioRunRatio(located.shot.role, { ...source, brief }) : located.shot.aspectRatio || located.shot.ratio);
     const request = studioImageRequest(profile, located.quality, ratio, located.resolution);
-    const compiled = compileStudioPrompt({
+    const acceptsOriginalSize =
+        originalSize &&
+        profile?.size.parameter === "size" &&
+        (profile.size.values.includes(originalSize) ||
+            profile.size.presets?.some(({ size }) => size === originalSize && profile.size.allowCustom) ||
+            (profile.size.allowCustom && repair?.original?.model === model && repair.original.input?.request.imageSettings.size === originalSize));
+    if (acceptsOriginalSize) request.imageSettings.size = originalSize;
+    const outputRatio = acceptsOriginalSize ? ratio : request.aspectRatio || ratio;
+    const input: StudioCompileInput = {
         product: source,
         textMode: located.textMode,
-        shot: request.aspectRatio && request.aspectRatio !== located.shot.ratio ? { ...located.shot, ratio: request.aspectRatio } : located.shot,
+        shot: { ...located.shot, ratio: repair ? outputRatio : request.aspectRatio || located.shot.ratio },
         pageKind: located.pageKind,
         candidate: located.candidate,
         model,
         maxChars: profile?.references.promptMaxChars,
         maxReferences: profile?.references.maxImages,
-        revisionResourceId,
+        revisionResourceId: typeof edit === "string" ? edit : undefined,
+        ...(located.detailContinuity ? { detailContinuity: true as const, previousTransition: located.detailContinuity.previous?.transitionOut } : {}),
         brief,
         styleId: located.styleId,
         ...(located.suite ? { suite: located.suite } : {}),
-    });
-    return { profile, compiled, request };
+    };
+    const compiled = repair ? compileStudioSeamRepair(input, repair.current, repair.previous, repair.original?.input?.compiled.copySnapshot) : compileStudioPrompt(input);
+    let detailSource: StudioDetailSourceInput | undefined;
+    let styleWindow: StudioStyleWindow | undefined;
+    if (located.fromForm && located.pageKind === "detail" && brief.outputType === "detail-set" && !brief.sameLayout && !edit && !compiled.layoutGuide && profile) {
+        let attached = compiled.references.length + compiled.modelReferences.length + compiled.styleReferences.length + Number(Boolean(compiled.continuity));
+        const region = located.shot.detailSource;
+        const index = region ? compiled.references.findIndex((photo) => studioPhotoEvidenceId(photo) === region.photo) : -1;
+        if (region && index >= 0 && attached < profile.references.maxImages) {
+            const layer = {
+                id: "product-region" as const,
+                title: "实拍局部",
+                source: "本屏引用的商品原图",
+                text: `图${attached + 1}是图${index + 1}的实拍局部。${region.framing === "locate" ? `把这块真实轮廓对应回图${index + 1}的整件商品。本屏展示它在整件上的位置，若作指示，指向相同的实物部位；不把裁片另贴成小窗。` : "以其中真实形状、标记位置和数量为准，辨不清的印字维持原有可辨程度。用它认准本屏主角，不照抄裁片的构图，不把它另贴成小窗。"}`,
+            };
+            const layers = [...compiled.layers, layer];
+            const prompt = renderStudioPrompt(layers);
+            if (prompt.length <= profile.references.promptMaxChars) {
+                compiled.layers = layers;
+                compiled.prompt = prompt;
+                detailSource = { ...region, sourceResourceId: compiled.references[index].resourceId };
+                attached++;
+            }
+        }
+        if (!located.shot.styleReferenceResourceId) styleWindow = addStyleWindow(compiled, located.shot.screenIndex ?? 0, located.shot.screenCount ?? 0, attached, profile.references);
+    }
+    return { profile, compiled, request, styleWindow, detailSource };
 }
 
-export function studioImageInput(product: StudioProduct, located: StudioLocatedShot, model: string, config: AiConfig, revisionResourceId?: string): NonNullable<StudioAttempt["input"]> {
-    const { request, compiled } = compileStudioShot(product, located, model, config, revisionResourceId);
+export function studioImageInput(product: StudioProduct, located: StudioLocatedShot, model: string, config: AiConfig, edit?: StudioImageEdit): NonNullable<StudioAttempt["input"]> {
+    const { request, compiled, styleWindow, detailSource } = compileStudioShot(product, located, model, config, edit);
     if (!compiled.references.length) throw new Error("请先上传商品图，出图以它为外观依据");
-    return structuredClone({ compiled, request });
+    compiled.knowledgeMaterials = studioTaskMetadataText(studioArtworkMaterials(located.source ? { ...product, ...located.source } : product), 240);
+    return structuredClone({ compiled, request, ...(styleWindow ? { styleWindow } : {}), ...(detailSource ? { detailSource } : {}) });
 }
 
 export function studioImageInputCount(input: NonNullable<StudioAttempt["input"]>) {
     const compiled = input.compiled;
-    return compiled.references.length + compiled.modelReferences.length + compiled.styleReferences.length + Number(Boolean(compiled.revisionReference)) + Number(Boolean(compiled.layoutGuide));
+    return (
+        compiled.references.length +
+        compiled.modelReferences.length +
+        compiled.styleReferences.length +
+        Number(Boolean(compiled.revisionReference)) +
+        Number(Boolean(compiled.continuity)) +
+        Number(Boolean(compiled.layoutGuide)) +
+        Number(Boolean(input.detailSource)) +
+        Number(Boolean(input.styleWindow))
+    );
 }
 
 export type StudioImageReferenceSummary = {
@@ -172,12 +260,15 @@ export function studioImageReferenceSummary(input: NonNullable<StudioAttempt["in
     const references = [...compiled.references, ...compiled.modelReferences, ...compiled.styleReferences];
     const names = references.map((photo) => photo.name?.trim() || "未命名参考图");
     if (compiled.revisionReference) names.push(compiled.revisionReference.name?.trim() || "待修正成品");
+    if (compiled.continuity) names.push(`第 ${compiled.continuity.previousScreen} 屏${compiled.continuity.guide === "context" ? "下半幅" : compiled.continuity.guide === "background" ? "衔接色样" : "下缘"}`);
     if (compiled.layoutGuide) names.push(compiled.layoutGuide.proof ? "定稿排版蓝图" : "图文区域蓝图");
+    if (input.detailSource) names.push("本屏实拍局部");
+    if (input.styleWindow) names.push("参考长图局部");
     return {
         total: studioImageInputCount(input),
-        product: compiled.references.length,
+        product: compiled.references.length + Number(Boolean(input.detailSource)),
         model: compiled.modelReferences.length,
-        style: compiled.styleReferences.length,
+        style: compiled.styleReferences.length + Number(Boolean(input.styleWindow)),
         revision: Number(Boolean(compiled.revisionReference)),
         layoutGuide: Number(Boolean(compiled.layoutGuide)),
         names,

@@ -111,8 +111,10 @@ export function studioRatioOptions(profile: ImageCapabilityConfig | undefined, q
 }
 
 /** 按像素尺寸出图、且允许自定义尺寸的模型：自定义比例按所选档位算出具体尺寸，不用落到最接近的预设比例。 */
-export function studioCustomRatioSupported(profile: ImageCapabilityConfig | undefined) {
-    return Boolean(profile && profile.size.parameter === "size" && profile.size.allowCustom);
+export function studioCustomRatioTier(profile: ImageCapabilityConfig | undefined, quality: string, resolution: string) {
+    if (!profile || profile.size.parameter !== "size" || !profile.size.allowCustom) return undefined;
+    const tier = qualityMode(profile) === "tier" ? studioEffectiveQuality(profile, quality) : studioEffectiveResolution(profile, resolution);
+    return TIER_ORDER.includes(tier) ? tier : undefined;
 }
 
 /** 把想要的比例落到模型支持的比例上：完全支持就用原值，否则取最接近的一个。 */
@@ -143,17 +145,16 @@ export function studioImageRequest(profile: ImageCapabilityConfig | undefined, q
     const tierChoice = studioEffectiveResolution(profile, resolution);
     const options = studioRatioOptions(profile, effective, tierChoice);
     const aspectRatio = studioSupportedRatio(ratio, options);
+    const customTier = !options.includes(ratio) && studioCustomRatioTier(profile, effective, tierChoice);
+    const custom = customTier ? customSize(customTier, ratio) : undefined;
     if (profile && effective && qualityMode(profile) === "tier") {
         // 选的是尺寸档位：直接给这一档里对应比例的具体尺寸，模型的质量参数保持默认。
         const preset = studioSizePresets(profile).find((item) => String(item.tier) === effective && item.ratio === aspectRatio);
-        const custom = !options.includes(ratio) && studioCustomRatioSupported(profile) ? customSize(effective, ratio) : undefined;
-        // 按自定义尺寸出时比例就是用户写的比例；否则是落到的预设比例。
         if (custom) return { aspectRatio: ratio, imageSettings: { size: custom } };
         return { ...(aspectRatio ? { aspectRatio } : {}), imageSettings: preset ? { size: imagePresetValue(profile, preset) } : {} };
     }
     const imageSettings: { quality?: string; imageResolution?: string; size?: string } = !profile || !effective ? {} : profile.resolution.supported ? { imageResolution: effective } : profile.quality.supported ? { quality: effective } : {};
     if (profile && tierChoice) {
-        const custom = !options.includes(ratio) && studioCustomRatioSupported(profile) ? customSize(tierChoice, ratio) : undefined;
         const preset = studioSizePresets(profile).find((item) => String(item.tier) === tierChoice && item.ratio === aspectRatio);
         const size = custom || (preset ? imagePresetValue(profile, preset) : undefined);
         if (size) imageSettings.size = size;

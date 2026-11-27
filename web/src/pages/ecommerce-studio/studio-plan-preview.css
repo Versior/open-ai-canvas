@@ -59,6 +59,45 @@
 .es-proof-brief-body > .es-proof-brief-content {
     display: block;
 }
+.es-proof-source-photo {
+    position: relative;
+    justify-self: start;
+    overflow: hidden;
+    border-radius: var(--radius-sm);
+}
+.es-proof-source-photo img {
+    display: block;
+    max-width: min(100%, 14rem);
+    max-height: 10rem;
+}
+.es-proof-source-photo > span {
+    position: absolute;
+    border: 2px solid var(--user-accent);
+    box-shadow: 0 0 0 1px var(--user-surface);
+}
+.es-proof-design-link {
+    display: inline-flex;
+    justify-self: start;
+    align-items: center;
+    gap: 8px;
+    color: var(--user-ink-secondary);
+}
+.es-proof-design-link img {
+    width: 3rem;
+    height: 3rem;
+    border-radius: var(--radius-sm);
+    object-fit: cover;
+    object-position: top;
+}
+.es-proof-evidence summary {
+    width: fit-content;
+    cursor: pointer;
+    color: var(--user-ink-secondary);
+}
+.es-proof-evidence p {
+    display: block;
+    margin-top: 4px;
+}
 .es-proof-brief-body strong {
     color: var(--user-ink-secondary);
     font-weight: 500;

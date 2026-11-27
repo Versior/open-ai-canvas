@@ -4,6 +4,7 @@ import { STUDIO_DETAIL_LAYOUT_IDS, STUDIO_DETAIL_PLAN_LIMITS, STUDIO_SHOT_VISUAL
 import { STUDIO_STYLES } from "./shot-specs";
 import { STUDIO_SUITE_LIMITS } from "./suites";
 import { studioCompositionOf } from "./art-direction";
+import { studioDetailSourceOf, studioPhotoEvidenceId } from "./reference-selection";
 import {
     STUDIO_PRODUCT_SCHEMA,
     STUDIO_SHOT_ADJUST_MAX,
@@ -196,8 +197,9 @@ export function studioShotLatestAttempt(shot: StudioShot) {
 export function studioShotPreview(shot: StudioShot): StudioOutput | undefined {
     if (shot.adopted) return shot.adopted;
     for (let index = shot.attempts.length - 1; index >= 0; index -= 1) {
-        const output = shot.attempts[index].outputs[0];
-        if (shot.attempts[index].status === "succeeded" && output) return output;
+        const attempt = shot.attempts[index];
+        const output = attempt.outputs[0];
+        if (attempt.status === "succeeded" && output && !attempt.input?.compiled.continuity?.repair) return output;
     }
     return undefined;
 }
@@ -329,17 +331,49 @@ function normalizeAttemptInput(input: Record<string, unknown>, time: string): St
     if (!isRecord(compiled) || !isRecord(request) || typeof compiled.prompt !== "string" || !isRecord(compiled.adapter) || !isRecord(request.imageSettings)) return undefined;
     const settings = request.imageSettings;
     const copy = compiled.copySnapshot;
+    const continuity = isRecord(compiled.continuity) ? compiled.continuity : undefined;
+    const anchor = isRecord(continuity?.anchor) ? continuity.anchor : undefined;
     const language = isRecord(copy) ? STUDIO_LANGUAGES.find((item) => item.id === copy.language)?.id : undefined;
     const copySnapshot =
         isRecord(copy) && language && typeof copy.eyebrow === "string" && typeof copy.headline === "string" && typeof copy.subline === "string" && Array.isArray(copy.lines) && copy.lines.every((line): line is string => typeof line === "string")
             ? { language, eyebrow: copy.eyebrow, headline: copy.headline, subline: copy.subline, lines: copy.lines }
             : undefined;
     if (copy !== undefined && !copySnapshot) throw new Error("生成记录的逐屏定稿无效，无法还原候选图文案");
+    const window = input.styleWindow;
+    const rawSource = input.detailSource;
+    const detailSource = studioDetailSourceOf(rawSource);
+    if (
+        rawSource !== undefined &&
+        (!isRecord(rawSource) ||
+            !detailSource ||
+            typeof rawSource.sourceResourceId !== "string" ||
+            !rawSource.sourceResourceId ||
+            !Array.isArray(compiled.references) ||
+            !compiled.references.some((photo) => isRecord(photo) && typeof photo.id === "string" && studioPhotoEvidenceId({ id: photo.id }) === detailSource.photo && photo.resourceId === rawSource.sourceResourceId && photo.truth === true) ||
+            (rawSource.resourceId !== undefined && (typeof rawSource.resourceId !== "string" || !rawSource.resourceId)))
+    )
+        throw new Error("生成记录的实拍局部无效，不能按原请求继续");
+    if (
+        window !== undefined &&
+        (!isRecord(window) ||
+            typeof window.sourceResourceId !== "string" ||
+            !window.sourceResourceId ||
+            typeof window.top !== "number" ||
+            typeof window.bottom !== "number" ||
+            !(0 <= window.top && window.top < window.bottom && window.bottom <= 1) ||
+            !Array.isArray(compiled.styleReferences) ||
+            !compiled.styleReferences.some((photo) => isRecord(photo) && photo.resourceId === window.sourceResourceId) ||
+            (window.resourceId !== undefined && (typeof window.resourceId !== "string" || !window.resourceId)))
+    )
+        throw new Error("生成记录的设计局部无效，不能按原请求继续");
     return {
+        ...(window ? { styleWindow: { sourceResourceId: window.sourceResourceId as string, top: window.top as number, bottom: window.bottom as number, ...(typeof window.resourceId === "string" ? { resourceId: window.resourceId } : {}) } } : {}),
+        ...(detailSource && isRecord(rawSource) ? { detailSource: { ...detailSource, sourceResourceId: rawSource.sourceResourceId as string, ...(typeof rawSource.resourceId === "string" ? { resourceId: rawSource.resourceId } : {}) } } : {}),
         compiled: {
             prompt: compiled.prompt,
             ...(typeof compiled.studioDetailContract === "number" && Number.isInteger(compiled.studioDetailContract) ? { studioDetailContract: compiled.studioDetailContract } : {}),
             ...(compiled.useDesignKnowledge === true ? { useDesignKnowledge: true as const } : {}),
+            ...(typeof compiled.knowledgeMaterials === "string" ? { knowledgeMaterials: compiled.knowledgeMaterials.slice(0, 240) } : {}),
             ...(copySnapshot
                 ? {
                       copySnapshot: {
@@ -357,6 +391,25 @@ function normalizeAttemptInput(input: Record<string, unknown>, time: string): St
             modelReferences: arrayOf(compiled.modelReferences, (photo) => normalizePhoto(photo, time, false)),
             styleReferences: arrayOf(compiled.styleReferences, (photo) => normalizePhoto(photo, time, false)),
             ...(isRecord(compiled.revisionReference) ? { revisionReference: normalizePhoto(compiled.revisionReference, time, false) } : {}),
+            ...(continuity && typeof continuity.previousScreen === "number" && Number.isInteger(continuity.previousScreen) && continuity.previousScreen > 0
+                ? {
+                      continuity: {
+                          previousScreen: continuity.previousScreen,
+                          ...(continuity.overlap === true ? { overlap: true as const } : {}),
+                          ...(continuity.guide === "context" || continuity.guide === "positioned" || continuity.guide === "background" || continuity.guide === "edge" ? { guide: continuity.guide } : {}),
+                          ...(continuity.repair === true ? { repair: true as const } : {}),
+                          ...(typeof anchor?.sourceResourceId === "string" && anchor.sourceResourceId
+                              ? {
+                                    anchor: {
+                                        sourceResourceId: anchor.sourceResourceId,
+                                        ...(typeof anchor.height === "number" && Number.isInteger(anchor.height) && anchor.height > 0 ? { height: anchor.height } : {}),
+                                    },
+                                }
+                              : {}),
+                          ...(isRecord(continuity.reference) ? { reference: normalizePhoto(continuity.reference, time, false) } : {}),
+                      },
+                  }
+                : {}),
             ...(isRecord(compiled.layoutGuide) && studioCompositionOf(compiled.layoutGuide.composition) && typeof compiled.layoutGuide.ratio === "string"
                 ? {
                       layoutGuide: {
@@ -410,10 +463,13 @@ function normalizeShot(shot: Record<string, unknown>, fallbackTime: string): Stu
         ...(typeof shot.purchaseQuestion === "string" && shot.purchaseQuestion.trim() ? { purchaseQuestion: shot.purchaseQuestion.slice(0, STUDIO_DETAIL_PLAN_LIMITS.purpose) } : {}),
         ...(typeof shot.displayContent === "string" && shot.displayContent.trim() ? { displayContent: shot.displayContent.slice(0, STUDIO_DETAIL_PLAN_LIMITS.visual) } : {}),
         ...(typeof shot.visualBeat === "string" && shot.visualBeat.trim() ? { visualBeat: shot.visualBeat.trim().slice(0, STUDIO_DETAIL_PLAN_LIMITS.visualBeat) } : {}),
+        ...(typeof shot.transitionOut === "string" && shot.transitionOut.trim() ? { transitionOut: shot.transitionOut.trim().slice(0, STUDIO_DETAIL_PLAN_LIMITS.transitionOut) } : {}),
         ...(typeof shot.visualFocus === "string" && shot.visualFocus.trim() ? { visualFocus: shot.visualFocus.slice(0, STUDIO_DETAIL_PLAN_LIMITS.elements) } : {}),
         ...(typeof shot.imagePrompt === "string" && shot.imagePrompt.trim() ? { imagePrompt: shot.imagePrompt.slice(0, STUDIO_DETAIL_PLAN_LIMITS.imagePrompt) } : {}),
         ...(typeof shot.negativePrompt === "string" && shot.negativePrompt.trim() ? { negativePrompt: shot.negativePrompt.slice(0, STUDIO_DETAIL_PLAN_LIMITS.negativePrompt) } : {}),
         ...(Array.isArray(shot.evidenceRefs) ? { evidenceRefs: strings(shot.evidenceRefs).filter(Boolean) } : {}),
+        detailSource: studioDetailSourceOf(shot.detailSource),
+        ...(typeof shot.styleReferenceResourceId === "string" && shot.styleReferenceResourceId.trim() ? { styleReferenceResourceId: shot.styleReferenceResourceId.trim() } : {}),
         attempts: arrayOf(shot.attempts, (attempt) => normalizeAttempt(attempt, fallbackTime)),
         adopted: isRecord(shot.adopted) ? normalizeOutput(shot.adopted) : undefined,
     };
@@ -507,6 +563,10 @@ function normalizePlanReceipt(value: unknown): StudioPlanReceipt | undefined {
     const issues = arrayOf(value.issues, (item) =>
         typeof item.field === "string" && typeof item.message === "string" ? { ...(typeof item.index === "number" && Number.isInteger(item.index) && item.index >= 0 ? { index: item.index } : {}), field: item.field, message: item.message } : undefined,
     );
+    const photoEvidence = arrayOf(value.photoEvidence, (item) => (typeof item.id === "string" && item.id && typeof item.index === "number" && Number.isInteger(item.index) && item.index > 0 ? { index: item.index, id: item.id } : undefined));
+    const designReferences = arrayOf(value.designReferences, (item) =>
+        typeof item.resourceId === "string" && item.resourceId.trim() && typeof item.index === "number" && Number.isInteger(item.index) && item.index > 0 ? { index: item.index, resourceId: item.resourceId.trim() } : undefined,
+    );
     return {
         scope,
         state,
@@ -516,6 +576,8 @@ function normalizePlanReceipt(value: unknown): StudioPlanReceipt | undefined {
         attemptId,
         ...(typeof taskId === "string" && taskId ? { taskId } : {}),
         ...(value.alternativeDirection === true ? { alternativeDirection: true } : {}),
+        ...(photoEvidence.length ? { photoEvidence } : {}),
+        ...(designReferences.length >= 2 ? { designReferences } : {}),
         ...(typeof value.message === "string" && value.message ? { message: value.message } : {}),
         ...(review.length ? { review } : {}),
         ...(issues.length ? { issues } : {}),

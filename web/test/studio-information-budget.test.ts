@@ -19,9 +19,9 @@ test("AI 策划过密时交给图片模型删减，用户锁定文案仍在扣�
 test("生成约束明确单一焦点和阅读尺度，策划连接购买问题与证据", () => {
     const compiled = compileStudioPrompt({ product, shot: { ...shot, purchaseQuestion: "杯子的轮廓是什么", lines: ["自然握持"] }, pageKind: "detail", model: "gpt-image-2", textMode: "model" });
     expect(compiled.prompt).toContain("购买问题：杯子的轮廓是什么");
-    expect(compiled.prompt).toContain("手机阅读");
+    expect(compiled.prompt).toContain("手机可读");
     const prompt = buildDetailPlanPrompt(product, ["detail-hero", "detail-selling", "detail-scene", "detail-closing"]);
-    expect(prompt).toMatch(/先[^。\n]*选购与使用[^。\n]*答案[^。\n]*再[^。\n]*分配屏数[^。\n]*标 role/);
+    expect(prompt).toMatch(/先[^。\n]*选购与使用[^。\n]*再[^。\n]*分配屏数[^。\n]*标 role/);
 });
 
 test("策划编辑与刷新保留超限要点，提示调整而不是静默截断", () => {

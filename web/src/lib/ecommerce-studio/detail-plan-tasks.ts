@@ -21,7 +21,9 @@ import { extractStudioJson } from "./dossier-tasks";
 import { studioPrepPromptLines } from "./plan-prep";
 import { checkStudioClaim, studioClaimSources, studioEvidenceMatch, supportedStudioDescription, type StudioClaimSource } from "./claim-evidence";
 import { studioPlanInputSignature } from "./plan-input";
+import { studioDetailSourceOf, studioPlanImageNumber } from "./reference-selection";
 import { studioDetailRepeats } from "./detail-repeats";
+import { studioDetailEditorialCandidates } from "./detail-editorial";
 import { STUDIO_SHOT_PURPOSES } from "./shot-specs";
 import {
     STUDIO_FACT_GROUP_LABEL,
@@ -32,6 +34,7 @@ import {
     type StudioKnowledgeReceipt,
     type StudioPlannedScreen,
     type StudioPlanReviewedScreen,
+    type StudioPlanReceipt,
     type StudioPlanScope,
     type StudioPlanTarget,
     type StudioProduct,
@@ -57,19 +60,34 @@ function oneLine(value: string) {
  * 这次策划的范围：用户选定屏数的详情页、主图 5 张、按选中的单张类型逐张出，或按表单里选中的模板一张对一张排；
  * previous 是要按补充调整修改的上一版。images 是随任务附带的图：先是商品图，后面是卖家上传的参考图（大牌或爆款截图）。
  */
-export type StudioPlanImages = { photos: number; references: number; readingViews?: { imageIndex: number; sourceIndex: number; top: number; bottom: number }[] };
-export type StudioPlanRequest = { scope: StudioPlanScope; targets?: StudioPlanTarget[]; previous?: StudioDetailPlan; alternative?: StudioDetailPlan; alternativeDirection?: boolean; images?: StudioPlanImages };
+type StudioPlanImageBindings = Pick<StudioPlanReceipt, "photoEvidence" | "designReferences">;
+export type StudioPlanImages = StudioPlanImageBindings & { photos: number; references: number; readingViews?: { imageIndex: number; sourceIndex: number; top: number; bottom: number }[] };
+export type StudioPlanRequest<Images = StudioPlanImages> = { scope: StudioPlanScope; targets?: StudioPlanTarget[]; previous?: StudioDetailPlan; alternative?: StudioDetailPlan; alternativeDirection?: boolean; images?: Images };
+
+function screenStyleChoices(product: StudioProduct, request: StudioPlanRequest<StudioPlanImageBindings>) {
+    if (request.scope !== "detail" || product.brief.sameLayout || !request.images?.designReferences) return [];
+    const resources = new Set(product.references.filter((photo) => !photo.truth && photo.resourceId).map((photo) => photo.resourceId));
+    for (const photo of product.photos) resources.delete(photo.resourceId);
+    const choices = request.images.designReferences.filter(({ resourceId }) => resources.delete(resourceId));
+    return choices.length > 1 ? choices : [];
+}
 
 function imageRange(from: number, count: number) {
     return count > 1 ? `图${from}–图${from + count - 1}` : `图${from}`;
 }
 
 /** 附图说明：哪几张是商品图、哪几张是参考图，以及参考图怎么用。 */
-export function studioPlanImageLines(images: StudioPlanImages | undefined): string[] {
+export function studioPlanImageLines(images: StudioPlanImages | undefined, citations?: ReadonlyMap<string, string>): string[] {
     if (!images || images.photos + images.references === 0) return [];
     const parts = [images.photos ? `${imageRange(1, images.photos)} 是商品图（外观唯一依据）` : "", images.references ? `${imageRange(images.photos + 1, images.references)} 是卖家给的参考图（大牌或爆款的图，不是这件商品）` : ""].filter(Boolean);
+    const photos = images.photoEvidence?.flatMap(({ index, id }) => {
+        const key = `photo:${id}`;
+        const citation = citations ? citations.get(key) : key;
+        return citation ? [`图${index} [${citation}]`] : [];
+    });
     return [
         `附图：${parts.join("；")}。`,
+        photos?.length ? `实拍编号：${photos.join("；")}。每屏只引用确实拍到主要部位或状态的实拍，不把其中的摆位、手和背景抄成画面要求。` : "",
         images.readingViews?.length
             ? "附加局部图仅用于看清长参考图的字体、层级与版式，不是新的商品图，也不代表实际屏数：" +
               images.readingViews.map((view) => `图${view.imageIndex}对应参考图${view.sourceIndex}的${Math.round(view.top * 100)}%–${Math.round(view.bottom * 100)}%区域`).join("；")
@@ -86,7 +104,7 @@ export function studioPlanTargetRoles(targets: StudioPlanTarget[]): StudioShotRo
     });
 }
 
-function screenCount(product: StudioProduct, request: StudioPlanRequest) {
+function screenCount(product: StudioProduct, request: Pick<StudioPlanRequest, "scope" | "targets">) {
     if (request.scope === "single") return studioPlanTargetRoles(request.targets || []).length;
     if (request.scope === "template") return product.brief.suite?.shots.length || 0;
     if (request.scope === "detail") return studioDetailScreenCount(product.brief);
@@ -143,7 +161,7 @@ function introLine(product: StudioProduct, request: StudioPlanRequest, platform:
 function scopeRequirement(product: StudioProduct, request: StudioPlanRequest): string {
     const count = screenCount(product, request);
     if (request.scope === "template") return `按模板顺序正好给出 ${count} 张。借用每张的用途，不照搬商品、文字或排版；没有对应依据时，用本品的真实内容完成同一用途。`;
-    if (request.scope === "detail") return `正好交付 ${count} 屏：首屏用 detail-hero 建立商品识别；末屏用能消除最后一个真实下单疑虑的屏型，不强制 detail-closing。role 只标记内容用途，不锁定版式。`;
+    if (request.scope === "detail") return `正好交付 ${count} 屏：首屏用 detail-hero 建立商品识别；末屏可交付最后一个问题的实物证据，不另设外观核对或总结，不强制 detail-closing。role 只标记内容用途，不锁定版式。`;
     if (request.scope === "main") {
         const main = ecommerceRoleSpec(product.platform, "main");
         const first = [main?.whiteBackground ? "纯白背景" : "", main?.noText ? "不放任何文字" : "最多一行很短的标题"].filter(Boolean).join("、");
@@ -157,36 +175,46 @@ function scopeRequirement(product: StudioProduct, request: StudioPlanRequest): s
     ].join("\n");
 }
 
-function detailPurchasePath(count: number) {
+function detailPurchasePath(count: number, sameLayout: boolean) {
     return [
-        "【购买路径】先列出对这件商品最重要的几条选购与使用答案，再分配屏数、标 role。让商品本身与它的核心用法主导整页，不按原照里的物件或档案字段逐项排。每屏给买家一个此前还不知道、能帮助判断怎么用或怎么选的答案。",
+        "【整页内容编辑】先找这件商品的一条选购与使用主线，再分配屏数、标 role。summary 用一句话说出一个真实的生活问题和本品怎样参与。整页是一篇能顺着读的商品故事，不是逐屏提问的说明书。",
         count < STUDIO_DETAIL_SCREEN_DEFAULT
             ? "短页合并相关职责：例如把核心理由和证据放在一起、把选购和须知放在一起。"
             : count > STUDIO_DETAIL_SCREEN_DEFAULT
-              ? "长页只拆有独立依据的购买问题：不同使用阶段、真实操作、已知选项的区别、规格适配、到手或维护都可用。"
+              ? "长页的屏数不等于卖点数。同一购买问题可以跨相邻屏，分别承担引入需要、让人看见动作、给出证据或划清适用边界；也可用不同商品和生活对象之间的搭配、使用前的准备、使用后的安排推进。不设固定屏序，不为集齐这些职责而硬编。"
               : "按本品的优先级前置最能帮助选购的内容，不用把六屏分配给六种角色。",
-        "删掉一屏，买家是否少知道一件事？按答案和主证据归并：同一表面的色泽、纹理和反光，同一物件的开合与取放，各自优先合在一屏。没看到标识、原图摆了几件、能否和原图核对，都不是独立卖点。",
+        "先从买家实际生活出发：商品会在什么时刻被用到、和什么对象发生关系、有哪些真实的选购区别？能从常识和可见结构确定的基本用法，可另设环境展示。首屏认整品，把最有用的答案排在零件外观之前。没有可确认的规格或选项，不用局部外形假装是选购理由。",
+        "删掉一屏，整页是否少了有用的一步？同一个部位的外形、边缘、内部纹理和颜色先合并。一个动作不按不同的人体部位、朝向和道具拆分。主角和职责都相同的屏，只保留能直接证明答案的那一个；同一部件兼作其他屏的背景不等于新内容。",
         "再看画面：遮掉字、箭头和标注，缩成手机缩略图，本屏还能和其他屏区分吗？同一张原照换背景、裁切或标注不算。只有一张实拍，也把商品本体与照片里的手、姿势、道具和现场分开；只在它们能说明本屏内容时沿用。要看细节时，让细节本身成为主画面，不把同一张整品照当底图再加放大框。",
-        "跨屏改变主导内容和读图关系：确认每个问题有独立的实物状态、操作或使用关系主导画面。单纯托住整件只能解释外形或比例，不反复用；操作过程可以再次用手，但动作和证据必须换。",
-        "可从商品类型和可见结构确定基本用法时，展示商品实际如何与人、其他物品或空间发生关系，即使实拍并未拍到使用环境。包装或配件只有在随货内容经过确认、且能回答尚未解决的选购问题时才独立占屏。照片出现或未出现某件物品，都不等于随货清单。",
-        "例如生鲜可示意适用的备料或烹饪场景，不把做好的菜当作到手状态；抽纸看取纸与纸张本身，吹风机看操作与实际吹发，穿戴品看佩戴关系，家具看放入空间的关系。取材因商品而变，不套这些例子的屏序、参数或承诺。",
+        "资料少不凑零件目录。考虑商品之外的真实对象：使用它之前正在做什么，要处理或搭配的是什么，买家自己要核对什么条件？让这些对象和动作也能成为主角；产品未必每次都要整件在手中。展示有证据的关系，不把画面当成性能数据。",
+        sameLayout
+            ? "同款详情的 transitionOut 只用于策划预览，可简述本屏与下一屏的阅读关系；末屏省略。"
+            : "相邻屏是一幅长图的上下段。transitionOut 用一句话说清两屏都能画出的环境、物体或光影，怎样从本屏的内容引出下一屏的新内容。不只写‘接着看细节’，不为衔接新增卖点、复制参考图或指定版式。不靠装饰线，不把文字、人脸或商品本体拆在接缝两侧。没有自然承接就省略，末屏也省略。",
+        "展示商品实际如何与人、其他物品或空间发生关系，即使实拍并未拍到环境。穿戴品可看佩戴关系，家具可看放入空间的关系，但展示放置不等于适配、护理或操作承诺。包装或配件只有在随货内容经过确认、且能回答尚未解决的选购问题时才独立占屏。",
     ];
 }
 
 const DETAIL_CLOSING_QUESTION = "下单前还需要确认什么？";
 const DETAIL_CLOSING_CONTENT = "用尚未展示且有依据的选购、到手、安装或维护信息回答最后的下单疑虑。资料少时，选一个仍没讲清的可见结构或使用关系，不回顾首屏、不编承诺。";
+const DETAIL_MAX_ALTERNATIVES = 6;
+
+export function studioDetailOffersAlternatives(product: StudioProduct, scope: StudioPlanScope) {
+    return scope === "detail" && !product.brief.planNote?.trim() && !product.brief.extra.trim();
+}
 
 /** 上一版策划：按卖家的补充调整修改时带上，模型只改卖家不满意的地方。 */
-function previousLines(previous: StudioDetailPlan | undefined): string[] {
+function previousLines(previous: StudioDetailPlan | undefined, sources: StudioClaimSource[]): string[] {
     if (!previous) return [];
+    const content = (text: string | undefined) => supportedStudioDescription(commerceImageBriefContent(text, true), sources);
+    const summary = content(previous.summary);
     return [
         "",
         "【上一版策划】（按卖家的补充调整修改这一版：卖家没提意见的部分尽量保留，卖家不满意的地方要改到位）",
-        previous.summary ? `思路：${previous.summary}` : "",
+        summary ? `思路：${summary}` : "",
         ...previous.screens.map((screen, index) => {
-            const display = commerceImageBriefContent(screen.displayContent || screen.visual, true);
-            const beat = commerceImageBriefContent(screen.visualBeat, true);
-            const question = commerceImageBriefContent(screen.purchaseQuestion || screen.purpose, true);
+            const display = content(screen.displayContent || screen.visual);
+            const beat = content(screen.visualBeat);
+            const question = content(screen.purchaseQuestion || screen.purpose);
             return `${index + 1}. ${screen.role}：${question}；展示：${display.slice(0, 120)}${beat ? `；画面主线：${beat}` : ""}`;
         }),
     ].filter(Boolean);
@@ -198,6 +226,7 @@ export function buildDetailPlanPrompt(product: StudioProduct, roles: StudioShotR
     const points = studioInfoPoints(studioInfoText(product));
     const facts = studioDetailPlanFacts(product);
     const sources = studioClaimSources(product);
+    const citations = request.scope === "detail" ? new Map(sources.map((source, index) => [source.id, `E${index + 1}`])) : undefined;
     const evidence = sources.filter((source) => !source.appearanceOnly);
     const summary = supportedStudioDescription(product.dossier?.summary || "", sources);
     const invariants = (product.dossier?.invariants || []).map((item) => supportedStudioDescription(item, sources)).filter(Boolean);
@@ -221,19 +250,37 @@ export function buildDetailPlanPrompt(product: StudioProduct, roles: StudioShotR
         : [];
     const language = brief.language === "none" ? "用户选择不加文字，图片模型交付无字成品。" : `图内语言为${studioLanguage(brief.language).name}；图片模型写图内文字，策划只提供商品答案。策划说明用简体中文。`;
     const requestedCount = screenCount(product, request);
+    const styleChoices = screenStyleChoices(product, request);
     const capacity = request.scope === "detail" ? studioDetailPlanCapacity(product, requestedCount) : undefined;
-    const capacityNote = capacity && capacity.suggestedScreens < requestedCount ? `当前资料有限，仍策划 ${requestedCount} 屏。优先围绕本品找不同的已知用途、动作、触点或选购信息；只在结构能解释用途时单独放大。` : undefined;
+    const capacityNote =
+        capacity && capacity.suggestedScreens < requestedCount
+            ? `当前资料有限，仍交付 ${requestedCount} 个阅读画面，不编 ${requestedCount} 个卖点。先分整页职责，不逐句扩写商品档案。后一屏必须带来前面没有的可见信息；可以是新的使用情境、具体动作或未交代的选择条件，不一定是又一个产品参数。`
+            : undefined;
     const note = brief.planNote?.trim();
+    const withAlternatives = studioDetailOffersAlternatives(product, request.scope);
     // 主图类的范围（主图套图、按主图出的模板）文字更少、视觉元素可以少出现几张。
     const mainLike = request.scope === "main" || (request.scope === "template" && brief.suite?.kind === "main");
     const templateRoles = request.scope === "template" && brief.suite ? studioTemplateShotRoles(brief.suite).map((role): StudioShotRole => (roles.includes(role) ? role : mainLike ? "main-scene" : "detail-scene")) : [];
     const exampleRole = request.scope === "single" ? studioPlanTargetRoles(request.targets || [])[0] || "detail-scene" : request.scope === "template" ? templateRoles[0] || roles[0] : request.scope === "main" ? "main-white" : "detail-hero";
+    const exampleScreen = {
+        role: exampleRole,
+        purchaseQuestion: request.scope === "detail" ? "本屏负责的阅读任务" : "买家要确认什么",
+        displayContent: "需要展示的实物或使用关系",
+        evidence: [],
+        visualFocus: "先看到哪项证据",
+        visualBeat: "与其他屏不同的实物状态或动作",
+    };
+    const outputShape = {
+        summary: "购买路径",
+        screens: [{ ...exampleScreen, ...(request.scope === "detail" ? { transitionOut: brief.sameLayout ? "与下一屏的阅读关系" : "跨两屏可见的线索怎样从本屏引出下一屏的新内容（可省略）" } : {}) }],
+        ...(withAlternatives ? { alternatives: [{ ...exampleScreen, role: "detail-scene", purchaseQuestion: "尚未解答的购买问题", displayContent: "独立的实物证据或使用关系" }] } : {}),
+    };
     const lines: (string | undefined)[] = [
         introLine(product, request, platform),
         scopeRequirement(product, request),
         capacityNote,
         ...(request.scope === "detail"
-            ? detailPurchasePath(requestedCount)
+            ? detailPurchasePath(requestedCount, brief.sameLayout)
             : request.scope === "template"
               ? [
                     "【购买路径】首屏先让人认出商品并给出一个阅读理由；后续从痛点、解决方案、可验证证据、使用场景、购买顾虑等真实问题中择取并安排顺序，不要求每组覆盖全部环节，也不机械凑满模块。每屏 purpose 明确一个购买问题，visual 提供一个能看懂的回答；不同屏不得重复回答同一问题。信任只来自已确认资料和可见结构，没有报告或实测不画认证、证书、实验曲线；优惠与承诺必须有真实依据。",
@@ -247,13 +294,19 @@ export function buildDetailPlanPrompt(product: StudioProduct, roles: StudioShotR
         request.scope === "detail" && product.dossier?.family ? `品类方向：${STUDIO_FAMILY_LABEL[product.dossier.family]}` : undefined,
         summary ? `概括：${summary}` : undefined,
         `商品图：${views.length ? views.join("、") : "正面"}（外观以商品图为准）`,
-        ...studioPlanImageLines(request.images),
+        ...studioPlanImageLines(request.images, citations),
+        styleChoices.length
+            ? `每屏可选一张最能借鉴其内容表达的卖家设计参考原图（${styleChoices.map(({ index }) => `图${index}`).join("、")}），如有合适的，在该屏 JSON 填 styleReference:"图N"，没有则省略。只选原图编号，不选实拍或长图阅读裁片，不提供任何固定版式、成品文字或商品事实。`
+            : undefined,
+        request.scope === "detail" && request.images?.photoEvidence?.length
+            ? '当本屏要读一个局部（如控件、包边或接口），从已附的商品实拍中定位它，另填 detailSource:{"photo":"图序号，如图1","box":[左,上,右,下]}。四个数为原照宽高的百分比（0–100，左上为原点），包括目标和紧邻结构。整品、环境、看不到或不能定位的部位省略；绝不是成片构图。'
+            : undefined,
         invariants.length ? `外观要点（画到这些特征时保真，不要求每屏展示）：${invariants.join("、")}` : undefined,
         "",
         "【卖家资料】",
         studioTitleOf(product) ? `卖家填写的核心标题：${studioTitleOf(product)}` : undefined,
         ...(request.scope === "detail"
-            ? [evidence.length ? `可引用的商品资料：\n${evidence.map((source) => `[${source.id}] ${source.text}`).join("\n")}` : "没有额外商品资料，按商品原图中可辨认的类型、可见内容和基本用法策划。"]
+            ? [evidence.length ? `可引用的商品资料：\n${evidence.map((source) => `[${citations!.get(source.id)}] ${source.text}`).join("\n")}` : "没有额外商品资料，按商品原图中可辨认的类型、可见内容和基本用法策划。"]
             : [points.length ? `卖点：\n${points.map((point, index) => `${index + 1}. ${point.title}${point.detail ? `：${point.detail}` : ""}`).join("\n")}` : "卖点：无", groups.length ? `已确认的事实：\n${groups.join("\n")}` : "已确认的事实：无"]),
         unsure.length ? `没有确认的信息（不能写进文案，也不能画成参数或数字）：${unsure.join("、")}` : undefined,
         "",
@@ -270,14 +323,15 @@ export function buildDetailPlanPrompt(product: StudioProduct, roles: StudioShotR
         request.scope === "template" ? templateLines(product, templateRoles).join("\n") : undefined,
         note ? "" : undefined,
         note ? `【卖家对这次策划的补充调整】（优先照做；和商品事实、平台规则冲突时以事实和规则为准）\n${note}` : undefined,
-        ...previousLines(request.previous),
+        ...previousLines(request.previous, sources),
         ...(request.alternative
             ? [
                   "【重新策划】保留商品事实、所选类型与张数，找另一条能用本品证据说明的购买路径。不只改写原问题或替换背景。",
                   ...request.alternative.screens.map((screen, index) => {
-                      const display = commerceImageBriefContent(screen.displayContent || screen.visual, true);
-                      const beat = commerceImageBriefContent(screen.visualBeat, true);
-                      return `旧版 ${index + 1}：${commerceImageBriefContent(screen.purchaseQuestion || screen.purpose, true).slice(0, 120)}；${display.slice(0, 120)}${beat ? `；画面主线：${beat}` : ""}`;
+                      const display = supportedStudioDescription(commerceImageBriefContent(screen.displayContent || screen.visual, true), sources);
+                      const beat = supportedStudioDescription(commerceImageBriefContent(screen.visualBeat, true), sources);
+                      const question = supportedStudioDescription(commerceImageBriefContent(screen.purchaseQuestion || screen.purpose, true), sources);
+                      return `旧版 ${index + 1}：${question.slice(0, 120)}；${display.slice(0, 120)}${beat ? `；画面主线：${beat}` : ""}`;
                   }),
               ]
             : []),
@@ -285,16 +339,19 @@ export function buildDetailPlanPrompt(product: StudioProduct, roles: StudioShotR
         ...(request.scope === "detail"
             ? [
                   `可用 role（仅作内部分类，可重复，不是逐项清单或画法）：${roles.join("、")}。`,
-                  "按答案和主证据编排整页后再写 JSON，不边写边补位。全页任意两屏如果只能靠标题、裁切或换背景区分，就合并旧内容，为后一屏另找实物状态、真实用法或选购依据。不改变屏数，不输出检查过程。",
+                  "按主线和证据编排整页。同一个基本使用动作不能按人体部位、操作角度或场景拆开占屏。主线跨屏时，前屏不要预先列出后屏将证明的细节；后一屏写清新增的信息。不能用之前的部件列表或下单核对凑尾屏。不输出检查过程。",
+                  withAlternatives
+                      ? `先找能替换重复屏的候补，再定正式屏。候补可以是同一主线还没上场的实物证据，不要求另一个卖点。其余最多 ${Math.min(DETAIL_MAX_ALTERNATIVES, Math.ceil(requestedCount / 2))} 项放进顶层 alternatives，字段与正式屏相同，不写 transitionOut。它是必填数组，不增加交付屏数；没有可证实的备选则返回空数组。不要把同一部件、颜色或动作换种说法放进去。`
+                      : undefined,
               ]
             : request.scope === "single"
               ? []
               : [`可用 role（只标记用途，不规定画法）：${roles.join("、")}。`]),
-        "【逐张内容】purchaseQuestion 写唯一的购买问题，displayContent 写要看见的商品状态、动作或关系，visualFocus 写要看清的实物证据，visualBeat 简述本张独有的主体或动作。不要用同一张商品照换几个说明来凑数。",
+        `【逐张内容】purchaseQuestion 写${request.scope === "detail" ? "本屏负责的阅读任务，可以是简短陈述；有具体选购疑问时才写本屏补上的子问题。不用每屏都问部件在哪、怎么拿" : "本图要回答的购买问题"}，displayContent 写买家在这里才能看到的实物、动作或关系。visualFocus 写哪项证据要成为主角；visualBeat 仅在还能补充不同的动作或状态时填写，不用三种说法再说一遍。`,
         "图片模型直接看商品原图，一次完成成品文案、摄影、排版、艺术字和特效。策划字段只写买家该看到的实物和关系，不夹写短文案、品牌题字、图位、字体、配色、相机、图内语言或无字指令；也不输出核对备注。",
-        "evidence 原样抄本张使用的资料编号，保留 fact: 前缀；只用原图或基本用法就填空数组。不要从摆拍或未拍到的物件推断随货内容；缺资料就换一个可诚实展示的用途，不删除整屏。",
-        "只输出 JSON。先写 summary，再按顺序给 screens，数量和所选一致。不输出美术方案或成品文案。",
-        `{"summary":"购买路径","screens":[{"role":"${exampleRole}","purchaseQuestion":"买家要确认什么","displayContent":"需要展示的实物或使用关系","evidence":[],"visualFocus":"先看到哪项证据","visualBeat":"与其他屏不同的实物状态或动作"}]}`,
+        `evidence 只列直接回答本屏问题的资料编号，主证据排首位。${citations ? "照抄方括号内的 E 编号（如 E1），不加前缀，也不补造编号。" : "保留资料原有前缀。"}用法演示也引用能指认作用部位的实物证据；没有对应编号才填空数组。没拍到某部件不代表本品没有该部件或功能。缺资料就换一个可诚实展示的用途，不删除整屏。`,
+        `只输出 JSON。先写 summary，再按顺序给出 ${requestedCount} 项 screens${withAlternatives ? "，最后写 alternatives（即使为空也保留此键）" : ""}。不输出美术方案或成品文案。`,
+        JSON.stringify(outputShape),
     ];
     const prompt = lines.filter((line): line is string => line !== undefined).join("\n");
     const length = Array.from(prompt).length;
@@ -384,16 +441,25 @@ function normalizePlanningScreenRecord(record: Record<string, unknown>): Record<
     };
 }
 
-export function studioPlanEvidenceMatch(sources: StudioClaimSource[], reference: string, allowTextMatch = true) {
+export function studioPlanEvidenceMatch(sources: StudioClaimSource[], reference: string, { allowTextMatch = true, numbered = false } = {}) {
     const id = reference
         .trim()
         .replace(/^[\[【(（]+|[\]】)）]+$/g, "")
         .trim();
+    const citation = numbered ? /^E([1-9]\d*)$/i.exec(id) : null;
+    if (citation) return sources[Number(citation[1]) - 1];
     const match = sources.find((source) => source.id === id) || sources.find((source) => source.id === `fact:${id}`);
     return match || (allowTextMatch ? studioEvidenceMatch(sources, id) : undefined);
 }
 
-export function parseDetailPlan(raw: string, product: StudioProduct, roles: StudioShotRole[], meta: { id: string; model: string; createdAt: string }, requested?: StudioPlanRequest, knowledgeReceipt?: unknown): StudioDetailPlanResult {
+export function parseDetailPlan(
+    raw: string,
+    product: StudioProduct,
+    roles: StudioShotRole[],
+    meta: { id: string; model: string; createdAt: string },
+    requested?: StudioPlanRequest<StudioPlanImages | StudioPlanImageBindings>,
+    knowledgeReceipt?: unknown,
+): StudioDetailPlanResult {
     const request = requested ?? { scope: "detail" };
     let data: Record<string, unknown>;
     try {
@@ -407,11 +473,14 @@ export function parseDetailPlan(raw: string, product: StudioProduct, roles: Stud
     if (!Array.isArray(data.screens)) throw new StudioPlanValidationError([...errors, { field: "screens", message: "策划结果不完整：缺少 screens 数组，不能把 shots 等其它结果当作逐屏策划" }]);
     const allowed = new Set(roles);
     const sources = studioClaimSources(product);
+    const numbered = request.scope === "detail";
+    const styleChoices = screenStyleChoices(product, request);
     const offered = data.screens;
     let ungrounded = 0;
     const textless = product.brief.language === "none";
     const screens: StudioPlannedScreen[] = [];
     const review: StudioPlanReviewedScreen[] = [];
+    const lostEvidence = new Set<number>();
     const suite = request.scope === "template" ? product.brief.suite : undefined;
     const requestedCount = screenCount(product, request);
     const capacity = requested?.scope === "detail" ? studioDetailPlanCapacity(product, requestedCount) : undefined;
@@ -419,12 +488,11 @@ export function parseDetailPlan(raw: string, product: StudioProduct, roles: Stud
     const count = requestedCount;
     const singleRoles = request.scope === "single" ? studioPlanTargetRoles(request.targets || []) : undefined;
     const expectedRoles = suite ? studioTemplateShotRoles(suite) : singleRoles;
-    offered.forEach((value: unknown, index: number) => {
-        const reject = (field: string, message: string) => errors.push({ index, field, message });
-        if (index >= count) {
-            warnings.push({ index, field: "screens", message: `超出用户选择的 ${count} 屏，已忽略多余策划，不影响前 ${count} 屏出图` });
-            return;
-        }
+    const readScreen = (value: unknown, index: number, alternative = false) => {
+        const notices = alternative ? [] : warnings;
+        const reject = (field: string, message: string) => {
+            if (!alternative) errors.push({ index, field, message });
+        };
         if (!value || typeof value !== "object" || Array.isArray(value)) {
             reject("screen", "不是逐屏 JSON 对象");
             return;
@@ -436,12 +504,19 @@ export function parseDetailPlan(raw: string, product: StudioProduct, roles: Stud
             return;
         }
         const record = normalizePlanningScreenRecord(rawScreen);
+        const crop = numbered ? studioDetailSourceOf(rawScreen.detailSource) : undefined;
+        const imageNumber = studioPlanImageNumber(crop?.photo);
+        const attachedId = imageNumber && request.images?.photoEvidence?.find((photo) => photo.index === imageNumber)?.id;
+        const cropPhoto = crop && studioPlanEvidenceMatch(sources, attachedId ? `photo:${attachedId}` : crop.photo, { allowTextMatch: false, numbered });
+        const styleNumber = studioPlanImageNumber(rawScreen.styleReference);
+        const styleReferenceResourceId = styleChoices.find(({ index }) => index === styleNumber)?.resourceId;
         const rawRole = String(record.role).trim();
         const knownRole = Object.hasOwn(STUDIO_DETAIL_SCREEN_GUIDE, rawRole);
         let role = rawRole as StudioShotRole;
+        if (alternative && (!allowed.has(role) || role === "detail-hero")) return;
         if (!knownRole && !(suite && libraryRoles.has(rawRole))) {
             const fallback = request.scope === "detail" ? (index === 0 ? "detail-hero" : index === requestedCount - 1 ? "detail-closing" : "detail-scene") : roles[index] || roles[0];
-            warnings.push({ index, field: "role", message: `未知屏型 role「${rawRole.slice(0, 60)}」，已改为 ${fallback || "通用实拍"}` });
+            notices.push({ index, field: "role", message: `未知屏型 role「${rawRole.slice(0, 60)}」，已改为 ${fallback || "通用实拍"}` });
             if (!fallback) {
                 reject("role", "没有可用屏型");
                 return;
@@ -452,7 +527,7 @@ export function parseDetailPlan(raw: string, product: StudioProduct, roles: Stud
         else if (suite && (!knownRole || !allowed.has(role))) role = allowed.has(expectedRoles![index]) ? expectedRoles![index] : suite.kind === "main" ? "main-scene" : "detail-scene";
         else if (!allowed.has(role)) {
             const fallback = request.scope === "detail" ? (index === 0 ? "detail-hero" : index === requestedCount - 1 ? "detail-closing" : "detail-scene") : roles[index] || roles[0];
-            warnings.push({ index, field: "role", message: `屏型 ${role} 缺少当前商品依据，已改为 ${fallback}，用商品可见信息完成本屏` });
+            notices.push({ index, field: "role", message: `屏型 ${role} 缺少当前商品依据，已改为 ${fallback}，用商品可见信息完成本屏` });
             role = fallback;
         }
         const unsupportedPackage = request.scope === "detail" && rawRole === "detail-package" && role !== rawRole;
@@ -464,7 +539,9 @@ export function parseDetailPlan(raw: string, product: StudioProduct, roles: Stud
         let planned: StudioPlannedScreen | undefined;
         try {
             const question = unsupportedPackage ? fallbackQuestion : clean("purchaseQuestion");
-            const display = (!unsupportedPackage && clean("displayContent")) || fallbackDisplay;
+            const content = !unsupportedPackage && clean("displayContent");
+            if (alternative && (!question || !content)) return;
+            const display = content || fallbackDisplay;
             planned = studioPlannedScreenOf({
                 role,
                 title: unsupportedPackage ? guide.label : record.title,
@@ -474,6 +551,9 @@ export function parseDetailPlan(raw: string, product: StudioProduct, roles: Stud
                 visual: display,
                 visualFocus: unsupportedPackage ? "" : clean("visualFocus"),
                 visualBeat: unsupportedPackage ? "" : clean("visualBeat"),
+                detailSource: !unsupportedPackage && crop && cropPhoto?.id.startsWith("photo:") ? { ...crop, photo: cropPhoto.id } : undefined,
+                styleReferenceResourceId: unsupportedPackage ? undefined : styleReferenceResourceId,
+                transitionOut: request.scope === "detail" && !alternative && !unsupportedPackage && index < count - 1 && typeof rawScreen.transitionOut === "string" ? commerceImageBriefContent(rawScreen.transitionOut, true) : undefined,
                 facts: unsupportedPackage ? [] : record.facts,
                 evidenceRefs: unsupportedPackage ? [] : record.evidenceRefs,
             });
@@ -488,20 +568,21 @@ export function parseDetailPlan(raw: string, product: StudioProduct, roles: Stud
         const screen = planned;
         screen.copySource = "assistant";
         const refs = new Set<string>();
+        if (screen.detailSource) refs.add(screen.detailSource.photo);
         for (const raw of new Set(screen.evidenceRefs || [])) {
-            const entry = studioPlanEvidenceMatch(sources, raw, false);
+            const entry = studioPlanEvidenceMatch(sources, raw, { allowTextMatch: false, numbered });
             if (!entry) {
-                warnings.push({ index, field: "evidenceRefs", message: `资料里找不到依据编号「${raw.slice(0, 60)}」，已忽略并按当前商品资料重新核验` });
+                notices.push({ index, field: "evidenceRefs", message: `资料里找不到依据编号「${raw.slice(0, 60)}」，已忽略并按当前商品资料重新核验` });
             } else refs.add(entry.id);
         }
-        screen.facts = screen.facts.filter((reference) => {
-            const entry = studioPlanEvidenceMatch(sources, reference);
+        screen.facts = screen.facts.flatMap((reference) => {
+            const entry = studioPlanEvidenceMatch(sources, reference, { numbered });
             if (entry) {
                 refs.add(entry.id);
-                return true;
+                return [numbered ? entry.id : reference];
             }
-            warnings.push({ index, field: "facts", message: `「${reference}」无法对应本品资料，未作事实采用` });
-            return false;
+            notices.push({ index, field: "facts", message: `「${reference}」无法对应本品资料，未作事实采用` });
+            return [];
         });
         const citedSources = sources.filter((source) => refs.has(source.id));
         const grounded = (value: string, field: string, blueprint = false) => {
@@ -511,28 +592,51 @@ export function parseDetailPlan(raw: string, product: StudioProduct, roles: Stud
             const allSources = citedSources.length ? checkStudioClaim(value, sources, blueprint) : undefined;
             if (allSources && !allSources.issue) {
                 allSources.refs.forEach((id) => refs.add(id));
-                warnings.push({ index, field, message: "原依据不匹配，已改用对应的商品资料" });
+                notices.push({ index, field, message: "原依据不匹配，已改用对应的商品资料" });
                 return value;
             }
-            ungrounded++;
-            warnings.push({ index, field, message: `${checked.issue}；未用于出图` });
+            if (!alternative) ungrounded++;
+            notices.push({ index, field, message: `${checked.issue}；未用于出图` });
             return blueprint ? supportedStudioDescription(value, sources) : "";
         };
-        const question = grounded(screen.purchaseQuestion || screen.purpose, "purchaseQuestion", true);
+        const questionSource = screen.purchaseQuestion || screen.purpose;
+        const question = grounded(questionSource, "purchaseQuestion", true);
         screen.purchaseQuestion = screen.purpose = question || fallbackQuestion;
         const rawVisual = typeof rawScreen.visual === "string" ? rawScreen.visual.trim() : "";
-        screen.displayContent = grounded(screen.displayContent || screen.visual, "displayContent", true) || fallbackDisplay;
+        const display = grounded(screen.displayContent || screen.visual, "displayContent", true);
+        screen.displayContent = display || fallbackDisplay;
+        if (!alternative && index > 0 && (!display || (!question && screen.purchaseQuestion !== clean("purchaseQuestion")))) lostEvidence.add(index);
         // Keep the legacy draft text only in the compatibility field. Delivery
         // always reads displayContent, so planner-only copy/layout commands
         // cannot reach the image model while old saved plans remain inspectable.
         screen.visual = rawVisual || screen.displayContent;
         if (screen.visualBeat) screen.visualBeat = grounded(screen.visualBeat, "visualBeat", true) || undefined;
         if (screen.visualFocus) screen.visualFocus = grounded(screen.visualFocus, "visualFocus", true) || undefined;
+        if (numbered && !question && display)
+            screen.purchaseQuestion = screen.purpose =
+                screen.visualFocus ||
+                display
+                    .split(/[，,。；;]/u)
+                    .find((part) => part.trim())
+                    ?.trim() ||
+                display;
+        if (screen.transitionOut) screen.transitionOut = grounded(screen.transitionOut, "transitionOut", true) || undefined;
         const listCover = (request.scope === "main" || suite?.kind === "main") && index === 0;
         if (textless || suite?.shots[index]?.noText || screen.role === "main-white" || (listCover && ecommerceRoleSpec(product.platform, "main")?.noText)) screen.noText = true;
         screen.evidenceRefs = refs.size ? [...refs] : undefined;
-        screens.push(screen);
-        review.push({ index, title: screen.title, purpose: screen.purpose, headline: screen.headline, visual: screen.visual.slice(0, 240) });
+        // A bad source ID or a removed aside does not invalidate otherwise usable evidence.
+        return alternative && (!question || question !== questionSource || !display) ? undefined : screen;
+    };
+    offered.forEach((value: unknown, index: number) => {
+        if (index >= count) {
+            warnings.push({ index, field: "screens", message: `超出用户选择的 ${count} 屏，已忽略多余策划，不影响前 ${count} 屏出图` });
+            return;
+        }
+        const screen = readScreen(value, index);
+        if (screen) {
+            screens.push(screen);
+            review.push({ index, title: screen.title, purpose: screen.purpose, headline: screen.headline, visual: screen.visual.slice(0, 240) });
+        }
     });
     for (let index = offered.length; index < count; index++) {
         if (request.scope !== "detail") {
@@ -575,9 +679,91 @@ export function parseDetailPlan(raw: string, product: StudioProduct, roles: Stud
     const first = request.scope === "main" ? screens.findIndex((screen) => screen.role === "main-white" || screen.role === "main-selling") : -1;
     if (first > 0) screens.unshift(screens.splice(first, 1)[0]);
     const unit = request.scope === "detail" || suite?.kind === "detail" ? "屏" : "张";
-    for (const { index, field, reason, previousIndex } of studioDetailRepeats(screens, product.brief.sameLayout)) {
+    const sameLayout = product.brief.sameLayout;
+    const replaced = new Set<number>();
+    if (studioDetailOffersAlternatives(product, request.scope)) {
+        const alternatives = (Array.isArray(data.alternatives) ? data.alternatives : []).slice(0, DETAIL_MAX_ALTERNATIVES).flatMap((value) => {
+            const screen = readScreen(value, 0, true);
+            return screen ? [screen] : [];
+        });
+        const allFacts = studioDetailPlanFacts(product);
+        const detailFacts = allFacts.filter((fact) => ["spec", "material", "usage", "structure"].includes(fact.group) && (fact.evidence === "confirmed" || fact.group === "structure"));
+        const replacementIndex = ({ index, replaceIndex }: ReturnType<typeof studioDetailRepeats>[number]) => replaceIndex ?? index;
+        let repeats = studioDetailRepeats(screens, sameLayout);
+        const originalClusters = repeats
+            .filter((repeat) => repeat.cluster)
+            .map((repeat) => {
+                const anchor = repeat.replaceIndex === undefined ? repeat.previousIndex : repeat.index;
+                return { repeat, anchor, existing: screens[anchor] };
+            });
+        const unresolvedClusters: typeof repeats = [];
+        for (const index of new Set([...lostEvidence, ...repeats.map(replacementIndex)])) {
+            const matches = repeats.filter((repeat) => replacementIndex(repeat) === index);
+            const original = originalClusters.find(({ repeat, anchor, existing }) => replacementIndex(repeat) === index && screens[anchor] === existing);
+            if (original && !matches.some((match) => match.cluster)) matches.push(original.repeat);
+            if (index === 0 || (!lostEvidence.has(index) && !matches.length)) continue;
+            const distinct = (candidate: StudioPlannedScreen) =>
+                !studioDetailRepeats(
+                    screens.map((screen, position) => (position === index ? candidate : screen)),
+                    sameLayout,
+                    index,
+                ).length;
+            const choice = alternatives.findIndex(distinct);
+            let candidate = choice >= 0 ? alternatives.splice(choice, 1)[0] : undefined;
+            if (!candidate && matches.some(({ field }) => field === "purpose" || field === "visual")) {
+                for (const fact of detailFacts) {
+                    const id = `fact:${fact.id}`;
+                    const source = sources.find((entry) => entry.id === id);
+                    const label = fact.label.trim();
+                    if (!source?.value || !label) continue;
+                    const value = source.value;
+                    if (screens.some((screen) => screen.evidenceRefs?.includes(id) || [screen.purchaseQuestion, screen.displayContent, screen.visualFocus].some((text) => text?.includes(label) || text?.includes(value)))) continue;
+                    const role = fact.group === "spec" && allowed.has("detail-spec") ? "detail-spec" : fact.group === "usage" && allowed.has("detail-steps") ? "detail-steps" : "detail-closeup";
+                    const brief = readScreen({ role, purchaseQuestion: `下单前要了解的${label}是什么？`, displayContent: source.text, visualFocus: label, evidence: [id] }, index, true);
+                    if (brief && distinct(brief)) {
+                        candidate = brief;
+                        break;
+                    }
+                }
+            }
+            if (!candidate && matches.some(({ recap, cluster }) => recap || cluster)) {
+                const rest = screens.filter((_, position) => position !== index);
+                for (const edit of studioDetailEditorialCandidates(
+                    product,
+                    sources,
+                    allFacts,
+                    rest,
+                    matches.some((match) => match.cluster),
+                    screens[index + 1],
+                )) {
+                    const brief = readScreen(edit, index, true);
+                    if (brief && distinct(brief)) {
+                        candidate = brief;
+                        break;
+                    }
+                }
+            }
+            if (!candidate) {
+                if (original) unresolvedClusters.push(original.repeat);
+                continue;
+            }
+            screens[index] = candidate;
+            delete screens[index - 1].transitionOut;
+            replaced.add(index);
+            repeats = studioDetailRepeats(screens, sameLayout);
+        }
+        for (const repeat of unresolvedClusters) {
+            const target = replacementIndex(repeat);
+            const anchor = repeat.replaceIndex === undefined ? repeat.previousIndex : repeat.index;
+            if (!replaced.has(target) && !replaced.has(anchor) && !repeats.some((current) => replacementIndex(current) === target && current.field === repeat.field)) {
+                warnings.push({ index: target, field: repeat.field, message: `与第 ${anchor + 1} ${unit}${repeat.reason}。没有找到不同的商品依据，已保留原屏。` });
+            }
+        }
+    }
+    const finalWarnings = warnings.filter(({ index }) => index === undefined || !replaced.has(index));
+    for (const { index, field, reason, previousIndex, replaceIndex } of studioDetailRepeats(screens, sameLayout)) {
         const suggestion = field === "purpose" ? "可以改成另一条有依据的选购问题，只换构图不算新内容。" : "可以改为另一种看得见的主体、状态或使用关系。";
-        warnings.push({ index, field, message: `与第 ${previousIndex + 1} ${unit}${reason}。${suggestion}` });
+        finalWarnings.push({ index: replaceIndex ?? index, field, message: `与第 ${(replaceIndex === undefined ? previousIndex : index) + 1} ${unit}${reason}。${suggestion}` });
     }
     const text = (value: unknown, max: number) => (typeof value === "string" ? value.trim().slice(0, max) : "");
     return {
@@ -586,7 +772,7 @@ export function parseDetailPlan(raw: string, product: StudioProduct, roles: Stud
             createdAt: meta.createdAt,
             inputSignature: studioPlanInputSignature(product),
             model: meta.model,
-            summary: text(data.summary, STUDIO_DETAIL_PLAN_LIMITS.summary),
+            summary: replaced.size ? "" : text(data.summary, STUDIO_DETAIL_PLAN_LIMITS.summary),
             style: typeof data.style === "string" && request.scope !== "detail" ? text(data.style, STUDIO_DETAIL_PLAN_LIMITS.style) : "",
             ...(typeof data.tone === "string" && request.scope !== "detail" && STUDIO_DESIGN_TONE_IDS.includes(data.tone as StudioDesignToneId) ? { tone: data.tone as StudioDesignToneId } : {}),
             ...(receipt ? { knowledgeReceipt: receipt } : {}),
@@ -597,7 +783,7 @@ export function parseDetailPlan(raw: string, product: StudioProduct, roles: Stud
         },
         dropped: request.scope === "single" || request.scope === "template" ? 0 : Math.max(0, offered.length - count),
         ungrounded,
-        warnings,
+        warnings: finalWarnings,
         issues: [],
         tacky: [],
         layoutKinds: new Set(screens.map((screen) => screen.layout)).size,

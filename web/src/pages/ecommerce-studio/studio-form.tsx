@@ -30,7 +30,17 @@ import {
 } from "@/lib/ecommerce-studio/brief";
 import { studioCopyIssues } from "@/lib/ecommerce-studio/dossier-tasks";
 import { studioClaimSources } from "@/lib/ecommerce-studio/claim-evidence";
-import { studioEffectiveQuality, studioEffectiveResolution, studioImageRequest, studioQualityOptions, studioRatioOptions, studioResolutionOptions, type StudioImageRequest } from "@/lib/ecommerce-studio/image-options";
+import {
+    studioCustomRatioTier,
+    studioEffectiveQuality,
+    studioEffectiveResolution,
+    studioImageRequest,
+    studioQualityOptions,
+    studioRatioOptions,
+    studioResolutionOptions,
+    studioSupportedRatio,
+    type StudioImageRequest,
+} from "@/lib/ecommerce-studio/image-options";
 import { studioModelAdapter, studioReferencePhotos } from "@/lib/ecommerce-studio/prompt-compiler";
 import { studioPlanningImages } from "@/lib/ecommerce-studio/reference-selection";
 import { studioChangeStyle } from "@/lib/ecommerce-studio/product";
@@ -208,9 +218,10 @@ export function StudioForm({
     const resolutionOptions = useMemo(() => studioResolutionOptions(profile), [profile]);
     const resolution = studioEffectiveResolution(profile, brief.resolution);
     const ratioOptions = useMemo(() => studioRatioOptions(profile, quality, resolution), [profile, quality, resolution]);
-    // 自定义比例：选了「自定义」或者表单里的比例不在这个模型的预设里时，显示宽高输入框。
     const [customRatioOpen, setCustomRatioOpen] = useState(false);
-    const customRatio = customRatioOpen || (brief.ratio !== "auto" && !ratioOptions.includes(brief.ratio));
+    const allowCustomRatio = Boolean(studioCustomRatioTier(profile, quality, resolution));
+    const customRatio = allowCustomRatio && (customRatioOpen || (brief.ratio !== "auto" && !ratioOptions.includes(brief.ratio)));
+    const selectedRatio = customRatio ? "custom" : brief.ratio === "auto" ? "auto" : studioSupportedRatio(brief.ratio, ratioOptions) || "auto";
     const [pickerOpen, setPickerOpen] = useState(false);
     const [expandedPlanId, setExpandedPlanId] = useState<string>();
     const planScroll = useRef<HTMLDivElement>(null);
@@ -252,6 +263,7 @@ export function StudioForm({
         const first = studioImageReferenceSummary(estimateSpec.inputs[0]);
         return estimateSpec.inputs.slice(1).some((input) => studioImageReferenceSummary(input).total !== first.total);
     }, [estimateSpec.inputs]);
+    const continuityCount = estimateSpec.inputs.filter(({ compiled }) => compiled.continuity).length;
     const estimate = useStudioEstimate({ model: image.value, inputs: estimateSpec.inputs });
     const suggestion = studioSuggestion(product);
     const issues = useMemo(() => studioCopyIssues(studioInfoPoints(product.sellerNotes), { headline: studioTitleOf(product), subhead: "", listingTitle: "", bullets: [] }), [product]);
@@ -695,7 +707,13 @@ export function StudioForm({
                                 </div>
                                 <p className="es-reference-audit-note">
                                     {referenceSummary.notice || "商品真值锁定外观；风格参考只迁移构图、字阶和配色，不会把淘宝商品当成你的商品。"}
-                                    {referenceSummaryVaries ? " 后续画面会按本屏是否需要模特或版式蓝图调整参考图。" : ""}
+                                    {scope === "detail" && estimateSpec.complete && estimateSpec.inputs.length > 1
+                                        ? continuityCount === estimateSpec.inputs.length - 1
+                                            ? " 后续屏参考上一屏的实际下缘。"
+                                            : ` ${continuityCount}/${estimateSpec.inputs.length - 1} 个后续屏附上一屏下缘。`
+                                        : referenceSummaryVaries
+                                          ? " 后续画面会按本屏任务调整参考图。"
+                                          : ""}
                                 </p>
                                 <details>
                                     <summary>查看本次会发送的资料</summary>
@@ -738,9 +756,9 @@ export function StudioForm({
                             <Select
                                 appearance="field"
                                 size="large"
-                                value={customRatio ? "custom" : brief.ratio === "auto" || ratioOptions.includes(brief.ratio) ? brief.ratio : "auto"}
+                                value={selectedRatio}
                                 disabled={!ratioOptions.length}
-                                options={[{ value: "auto", label: ratioOptions.length ? ratioLabel : "模型决定" }, ...ratioOptions.map((ratio) => ({ value: ratio, label: ratio })), ...(ratioOptions.length ? [{ value: "custom", label: "自定义" }] : [])]}
+                                options={[{ value: "auto", label: ratioOptions.length ? ratioLabel : "模型决定" }, ...ratioOptions.map((ratio) => ({ value: ratio, label: ratio })), ...(allowCustomRatio ? [{ value: "custom", label: "自定义" }] : [])]}
                                 ariaLabel="比例"
                                 onChange={(value: string) => {
                                     setCustomRatioOpen(value === "custom");
@@ -833,7 +851,7 @@ export function StudioForm({
                                         </div>
                                         {setKind === "detail" && activePlan ? (
                                             <div className="es-plan-review-preview">
-                                                <StudioPlanPreview plan={activePlan} entries={entries} detail={scope === "detail"} claimSources={claimSources} />
+                                                <StudioPlanPreview plan={activePlan} entries={entries} detail={scope === "detail"} photos={product.photos} references={product.references} claimSources={claimSources} />
                                             </div>
                                         ) : null}
                                     </div>

@@ -259,7 +259,7 @@ export type EcommerceLongImageInput = {
 };
 
 export type EcommerceLongImageResult = {
-    dataUrl: string;
+    blob: Blob;
     width: number;
     height: number;
     /** 每屏在长图里的纵向区间，作为切片的保护区间与切点候选。 */
@@ -326,9 +326,17 @@ async function rasterizeEcommerceLongImageCanvas(input: EcommerceLongImageInput)
     }
 }
 
+function encodeEcommercePng(canvas: HTMLCanvasElement): Promise<Blob> {
+    return new Promise((resolve, reject) => canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("详情图 PNG 编码失败"))), "image/png"));
+}
+
 export async function rasterizeEcommerceLongImage(input: EcommerceLongImageInput): Promise<EcommerceLongImageResult> {
     const { canvas, ...result } = await rasterizeEcommerceLongImageCanvas(input);
-    return { dataUrl: canvasToPngDataUrl(canvas), ...result };
+    try {
+        return { ...result, blob: await encodeEcommercePng(canvas) };
+    } finally {
+        releaseCanvas(canvas);
+    }
 }
 
 /**
@@ -347,7 +355,7 @@ export type EcommerceDetailPagePiece = {
     index: number;
     top: number;
     height: number;
-    dataUrl: string;
+    blob: Blob;
 };
 
 export type EcommerceDetailPageResult = {
@@ -358,14 +366,58 @@ export type EcommerceDetailPageResult = {
     fileNames: string[];
 };
 
-async function cropPiece(image: CanvasImageSource, top: number, height: number, width: number): Promise<string> {
+async function cropPiece(image: CanvasImageSource, top: number, height: number, width: number): Promise<Blob> {
     const canvas = document.createElement("canvas");
     canvas.width = width;
     canvas.height = Math.max(1, Math.round(height));
-    const context = canvas.getContext("2d");
-    if (!context) throw new Error("无法创建切图画布");
-    context.drawImage(image, 0, top, width, height, 0, 0, width, height);
-    return canvasToPngDataUrl(canvas);
+    try {
+        const context = canvas.getContext("2d");
+        if (!context) throw new Error("无法创建切图画布");
+        context.drawImage(image, 0, top, width, height, 0, 0, width, height);
+        return await encodeEcommercePng(canvas);
+    } finally {
+        releaseCanvas(canvas);
+    }
+}
+
+export function ecommerceNativeDetailGeometry(source: EcommerceRasterSize, platform: EcommerceSlicePlatform) {
+    const spec = ecommerceSliceSpec(platform);
+    if (!spec) throw new Error("请选择支持的长图切片规格");
+    if (!Number.isSafeInteger(source.width) || source.width <= 0 || !Number.isSafeInteger(source.height) || source.height <= 0) throw new Error("原图尺寸无效");
+    const { width, height, canvasSafe } = ecommerceLongImageGeometry([source], spec.width);
+    if (!canvasSafe) throw new Error("长图超过浏览器安全合成尺寸");
+    const plan = ecommerceSlicePlan({ totalHeight: height, platform });
+    const issues = ecommerceSliceIssues(plan, platform);
+    if (issues.length) throw new Error(issues.map((issue) => issue.message).join("；"));
+    return { width, height, pieces: plan.pieces };
+}
+
+export async function rasterizeEcommerceNativeDetail(source: Blob, platform: EcommerceSlicePlatform, signal?: AbortSignal) {
+    signal?.throwIfAborted();
+    const bitmap = await createImageBitmap(source);
+    const canvas = document.createElement("canvas");
+    try {
+        signal?.throwIfAborted();
+        const sourceSize = { width: bitmap.width, height: bitmap.height };
+        const geometry = ecommerceNativeDetailGeometry(sourceSize, platform);
+        canvas.width = geometry.width;
+        canvas.height = geometry.height;
+        const context = canvas.getContext("2d");
+        if (!context) throw new Error("无法创建章节切片画布");
+        context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+        const longImage = { width: canvas.width, height: canvas.height, blob: await encodeEcommercePng(canvas) };
+        const pieces: EcommerceDetailPagePiece[] = [];
+        for (const piece of geometry.pieces) {
+            signal?.throwIfAborted();
+            const blob = geometry.pieces.length === 1 ? longImage.blob : await cropPiece(canvas, piece.top, piece.height, canvas.width);
+            pieces.push({ index: piece.index, top: piece.top, height: piece.height, blob });
+        }
+        signal?.throwIfAborted();
+        return { sourceSize, longImage, pieces };
+    } finally {
+        bitmap.close();
+        releaseCanvas(canvas);
+    }
 }
 
 export async function rasterizeEcommerceDetailPage(input: {
@@ -391,11 +443,11 @@ export async function rasterizeEcommerceDetailPage(input: {
         // 这样切点只会落在屏边界，不会切穿某一屏里的商品。
         const { plan, issues } = ecommerceDetailSlices(input.platform, longImageSize);
         if (issues.length) throw new Error(issues.join("；"));
-        const longImage = { dataUrl: canvas.toDataURL("image/png"), ...longImageSize };
+        const longImage = { ...longImageSize, blob: await encodeEcommercePng(canvas) };
         const pieces: EcommerceDetailPagePiece[] = [];
         const fileNames: string[] = [];
         for (const piece of plan.pieces) {
-            pieces.push({ index: piece.index, top: piece.top, height: piece.height, dataUrl: await cropPiece(canvas, piece.top, piece.height, longImage.width) });
+            pieces.push({ index: piece.index, top: piece.top, height: piece.height, blob: await cropPiece(canvas, piece.top, piece.height, longImage.width) });
             fileNames.push(
                 ecommerceSliceFileName({
                     code: input.code?.trim() || "详情页",

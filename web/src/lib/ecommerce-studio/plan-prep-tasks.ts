@@ -1,6 +1,7 @@
 import { ecommercePlatform } from "@/lib/ecommerce/ecommerce-platform-specs";
 import { studioBrandOf, studioInfoPoints, studioInfoText, studioMarket, studioProductTypeOf, studioTitleOf } from "./brief";
-import { STUDIO_DESIGN_TONE_IDS, STUDIO_DESIGN_TONES, STUDIO_PLAN_SCOPES, studioDetailPlanFacts } from "./detail-plan";
+import { studioArtworkFacts, studioClaimSources, supportedStudioDescription } from "./claim-evidence";
+import { STUDIO_DESIGN_TONE_IDS, STUDIO_DESIGN_TONES, STUDIO_PLAN_SCOPES } from "./detail-plan";
 import { extractStudioJson } from "./dossier-tasks";
 import { STUDIO_PREP_LIMITS, studioAskOf, studioDirectionOf, studioPrepPromptLines } from "./plan-prep";
 import { studioAutoColorIssue, studioDesignKnowledgeLines } from "./design-knowledge";
@@ -19,7 +20,9 @@ export type StudioIdFactory = () => string;
 function productLines(product: StudioProduct): string[] {
     const brief = product.brief;
     const points = studioInfoPoints(studioInfoText(product));
-    const facts = studioDetailPlanFacts(product);
+    const sources = studioClaimSources(product);
+    const facts = studioArtworkFacts(product, sources);
+    const summary = supportedStudioDescription(product.dossier?.summary || "", sources);
     const unsure = (product.dossier?.facts || []).filter((fact) => !studioFactUsable(fact)).map((fact) => fact.label.trim());
     const views = product.photos.filter((photo) => photo.truth).map((photo) => STUDIO_VIEW_LABEL[photo.view]);
     const groups = [...new Set(facts.map((fact) => fact.group))].map(
@@ -35,11 +38,11 @@ function productLines(product: StudioProduct): string[] {
         `名称：${product.dossier?.name || product.name || type || "见商品图"}`,
         studioBrandOf(product) ? `品牌：${studioBrandOf(product)}` : "",
         type ? `商品类型：${type}` : "",
-        product.dossier?.summary ? `概括：${product.dossier.summary}` : "",
+        summary ? `概括：${summary}` : "",
         `商品图：${views.length ? views.join("、") : "正面"}`,
         studioTitleOf(product) ? `核心标题：${studioTitleOf(product)}` : "",
         points.length ? `卖点：${points.map((point) => `${point.title}${point.detail ? `（${point.detail}）` : ""}`).join("；")}` : "卖点：无",
-        groups.length ? `已确认的事实：\n${groups.join("\n")}` : "已确认的事实：无",
+        groups.length ? `商品资料（实拍只证外观；部位用途、工作方向与效果以卖家确认为准）：\n${groups.join("\n")}` : "",
         unsure.length ? `没有确认的信息：${unsure.join("、")}` : "",
         brief.audience.trim() ? `目标人群：${brief.audience.trim()}` : "",
         brief.positioning.trim() ? `价格定位：${brief.positioning.trim()}` : "",

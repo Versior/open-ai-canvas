@@ -69,7 +69,10 @@ test("每屏原图直出由图片模型完成的详情页成品，策划的无�
         expect(compiled.prompt).toContain("淘宝 / 天猫");
         expect(compiled.prompt).toContain(`第 ${index + 1}/${earclipScreens.length} 屏`);
         expect(compiled.prompt).toContain(earclipScreens[index].purchaseQuestion);
-        expect(compiled.prompt).toContain("认货、使用或选购");
+        expect(leadingText).toContain("独立于商品印字的短文案");
+        expect(leadingText).toContain("短文案实际画进图里");
+        expect(leadingText).toMatch(/本屏[^。]*(?:部位|动作)[^。]*写出答案[^。]*不照抄问句/);
+        expect(leadingText).not.toContain(earclipScreens[index].purchaseQuestion);
         expect(compiled.studioDetailContract).toBe(3);
         expect(compiled.useDesignKnowledge).toBe(true);
         expect(compiled.prompt).not.toMatch(/画面只呈现商品本体|不添加品牌、型号或参数文字/);
@@ -93,7 +96,8 @@ test("默认详情图只把当前屏交给图片模型，不在成品要求之�
     const restored = restoreRun(product);
     const { compiled } = earclipInput(restored, 0);
     expect(compiled.prompt).toMatch(requiredArtwork);
-    expect(compiled.prompt).toContain("两只耳机与打开的收纳盒");
+    expect(compiled.prompt).toMatch(/盒盖打开，\s*两只耳机左右对称放在盒内两个凹槽中/);
+    expect(compiled.prompt).not.toContain("画面主线：两只耳机与打开的收纳盒");
     expect(compiled.prompt).not.toContain("沿单只耳机弧面观察轮廓");
     expect(compiled.prompt).not.toMatch(/需要文字时|宁可用摄影|不添标语、标签/);
     expect(compiled.prompt).toMatch(/(?:字形|文案)[^。\n]*与(?:摄影|画面|商品)[^。\n]*(?:共同|一起)/);
@@ -105,7 +109,7 @@ test("图片模型字数预算很紧时，提交的请求仍以选定语言的�
     planEarclip(product);
     const restored = restoreRun(product);
     const image = defaultImageCapabilityConfig("openai-image", "gpt-image-2");
-    const maxChars = 740;
+    const maxChars = earclipInput(restored, 0).compiled.prompt.length - 12;
     image.references.promptMaxChars = maxChars;
     const channel = createModelChannel({
         id: "studio-budget",

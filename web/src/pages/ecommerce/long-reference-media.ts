@@ -15,14 +15,14 @@ function ownerGuard(assertCurrent?: () => void) {
     };
 }
 
-async function readReference(resourceId: string, check: () => void) {
+async function readReference(resourceId: string, check: () => void, signal?: AbortSignal) {
     check();
     const resource = await refreshResource(resourceId);
     check();
     if (resource.kind !== "image" || resource.status !== "ready") throw new Error("参考图尚未准备好，请重新上传或稍后重试");
     if (resource.width && resource.height && resource.width * resource.height > 100_000_000) throw new Error("参考图尺寸过大，请缩小图片后重试");
     // Pixel reads require the authenticated same-origin stream, not a CDN display URL.
-    const blob = await getResourceBlob(resourceStorageKey(resourceId), "ecommerce-export");
+    const blob = await getResourceBlob(resourceStorageKey(resourceId), "ecommerce-export", signal);
     check();
     if (!blob) throw new Error("参考图读取失败，请重新上传");
     const bitmap = await createImageBitmap(blob);
@@ -44,7 +44,7 @@ export function commerceReferenceCropBounds(width: number, height: number, top: 
     return { y, cropHeight, width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(cropHeight * scale)) };
 }
 
-async function uploadCrop(bitmap: ImageBitmap, sourceId: string, top: number, bottom: number, label: string, scope: string, check: () => void) {
+async function uploadCrop(bitmap: ImageBitmap, sourceId: string, top: number, bottom: number, label: string, scope: string, check: () => void, signal?: AbortSignal) {
     const bounds = commerceReferenceCropBounds(bitmap.width, bitmap.height, top, bottom);
     const canvas = document.createElement("canvas");
     canvas.width = bounds.width;
@@ -55,13 +55,29 @@ async function uploadCrop(bitmap: ImageBitmap, sourceId: string, top: number, bo
         context.drawImage(bitmap, 0, bounds.y, bitmap.width, bounds.cropHeight, 0, 0, bounds.width, bounds.height);
         const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((value) => (value ? resolve(value) : reject(new Error("参考图裁切失败"))), "image/png"));
         check();
-        const resource = await uploadResourceFile(blob, "image", { width: bounds.width, height: bounds.height, fileName: `${label}.png`, idempotencyKey: `commerce-ref-v1:${scope}:${sourceId}:${bounds.y}:${bounds.cropHeight}` });
+        const resource = await uploadResourceFile(blob, "image", { width: bounds.width, height: bounds.height, fileName: `${label}.png`, idempotencyKey: `commerce-ref-v1:${scope}:${sourceId}:${bounds.y}:${bounds.cropHeight}` }, undefined, {
+            expectedScope: scope,
+            signal,
+        });
         check();
         if (!resource.id || resource.kind !== "image" || resource.status !== "ready") throw new Error("参考裁片上传未完成，请重试");
         return { resourceId: resource.id, role: "style" as const, name: label, width: bounds.width, height: bounds.height };
     } finally {
         canvas.width = 0;
         canvas.height = 0;
+    }
+}
+
+export async function prepareCommerceStyleWindow(window: { sourceResourceId: string; top: number; bottom: number }, scope: string, signal: AbortSignal) {
+    const check = () => {
+        signal.throwIfAborted();
+        if (getActiveUserScope() !== scope || scope === "guest") throw new Error("登录账号已切换，已停止处理参考图");
+    };
+    const bitmap = await readReference(window.sourceResourceId, check, signal);
+    try {
+        return await uploadCrop(bitmap, window.sourceResourceId, window.top, window.bottom, "参考长图局部", scope, check, signal);
+    } finally {
+        bitmap.close();
     }
 }
 

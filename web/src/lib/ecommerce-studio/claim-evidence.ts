@@ -1,39 +1,90 @@
+import { commerceVisibleObservation } from "@/lib/ecommerce/image-brief-content";
 import { studioCleanNotes } from "./brief";
 import { studioAnsweredAsks, studioAskAnswer } from "./plan-prep";
+import { studioPhotoEvidenceId } from "./reference-selection";
 import { studioCopyPair } from "./typography";
-import { studioFactUsable, type StudioFact, type StudioProduct, type StudioShot } from "./types";
+import { STUDIO_VIEW_LABEL, studioFactUsable, type StudioFact, type StudioProduct, type StudioShot } from "./types";
 
-export type StudioClaimSource = { id: string; label: string; text: string; appearanceOnly?: boolean; value?: string };
+export type StudioClaimSource = { id: string; label: string; text: string; appearanceOnly?: boolean; value?: string; sellerConfirmed?: boolean };
 
 export function studioFactSupportsArtwork(fact: StudioFact) {
     return studioFactUsable(fact) && (fact.group !== "package" || fact.evidence === "confirmed");
 }
 
+export function studioSellerClaimSources(notes: string): StudioClaimSource[] {
+    return studioCleanNotes(notes)
+        .split(/[\n；;]/u)
+        .flatMap((line, index) => {
+            const text = line.trim();
+            if (!text) return [];
+            const [label, value] = studioCopyPair(text);
+            return [{ id: `seller:${index + 1}`, label: label || text, text, value: value || undefined, sellerConfirmed: true }];
+        });
+}
+
 export function studioClaimSources(product: StudioProduct): StudioClaimSource[] {
     const sources: StudioClaimSource[] = [];
-    const add = (id: string, label: string, text: string, appearanceOnly = false, value?: string) => {
-        if (text.trim()) sources.push({ id, label, text: text.trim(), appearanceOnly, value });
+    const add = (source: StudioClaimSource) => {
+        if (source.text.trim()) sources.push({ ...source, text: source.text.trim() });
     };
-    for (const fact of product.dossier?.facts || []) if (studioFactSupportsArtwork(fact)) add(`fact:${fact.id}`, fact.label, `${fact.label} ${fact.value}`, false, fact.value);
-    studioCleanNotes(product.sellerNotes)
-        .split(/[\n；;]/)
-        .forEach((line, index) => {
-            const [label, value] = studioCopyPair(line);
-            add(`seller:${index + 1}`, label || line, line, false, value || undefined);
-        });
-    for (const point of product.sellingPoints) if (point.enabled && (point.evidence === "confirmed" || point.evidence === "visible")) add(`point:${point.id}`, point.title, `${point.title} ${point.detail}`, false, point.detail);
+    for (const fact of product.dossier?.facts || []) {
+        if (!studioFactSupportsArtwork(fact)) continue;
+        const inscription = fact.group === "text" && fact.evidence === "visible";
+        const value = fact.evidence === "visible" && !inscription ? commerceVisibleObservation(fact.value).trim() : fact.value;
+        if (value) add({ id: `fact:${fact.id}`, label: fact.label, text: `${fact.label} ${value}`, value, sellerConfirmed: fact.evidence === "confirmed", ...(inscription ? { appearanceOnly: true } : {}) });
+    }
+    sources.push(...studioSellerClaimSources(product.sellerNotes));
+    for (const point of product.sellingPoints)
+        if (point.enabled && (point.evidence === "confirmed" || point.evidence === "visible")) {
+            add({ id: `point:${point.id}`, label: point.title, text: `${point.title} ${point.detail}`, value: point.detail, sellerConfirmed: point.evidence === "confirmed" });
+        }
     for (const ask of studioAnsweredAsks(product.brief.prep)) {
         const answer = studioAskAnswer(ask);
-        const claims = [...normalize(ask.question).matchAll(claimTerms)];
+        const question = normalize(ask.question);
+        const claims = [...question.matchAll(claimTerms)];
         const confirmsOneClaim = claims.length === 1 && /^(?:是|是的|有|支持|已确认|yes)$/i.test(answer.trim());
         const numericAnswer = /^[\s约大至少最多\d.]+\s*(?:厘米|毫米|公斤|克|小时|毫升|cm|mm|kg|g|h|ml)$/i.test(answer.trim());
-        const text = confirmsOneClaim ? `${claims[0][0]}：${answer}` : numericAnswer && !claims.length ? `${ask.question}：${answer}` : answer;
-        add(`answer:${ask.id}`, ask.question, text);
+        const ports = [...question.matchAll(flowPort)];
+        const portAnswer =
+            ports.length === 1 && partMarkers.some((pattern) => pattern.test(question)) && asserted(question, ports[0].index!, ports[0][0].length) && !/(?:还是|或|哪一|哪边)/u.test(question) && /^(?:是|是的|对|对的|已确认|yes)$/i.test(answer.trim());
+        const text = portAnswer ? `${ask.question}：${answer}` : confirmsOneClaim ? `${claims[0][0]}：${answer}` : numericAnswer && !claims.length ? `${ask.question}：${answer}` : answer;
+        add({ id: `answer:${ask.id}`, label: ask.question, text, sellerConfirmed: true });
     }
-    for (const [index, text] of (product.dossier?.invariants || []).entries()) add(`appearance:${index + 1}`, text, text, true);
-    add("product:name", "商品名称", product.name, true);
-    add("product:title", "主标题", product.copy?.headline || "", true);
-    return sources;
+    for (const [index, text] of (product.dossier?.invariants || []).entries()) add({ id: `appearance:${index + 1}`, label: text, text, appearanceOnly: true });
+    for (const photo of product.photos) {
+        if (!photo.truth || !photo.resourceId || photo.view === "tag") continue;
+        const label = `商品实拍（${STUDIO_VIEW_LABEL[photo.view]}）`;
+        add({ id: studioPhotoEvidenceId(photo), label, text: label, appearanceOnly: true });
+    }
+    add({ id: "product:name", label: "商品名称", text: product.name, appearanceOnly: true });
+    add({ id: "product:title", label: "主标题", text: product.copy?.headline || "", appearanceOnly: true });
+    const confirmed = sources.filter((source) => source.sellerConfirmed);
+    return sources.flatMap((source) => {
+        if (source.sellerConfirmed || (source.appearanceOnly && source.value !== undefined) || source.id.startsWith("photo:") || source.id.startsWith("product:")) return [source];
+        const label = supportedStudioDescription(source.label, confirmed);
+        if (source.value !== undefined) {
+            const value = supportedStudioDescription(source.value, confirmed);
+            if (!value && (!label || source.id.startsWith("fact:"))) return [];
+            return [{ ...source, label: label || "可见外观", value, text: [label, value].filter(Boolean).join(" ") }];
+        }
+        const text = supportedStudioDescription(source.text, confirmed);
+        return text ? [{ ...source, label: label || "可见外观", text }] : [];
+    });
+}
+
+export function studioArtworkFacts(product: StudioProduct, sources = studioClaimSources(product)): StudioFact[] {
+    const usable = new Map(sources.map((source) => [source.id, source]));
+    return (product.dossier?.facts || []).flatMap((fact) => {
+        const source = usable.get(`fact:${fact.id}`);
+        return source?.value ? [{ ...fact, label: source.label, value: source.value }] : [];
+    });
+}
+
+export function studioArtworkMaterials(product: StudioProduct) {
+    return studioArtworkFacts(product)
+        .filter((fact) => ["material", "appearance", "structure"].includes(fact.group))
+        .map((fact) => `${fact.label} ${fact.value}`)
+        .join("；");
 }
 
 const compact = (value: string) =>
@@ -104,9 +155,25 @@ const metrics: Record<string, [string, RegExp][]> = {
 };
 const conditions =
     /(?:室温|常温|满电|静置|待机模式|低温|高温|[低中高]档|[低中高]挡|节能模式|标准模式|实验室条件|空载|满载|未开盖|不开盖|密闭|密封条件|不加冰|加冰|\d+(?:\.\d+)?\s*(?:°c|摄氏度))|(?:仅限|仅适用(?:于)?|适用(?:于)?|条件[:：])([^，,。；;\n]{1,18})/gi;
-const claimTerms =
-    /防蓝光|防滑|防漏|不漏水|防水|防摔|耐摔|抗菌|抑菌|治疗|治愈|防过敏|无毒|食品级|医用级|主动降噪|低延迟|防胀气|持久保温|长效保温|\b(?:waterproof|antibacterial|IPX?\d{1,2})\b|(?:FDA|CE|FCC|RoHS|CCC|3C)\s*(?:认证|certified|approved)|(?:通过|获得)(?:国家|权威|第三方)?(?:认证|检测)/gi;
-const caution = /(?:避免|不要|不得|不可|不能|不(?:具备|提供|支持|代表|保证|宣称|承诺|意味着|应|用|写|画|加|编|含)|未(?:核实|确认|提供|经|检测)|没有|无法|并非|不是)[^。；，,;]{0,12}$|不\s*$/;
+const sellerOnlyClaim = /(?:更|很)?(?:节省|省|不占(?:用)?)(?:收纳)?空间|(?:轻松|快速)(?:吹干|干发)|风力(?:更为?|很)?集中|肉质(?:紧实|鲜嫩|细嫩)|口感(?:鲜美|鲜嫩|嫩滑|香甜|紧实)|新鲜(?!色|感|视角|样式)/u;
+const otherEvidenceClaim =
+    /防蓝光|防滑|防漏|不漏水|防水|防摔|耐摔|抗菌|抑菌|治疗|治愈|防过敏|无毒|食品级|医用级|主动降噪|低噪(?:音)?|静音运行|低延迟|防胀气|持久保温|长效保温|速干|轻(?:巧|量|盈)便携|稳固耐用|握持(?:更舒适|不挡手)|使用更顺手|出风(?:更|更为)?(?:均匀|集中)|均匀出风|(?:开启|切到|切换至)(?:高|低|冷|热|强|弱)(?:温|风)?[档挡]|多层防护|固定(?:直角|l形)(?:结构|形态|连接|状态)?|(?:无|没有)(?:可见的?)?(?:折叠(?:关节|铰链|转轴)|铰链(?:或折合结构)?)|(?:不是)?折叠款|(?:不能|不可|不支持|无法|不|可|能)(?:折叠|折小)|折叠收纳|(?:手柄|机身|支架|靠背)(?:(?:不能|不可|无法)折)(?![\p{Script=Han}])|\b(?:waterproof|antibacterial|IPX?\d{1,2})\b|(?:FDA|CE|FCC|RoHS|CCC|3C)\s*(?:认证|certified|approved)|(?:通过|获得)(?:国家|权威|第三方)?(?:认证|检测)/u;
+const omittedPreparation =
+    /(?:无[需须]|不(?:需要|必|用)|不(?:是|一定)必须|并非必须|省去|省掉|省略|跳过|(?<!避|难)免)(?:再|额外|另行|提前|自行|手工|手动|先|做|进行|任何)*(?<prep>切(?:成|为)[\p{Script=Han}]{0,5}?(?:圈|片|丁|段|块|丝|条)|切(?:圈|片|丁|段|块|丝|条|配|开)|(?:清|冲|淘)?洗|去(?:内脏|皮|壳|骨|鳞|刺)|解冻|泡发|浸泡|腌制|焯水|(?:预)?处理(?!背景|图片|照片|图像|文字|字体|图层|素材)|备料)/u;
+const claimTerms = new RegExp(`${sellerOnlyClaim.source}|${otherEvidenceClaim.source}|${omittedPreparation.source}`, "giu");
+const preparationStep = (step: string) => step.replace(/^切(?:成|为).*(圈|片|丁|段|块|丝|条)$/u, "切$1").replace(/^清洗$/u, "洗");
+const packagingInscription = /(?:包装|袋身|瓶身|盒身|标签)(?:上|正面|背面|侧面)?(?:印[有着]|写[有着]|标[有着]|原文[为是:：]?)\s*[「『“"]([^」』”"\n]+)[」』”"]/gu;
+
+function printedClaimSource(sentence: string, index: number, sources: StudioClaimSource[]) {
+    const seen = sources.filter((source) => source.appearanceOnly && source.value);
+    const field = seen.find((source) => normalize(source.text) === sentence && index >= normalize(source.label).length);
+    if (field) return field;
+    for (const match of sentence.matchAll(packagingInscription)) {
+        const start = match.index! + match[0].indexOf(match[1]);
+        if (index >= start && index < start + match[1].length) return seen.find((source) => normalize(source.value!) === match[1]);
+    }
+}
+const caution = /(?:避免|不要|不得|不可|不能|不(?:具备|提供|支持|代表|表示|保证|宣称|承诺|意味着|应|用|写|画|加|编|含)|未(?:核实|确认|提供|经|检测)|没有|无法|并非|不是)[^。；，,;]{0,12}$|不\s*$/;
 const englishClaimTokens: [RegExp, string][] = [
     [/\b(?:height|high|tall)\b/g, "高度"],
     [/\b(?:width|wide)\b/g, "宽度"],
@@ -159,12 +226,46 @@ const sentences = (text: string) =>
         .map((line) => line.trim())
         .filter(Boolean);
 const asserted = (text: string, index: number, length: number) => !caution.test(text.slice(0, index)) && !/^\s*(?:无依据|未经证实|尚未确认|待确认)/.test(text.slice(index + length));
+const flowPort = /[进出][风水气](?:的?[一这]?[端侧面]|口)/gu;
+const portRole = (term: string) => `${term.slice(0, 2)}口`;
+const partMarkers = [/格栅|网罩|网面|网孔|圆网/u, /扁嘴|扁平|扁口/u, /圆形|圆环|圆孔|圆口|圆网/u, /前[端侧面]|正面/u, /背[侧面]|后[端侧面]|尾端/u, /左[端侧边]/u, /右[端侧边]/u, /上端|顶(?:端|部)/u, /下端|底(?:端|部)/u];
+const workingPart = /(?:风[口筒嘴]|喷[口嘴]|管口|端面|格栅|网罩|扁嘴|哪一端)/u;
+const aimsAt = /(?:朝[向哪个]|对[着准]|正对|吹向|对位|(?:位于|处在|靠近)(?:[此该哪一]?端的?)?(?:风口|喷嘴|喷口|管口)(?:下方|前方|方向))/u;
+const flowTarget = /(?:头发|湿发|长发|发[束根梢丝区]|刘海|后颈|杯[子口中内]|水[盆杯槽])/u;
+
+function flowPortSource(clause: string, port: string, sources: StudioClaimSource[]) {
+    const anchors = partMarkers.filter((pattern) => pattern.test(clause));
+    return sources.find(
+        (source) =>
+            source.sellerConfirmed &&
+            sentences(source.text).some((sentence) =>
+                sentence.split(/[，,；;]/u).some((part) => {
+                    const ports = [...part.matchAll(flowPort)];
+                    return ports.length > 0 && ports.every((match) => portRole(match[0]) === portRole(port) && asserted(part, match.index!, match[0].length)) && anchors.every((pattern) => pattern.test(part));
+                }),
+            ),
+    );
+}
+
+function workingDirectionPort(clause: string) {
+    if (!workingPart.test(clause) || !aimsAt.test(clause) || !flowTarget.test(clause)) return;
+    return /头发|湿发|长发|发[束根梢丝区]|刘海|后颈|风[筒嘴口]/u.test(clause) ? "出风口" : "出水口";
+}
+
+function neutralPortDescription(clause: string, sources: StudioClaimSource[]) {
+    const unsupported = [...new Set([...clause.matchAll(flowPort)].map(([term]) => term))].filter((term) => !flowPortSource(normalize(clause), term, sources));
+    if (!unsupported.length) return clause;
+    if (!/(?:格栅|环圈|网孔|圆环|形状|轮廓|配色|颜色|开口|外沿|圆形|侧面|正面|特写)/u.test(clause) || /(?:对[着准]|正对|朝向|吹向|作用于|送往|流向|对位)/u.test(clause)) return "";
+    return unsupported.reduce((text, term) => text.replaceAll(term, term.includes("风") ? "端面" : "开口"), clause);
+}
 const guard = (word: string) => (/至少|不少于|不低于|≥/.test(word) ? "≥" : /不超过|至多|最多|≤/.test(word) ? "≤" : /约/.test(word) ? "约" : word);
 
 function quantityMetric(unit: string, left: string, right: string) {
     const family = ["cm", "mm", "m", "inch"].includes(unit) ? "length" : ["h", "min", "s"].includes(unit) ? "time" : ["g", "kg"].includes(unit) ? "weight" : unit;
     const candidates = metrics[family] || [];
     let metric = "",
+        prefix = "",
+        suffix = "",
         distance = Infinity;
     for (const [name, pattern] of candidates) {
         for (const match of left.matchAll(pattern)) {
@@ -172,15 +273,19 @@ function quantityMetric(unit: string, left: string, right: string) {
             if (gap <= 12 && gap < distance) {
                 metric = name;
                 distance = gap;
+                prefix = /^[\s:：为是达约]*$/u.test(left.slice(match.index! + match[0].length)) ? left.slice(match.index!) : "";
+                suffix = "";
             }
         }
         for (const match of right.matchAll(pattern))
             if (match.index! <= 2 && match.index! < distance) {
                 metric = name;
                 distance = match.index!;
+                prefix = "";
+                suffix = /^\s*$/u.test(right.slice(0, match.index!)) ? right.slice(0, match.index! + match[0].length) : "";
             }
     }
-    return metric;
+    return { metric, prefix, suffix };
 }
 
 function quantities(text: string) {
@@ -192,11 +297,20 @@ function quantities(text: string) {
                 .pop() || "";
         const right = text.slice(match.index! + match[0].length).split(/[，,；;、。\n]/)[0];
         const unit = units.get(match[3])!;
-        return { raw: match[0].trim(), index: match.index!, value: match[2].replace(/\s/g, "").replace(/[至到~–]/g, "-"), unit, metric: quantityMetric(unit, left, right), guard: guard(match[1] || "") };
+        const { metric, prefix, suffix } = quantityMetric(unit, left, right);
+        return {
+            raw: match[0].trim(),
+            matchedText: metric && !prefix && !suffix ? undefined : (prefix + match[0] + suffix).trim(),
+            index: match.index!,
+            value: match[2].replace(/\s/g, "").replace(/[至到~–]/g, "-"),
+            unit,
+            metric,
+            guard: guard(match[1] || ""),
+        };
     });
 }
 
-export type StudioClaimCheck = { refs: string[]; issue?: string };
+export type StudioClaimCheck = { refs: string[]; issue?: string; matchedText?: string };
 
 const specLabels = [
     ["材质", "材料", "用料", "material", "materials"],
@@ -278,34 +392,56 @@ export function studioSpecLineCheck(line: string, sources: StudioClaimSource[]):
     return studioSpecEvidence(label, value, sources);
 }
 
-export function checkStudioClaim(value: string, sources: StudioClaimSource[], blueprint = false): StudioClaimCheck {
+export function checkStudioClaim(value: string, sources: StudioClaimSource[], blueprint = false, checkPrepOmissions = true): StudioClaimCheck {
     const refs = new Set<string>();
     for (const sentence of sentences(value)) {
         const tokens = scopeTokens(sentence);
-        const sourceFor = (test: (line: string) => boolean) =>
+        const sourceFor = (test: (line: string) => boolean, sellerOnly = false) =>
             sources.find(
                 (source) =>
                     !source.appearanceOnly &&
+                    (!sellerOnly || source.sellerConfirmed) &&
                     sentences(source.text).some((line) => {
                         if (!test(line)) return false;
                         const verified = scopeTokens(line);
                         return verified.every((token) => tokens.includes(token) || compact(sentence).includes(token)) && tokens.every((token) => verified.includes(token) || compact(line).includes(token));
                     }),
             );
+        for (const clause of sentence.split(/[，,]/u)) {
+            const implied = workingDirectionPort(clause);
+            if (implied) {
+                const source = flowPortSource(clause, implied, sources);
+                if (!source) return { refs: [...refs], issue: "工作端与作用对象的方向关系没有对应的商品依据" };
+                refs.add(source.id);
+            }
+            for (const match of clause.matchAll(flowPort)) {
+                if (!asserted(clause, match.index!, match[0].length)) continue;
+                const source = flowPortSource(clause, match[0], sources);
+                if (!source) return { refs: [...refs], issue: `「${match[0]}」缺少对应部位的工作方向依据`, matchedText: match[0] };
+                refs.add(source.id);
+            }
+        }
         for (const match of sentence.matchAll(claimTerms)) {
             if (!asserted(sentence, match.index!, match[0].length)) continue;
-            const source = sourceFor((line) => [...line.matchAll(claimTerms)].some((term) => term[0] === match[0] && asserted(line, term.index!, term[0].length)));
-            if (!source) return { refs: [...refs], issue: `「${match[0]}」没有对应的商品依据或适用条件` };
+            const step = match.groups?.prep;
+            if (step && !checkPrepOmissions) continue;
+            const source =
+                (step && printedClaimSource(sentence, match.index!, sources)) ||
+                sourceFor((line) => {
+                    if (step && /[?？]|待(?:确认|核实)|未(?:经)?(?:确认|核实)|还没(?:确认|核实)/u.test(line)) return false;
+                    return [...line.matchAll(claimTerms)].some((term) => (step ? term.groups?.prep && preparationStep(term.groups.prep) === preparationStep(step) : term[0] === match[0]) && asserted(line, term.index!, term[0].length));
+                }, true);
+            if (!source) return { refs: [...refs], issue: `「${match[0]}」没有对应的商品依据或适用条件`, matchedText: match[0] };
             refs.add(source.id);
         }
         const amounts = quantities(sentence);
         for (const amount of amounts) {
             if (!asserted(sentence, amount.index, amount.raw.length)) continue;
-            if (blueprint && !amount.metric && !/容量|毫升|续航|克重|规格|参数|净重|额定|售价|温度|商品实测/.test(sentence)) continue;
+            if (blueprint && !amount.metric && /^\s*(?:留白|画幅|主体占比|镜头|焦距|柔光灯|补光灯)/.test(sentence.slice(amount.index + amount.raw.length))) continue;
             const source = sourceFor((line) =>
                 quantities(line).some((entry) => asserted(line, entry.index, entry.raw.length) && entry.value === amount.value && entry.unit === amount.unit && (!amount.metric || entry.metric === amount.metric) && entry.guard === amount.guard),
             );
-            if (!source) return { refs: [...refs], issue: `「${amount.metric}${amount.raw}」缺少同指标、数值、单位及条件的商品依据` };
+            if (!source) return { refs: [...refs], issue: `「${amount.metric}${amount.raw}」缺少同指标、数值、单位及条件的商品依据`, matchedText: amount.matchedText };
             refs.add(source.id);
         }
         if (blueprint) continue;
@@ -346,15 +482,32 @@ export function studioShotClaimIssue(product: StudioProduct, shot: StudioShot, w
     ];
     for (const [label, value, blueprint] of fields) {
         if (!blueprint && !withCopy) continue;
-        const { issue } = checkStudioClaim(value, sources, blueprint);
+        const { issue } = checkStudioClaim(value, sources, blueprint, false);
         if (issue) return `${label}：${issue}`;
     }
 }
 
 export function supportedStudioDescription(value: string, sources: StudioClaimSource[]) {
-    return value
-        .split(/(?<=[。；;！？])|\n/)
-        .filter((sentence) => !checkStudioClaim(sentence, sources, true).issue)
+    const observed = commerceVisibleObservation(value);
+    const description = [...observed.matchAll(flowPort)].length
+        ? observed
+              .split(/(?<=[。；;！？!?，,])|\n/)
+              .map((clause) => neutralPortDescription(clause, sources))
+              .join("")
+              .replace(/[，,]\s*$/, "")
+        : observed;
+    const supported = description
+        .split(/(?<=[。；;！？!?])|\n/)
+        .flatMap((sentence) => {
+            if (!checkStudioClaim(sentence, sources, true).issue) return [sentence];
+            const clauses = sentence.split(/(?<=[，,])/);
+            return clauses
+                .filter((clause) => !checkStudioClaim(clause, sources, true).issue)
+                .join("")
+                .replace(/[，,]\s*$/, "")
+                .trim();
+        })
         .join("")
         .trim();
+    return supported !== observed && /[?？]$/.test(observed.trim()) && /(?:[时后前中]|时候|情况[下中])$/.test(supported) ? "" : supported;
 }

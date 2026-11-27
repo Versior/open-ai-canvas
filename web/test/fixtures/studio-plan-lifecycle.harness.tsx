@@ -1,4 +1,4 @@
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, expect, spyOn, test } from "bun:test";
 import { Window } from "happy-dom";
 import "fake-indexeddb/auto";
 import { canonicalize } from "json-canonicalize";
@@ -11,6 +11,7 @@ for (const key of [
     "navigator",
     "HTMLElement",
     "HTMLInputElement",
+    "HTMLTextAreaElement",
     "HTMLAnchorElement",
     "Element",
     "SVGElement",
@@ -38,19 +39,22 @@ const { createRoot } = await import("react-dom/client");
 const { MemoryRouter } = await import("react-router");
 const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
 const { App, ConfigProvider } = await import("antd");
-const { apiClient } = await import("@/services/api/request");
+const { apiClient, ApiError } = await import("@/services/api/request");
 const { useConfigStore, createModelChannel, defaultConfig } = await import("@/stores/use-config-store");
 const { useUserStore } = await import("@/stores/use-user-store");
 const { setActiveUserScope } = await import("@/lib/user-scope");
 const { defaultModelCapabilityConfig } = await import("@/lib/model-capabilities");
 const { patchStudioDetailPlanScreen, STUDIO_DETAIL_PLAN_LIMITS, studioDetailPlanRoles } = await import("@/lib/ecommerce-studio/detail-plan");
 const { parseDetailPlan } = await import("@/lib/ecommerce-studio/detail-plan-tasks");
-const { createStudioProduct } = await import("@/lib/ecommerce-studio/product");
+const { createStudioProduct, studioShotPreview } = await import("@/lib/ecommerce-studio/product");
+const { studioPlanningImages, studioPlanImageBindings } = await import("@/lib/ecommerce-studio/reference-selection");
 const { studioActivePlan, studioRevisionPlan } = await import("@/lib/ecommerce-studio/runs");
+const { studioGroupProgress } = await import("@/lib/ecommerce-studio/task-display");
 const { useStudioRunner, useStudioAnalysis } = await import("@/pages/ecommerce-studio/use-studio-runner");
 const { useStudioPlanProgress, studioPlanProgressKey } = await import("@/pages/ecommerce-studio/use-studio-plan-progress");
 const { useStudioStore } = await import("@/pages/ecommerce-studio/use-studio-store");
 const { StudioForm } = await import("@/pages/ecommerce-studio/studio-form");
+const { StudioResults } = await import("@/pages/ecommerce-studio/studio-results");
 const scope = "studio-offline";
 const textModel = "fixture::qwen-test";
 const imageModel = "fixture::gpt-image-1";
@@ -90,6 +94,7 @@ const library = [2, 3].map((count) => ({
 }));
 const purchaseQuestions = ["看清杯子外观", "展示握持方式", "核对杯口轮廓", "了解杯身与杯柄的连接", "理解杯子在桌面上的使用关系", "回顾杯口和手部的关系"];
 const displayContents = ["杯子在木桌上", "手握杯柄", "杯沿的圆形开口", "杯柄接入杯身的部位", "杯子在餐具旁的相对位置", "手把杯口送到嘴边的动作"];
+const transitionOut = "沿桌面的木纹从杯身引向杯柄";
 const concept = "从一只暖瓷杯开始";
 const artDirection = { visualWorld: "暖白瓷面和木桌的晨光形成温润对比", screenVariationPlan: "从杯身轮廓过渡到手指与把手接触的细节" };
 const screens = (count: number) =>
@@ -102,6 +107,7 @@ const screens = (count: number) =>
             purchaseQuestion: purchaseQuestions[index],
             displayContent: displayContents[index],
             evidence: count === 6 && index === 0 ? ["product:name"] : [],
+            ...(index === 0 && count > 1 ? { transitionOut } : {}),
         })),
     });
 let replyCount = 1;
@@ -112,6 +118,45 @@ const requests: CreateTaskInput[] = [];
 const reads: string[] = [];
 const unexpected: string[] = [];
 const tasks = new Map<string, GenerationTask>();
+const imageOperations = new Map<string, GenerationTask>();
+let finishImages = false;
+let loseImageReplyForScreen: number | undefined;
+let heldImageRead: { screen: number; pending: Promise<void>; taskId?: string; signal?: AbortSignal } | undefined;
+const edgeReads: string[] = [];
+const edgeUploads: string[] = [];
+const edgeDraws: Array<{ source: string; args: number[] }> = [];
+const styleSource = "seller-long-reference";
+const styleUploads: string[] = [];
+const imageQuoteCounts: number[] = [];
+const colors = new Map<string, { top: number; bottom: number }>();
+Object.defineProperty(globalThis, "createImageBitmap", {
+    configurable: true,
+    value: async (blob: Blob) => {
+        const source = await blob.text();
+        return { width: source === styleSource ? 750 : 768, height: source === styleSource ? 9000 : 1024, source, close() {} };
+    },
+});
+spyOn(dom.HTMLCanvasElement.prototype, "getContext").mockImplementation(function () {
+    let sample = "";
+    let bottom = false;
+    return {
+        drawImage(bitmap: ImageBitmap & { source: string }, ...args: number[]) {
+            sample = bitmap.source;
+            bottom = args[1] > 0;
+            if (args.at(-1) === 512 || args.at(-1) === 103) edgeDraws.push({ source: bitmap.source, args });
+        },
+        createLinearGradient() {
+            return { addColorStop() {} };
+        },
+        fillRect() {},
+        clearRect() {},
+        getImageData(_x: number, _y: number, width: number, height: number) {
+            const color = colors.get(sample)?.[bottom ? "bottom" : "top"] ?? 200;
+            return { data: Uint8ClampedArray.from({ length: width * height * 4 }, (_, index) => (index % 4 === 3 ? 255 : color)) };
+        },
+    } as unknown as CanvasRenderingContext2D;
+});
+spyOn(dom.HTMLCanvasElement.prototype, "toBlob").mockImplementation((callback) => callback(new Blob(["edge fixture"], { type: "image/png" })));
 apiClient.request = (async (request) => {
     const path = request.url || "";
     const method = request.method?.toUpperCase();
@@ -125,28 +170,79 @@ apiClient.request = (async (request) => {
     } else if (path === "/ecommerce/studio/templates") data = { templates: [] };
     else if (path === "/ecommerce/templates") data = { items: library.map((item) => ({ id: item.id, name: item.name, category: item.category, count: item.shots.length })), categories: [], total: 2, page: 1, pageSize: 20 };
     else if (path.startsWith("/ecommerce/templates/")) data = { template: library.find((item) => path.endsWith(`/${item.id}`)) };
-    else if (path === "/model-catalog/quote" && method === "POST") data = { quote: { logicalModelId: "", billingMode: "fixed_request", quantity: 1, amountMicrocredits: 1_000_000, estimated: false } };
-    else if (path === "/tasks" && method === "POST") {
+    else if (path === "/model-catalog/quote" && method === "POST") {
+        if (request.data.intent.capability === "image") imageQuoteCounts.push(request.data.intent.inputs.image);
+        data = { quote: { logicalModelId: "", billingMode: "fixed_request", quantity: 1, amountMicrocredits: 1_000_000, estimated: false } };
+    } else if (path === `/resources/${styleSource}` && method === "GET") data = { resource: { id: styleSource, kind: "image", status: "ready", width: 750, height: 9000 } };
+    else if (path === "/resources/access" && method === "POST") {
+        data = {
+            items: request.data.map(({ resourceId, purpose }: { resourceId: string; purpose: string }) => {
+                expect(purpose).toBe("ecommerce-export");
+                return { access: { url: `/api/resources/${resourceId}/file`, delivery: "platform-local", refreshAt: new Date(Date.now() + 60_000).toISOString() } };
+            }),
+        };
+    } else if (path === "/resources" && method === "POST") {
+        expect(request.data.get("kind")).toBe("image");
+        const key = String(request.headers?.["X-Idempotency-Key"]);
+        if (key.startsWith(`commerce-ref-v1:${scope}:${styleSource}:`)) {
+            const [, start, height] = key.match(/:(\d+):(\d+)$/)!;
+            expect([request.data.get("width"), request.data.get("height")]).toEqual(["750", height]);
+            expect(request.headers?.["X-Canvas-Expected-User"]).toBe(scope);
+            styleUploads.push(`style-${start}-${height}`);
+            data = { resource: { id: styleUploads.at(-1), kind: "image", status: "ready" } };
+        } else {
+            const [, version, source] = key.match(/^studio-detail-edge-(v5|v7):(.+)$/) || [];
+            expect(source).toBeTruthy();
+            expect([request.data.get("width"), request.data.get("height")]).toEqual(["768", version === "v7" ? "512" : "103"]);
+            expect(edgeReads).toContain(source);
+            edgeUploads.push(source);
+            data = { resource: { id: `${version === "v7" ? "context" : "edge"}-${source}`, kind: "image", status: "ready" } };
+        }
+    } else if (path === "/tasks" && method === "POST") {
         const input = request.data as CreateTaskInput;
         const id = `fixture-task-${requests.push(input)}`;
         const image = input.operation === "image";
+        const operation = input.idempotencyKey || "";
+        const original = image ? imageOperations.get(operation) : undefined;
         const task: GenerationTask = {
             id,
             attempts: 1,
             type: input.type!,
             operation: input.operation,
             prompt: input.prompt,
-            status: image ? "failed" : holdPlanStream ? "running" : "succeeded",
+            status: image ? (finishImages ? "succeeded" : "failed") : holdPlanStream ? "running" : "succeeded",
             inputJson: JSON.stringify({ metadata: input.input?.metadata }),
-            ...(image ? { error: "fixture: no paid generation" } : { resultJson: JSON.stringify({ text: screens(replyCount) }) }),
+            ...(image ? (finishImages ? { resultJson: JSON.stringify({ images: [{ storageKey: `resource:output-${id}`, width: 768, height: 1024 }] }) } : { error: "fixture: image failed" }) : { resultJson: JSON.stringify({ text: screens(replyCount) }) }),
             createdAt: base.createdAt,
             updatedAt: base.createdAt,
         };
-        tasks.set(id, task);
-        data = { ...task, status: "queued", resultJson: "" };
+        if (original) data = original;
+        else {
+            tasks.set(id, task);
+            if (image) {
+                expect(operation).not.toBe("");
+                imageOperations.set(operation, task);
+                const screen = input.input?.metadata?.studioScreenIndex;
+                if (heldImageRead?.screen === screen && !heldImageRead.taskId) heldImageRead.taskId = id;
+                const attempt = saved.runs[0]?.shots[Number(screen) - 1]?.attempts.at(-1);
+                const edge = input.input?.referenceImages?.at(attempt?.input?.styleWindow ? -2 : -1)?.storageKey;
+                if (attempt?.input?.compiled.continuity) expect(edge).toBe(`resource:${attempt.input.compiled.continuity.reference?.resourceId}`);
+                if (loseImageReplyForScreen === screen && typeof screen === "number") {
+                    loseImageReplyForScreen = undefined;
+                    throw new ApiError("fixture: reply lost", { status: 408 });
+                }
+            }
+            data = { ...task, status: "queued", resultJson: "" };
+        }
     } else if (path.startsWith("/tasks/fixture-task-")) {
         reads.push(path);
-        data = tasks.get(path.slice("/tasks/".length));
+        const taskId = path.slice("/tasks/".length);
+        if (heldImageRead?.taskId === taskId && !heldImageRead.signal && request.signal) {
+            const hold = heldImageRead;
+            hold.signal = request.signal as AbortSignal;
+            await hold.pending;
+        }
+        data = tasks.get(taskId);
     } else {
         unexpected.push(path);
         throw new Error(`unexpected offline request ${path}`);
@@ -154,8 +250,20 @@ apiClient.request = (async (request) => {
     return { data: { code: 0, data, msg: "ok" }, status: 200, headers: {} };
 }) as typeof apiClient.request;
 
+const browserFetch = globalThis.fetch;
 globalThis.fetch = (async (input, options) => {
     const path = String(input);
+    if (path.startsWith("blob:")) return browserFetch(input, options);
+    if (path.endsWith(`/resources/${styleSource}/file`)) {
+        expect(options?.credentials).toBe("include");
+        return new Response(new Blob([styleSource], { type: "image/png" }));
+    }
+    const image = path.match(/\/resources\/(output-fixture-task-\d+)\/file$/);
+    if (image) {
+        expect(options?.credentials).toBe("include");
+        edgeReads.push(image[1]);
+        return new Response(new Blob([image[1]], { type: "image/png" }));
+    }
     const match = path.match(/\/tasks\/(fixture-task-\d+)\/text-events/);
     if (!match) throw new Error(`unexpected offline stream ${path}`);
     expect(options?.credentials).toBe("include");
@@ -183,14 +291,33 @@ globalThis.fetch = (async (input, options) => {
     );
 }) as typeof fetch;
 
-const root = createRoot(dom.document.body.appendChild(dom.document.createElement("div")));
+const host = dom.document.body.appendChild(dom.document.createElement("div"));
+let root = createRoot(host);
 const client = new QueryClient();
 let liveRunner: ReturnType<typeof useStudioRunner> | undefined;
+let showResults = false;
 function Panel() {
     const product = useStudioStore((state) => state.products[0]);
     const runner = useStudioRunner();
     liveRunner = runner;
+    if (showResults) return <StudioResults product={product} runner={runner} imageModel={imageModel} edit={(fn, options) => void store().update(product.id, fn, options)} onView={() => {}} onReference={() => {}} />;
     return <StudioForm product={product} runner={runner} edit={(fn, options) => void store().update(product.id, fn, options)} ensure={() => product.id} onOutputChange={() => {}} onPlanning={() => {}} onGenerated={() => {}} />;
+}
+async function mountPanel() {
+    await act(async () => {
+        await store().load(true);
+        root.render(
+            <ConfigProvider theme={{ token: { motion: false } }}>
+                <App>
+                    <QueryClientProvider client={client}>
+                        <MemoryRouter>
+                            <Panel />
+                        </MemoryRouter>
+                    </QueryClientProvider>
+                </App>
+            </ConfigProvider>,
+        );
+    });
 }
 const local = () => store().products[0];
 const button = (text: string) => [...dom.document.querySelectorAll("button")].find((item) => item.textContent.trim() === text);
@@ -233,21 +360,36 @@ afterAll(async () => {
     client.clear();
 });
 
-test("starred input, durable diagnostics, GET-only recovery, suite identity and first-screen charge boundary", async () => {
-    await act(async () => {
-        await store().load(true);
-        root.render(
-            <ConfigProvider theme={{ token: { motion: false } }}>
-                <App>
-                    <QueryClientProvider client={client}>
-                        <MemoryRouter>
-                            <Panel />
-                        </MemoryRouter>
-                    </QueryClientProvider>
-                </App>
-            </ConfigProvider>,
-        );
+test("固定像素枚举的模型不提供自定义比例，旧草稿显示实际可出的预设", async () => {
+    const previous = useConfigStore.getState().config;
+    const previousRatio = saved.brief.ratio;
+    const image = defaultModelCapabilityConfig("openai-image", "gpt-image-1").image!;
+    const size = { parameter: "size" as const, default: "1024x1360", values: ["1024x1360"], allowCustom: false, presets: [{ tier: "1k" as const, ratio: "3:4", size: "1024x1360", width: 1024, height: 1360 }] };
+    const model = createModelChannel({
+        ...channel,
+        modelCosts: channel.modelCosts?.map((cost) =>
+            cost.capability === "image" ? { ...cost, capabilityConfig: { version: 1, image: { ...image, size, parameters: [{ name: "size", label: "画幅", type: "string", encoding: "pixels", values: size.values, default: size.default }] } } } : cost,
+        ),
     });
+    try {
+        useConfigStore.setState({ config: { ...previous, channels: [model] } });
+        await mountPanel();
+        await edit((product) => ({ ...product, brief: { ...product.brief, ratio: "3:8" } }));
+        const ratio = dom.document.querySelector('[role="combobox"][aria-label="比例"]');
+        expect(ratio).not.toBeNull();
+        expect(Boolean(dom.document.querySelector('[aria-label="自定义比例的宽"]'))).toBe(false);
+        expect(ratio!.closest(".es-field")?.textContent).toContain("3:4");
+        await act(async () => ratio!.dispatchEvent(new dom.KeyboardEvent("keydown", { key: "ArrowDown", keyCode: 40, bubbles: true })));
+        await settle(() => Boolean(dom.document.querySelector(".ant-select-dropdown")));
+        expect(dom.document.querySelector(".ant-select-dropdown")?.textContent).not.toContain("自定义");
+    } finally {
+        await edit((product) => ({ ...product, brief: { ...product.brief, ratio: previousRatio } }));
+        await act(async () => useConfigStore.setState({ config: previous }));
+    }
+});
+
+test("starred input, durable diagnostics, GET-only recovery, suite identity and first-screen charge boundary", async () => {
+    await mountPanel();
     await pick(library[0]);
     expect(dom.document.querySelector('[role="combobox"][aria-label="平台"]')).not.toBeNull();
     await edit((product) => ({ ...product, photos: product.photos.map((photo) => ({ ...photo, truth: false })) }));
@@ -423,6 +565,36 @@ test("editing the detail purchase question and display content updates the saved
     expect(unexpected).toEqual([]);
 }, 10000);
 
+test("确认前逐屏展开实际匹配的卖家参考，不把设计案例混进实拍依据或启动生成", async () => {
+    const original = local();
+    const before = requests.length;
+    try {
+        await edit((product) => {
+            const references = ["场景参考", "纹理参考"].map((name, index) => ({ ...product.photos[0], id: `design-${index}`, resourceId: `style-${index}`, name, view: "other" as const, truth: false }));
+            const draft = { ...product, references, brief: { ...product.brief, sameLayout: false, detailScreens: 3, outputType: "detail-set" as const, shotOrder: [], shotSkip: [] } };
+            const selected = studioPlanningImages(draft, 3);
+            const screens = ["图3", "图2", undefined].map((styleReference, index) => ({ role: index ? "detail-scene" : "detail-hero", purchaseQuestion: purchaseQuestions[index], displayContent: displayContents[index], styleReference }));
+            draft.brief.detailPlan = parseDetailPlan(
+                JSON.stringify({ screens }),
+                draft,
+                studioDetailPlanRoles(draft),
+                { id: "selected-designs", model: textModel, createdAt: "" },
+                { scope: "detail", images: { photos: 1, references: 2, ...studioPlanImageBindings(selected, false) } },
+            ).plan;
+            return draft;
+        });
+        await click("连续页面预览 · 3 屏");
+        const rows = [...dom.document.querySelectorAll(".es-proof-item")];
+        expect(rows.map((row) => row.querySelector('a[aria-label*="设计参考"]')?.getAttribute("href"))).toEqual(["/api/resources/style-1/file", "/api/resources/style-0/file", undefined]);
+        expect(rows[0].querySelector('a[aria-label*="设计参考"] img')?.getAttribute("alt")).toContain("纹理参考");
+        expect(rows[2].textContent).not.toContain("设计参考");
+        expect(requests.slice(before)).toHaveLength(0);
+    } finally {
+        await act(async () => dom.document.querySelector<HTMLButtonElement>(".ant-modal-close")?.click());
+        await edit((product) => ({ ...product, references: original.references, brief: original.brief }));
+    }
+}, 10000);
+
 for (const firstOnly of [false, true]) {
     test(
         firstOnly ? "策划六屏后需点击先试首屏，只提交第 1/6 屏" : "策划六屏后需确认，才提交六张不同的详情屏",
@@ -462,6 +634,7 @@ for (const firstOnly of [false, true]) {
                 expect([...preview.querySelectorAll(".es-proof-brief-head strong")].map((element) => element.textContent)).toEqual(purchaseQuestions);
                 expect([...preview.querySelectorAll(".es-proof-brief-content")].map((element) => element.textContent)).toEqual(displayContents);
                 expect(preview.querySelector(".es-proof-brief-body")?.textContent).toContain("依据陶瓷杯");
+                expect(preview.querySelector(".es-proof-brief-body")?.textContent).toContain(transitionOut);
                 expect(preview.textContent).not.toContain("product:name");
                 await act(async () => dom.document.querySelector<HTMLButtonElement>(".ant-modal-close")!.click());
             }
@@ -471,14 +644,29 @@ for (const firstOnly of [false, true]) {
             expect(dom.document.querySelector(".es-plan-adjust")?.textContent).toContain("可补充的商品资料");
             expect(dom.document.querySelector(".es-plan-scroll")?.textContent).not.toContain("无字实拍");
             const count = firstOnly ? 1 : 6;
-            await click(firstOnly ? "先试首屏" : "确认生成 · 6 屏");
-            await settle(() => requests.length >= before + 1 + count && !planPrimary()?.classList.contains("ant-btn-loading"));
+            const readsBefore = edgeReads.length;
+            const uploadsBefore = edgeUploads.length;
+            finishImages = true;
+            try {
+                await click(firstOnly ? "先试首屏" : "确认生成 · 6 屏");
+                await settle(() => local().runs[0].shots.filter((shot) => shot.attempts.at(-1)?.status === "succeeded").length === count && !planPrimary()?.classList.contains("ant-btn-loading"));
+            } finally {
+                finishImages = false;
+            }
+            const shots = local().runs[0].shots;
             const images = requests.slice(before + 1);
             expect(images).toHaveLength(count);
             expect(dom.document.querySelector('[role="dialog"]')).toBeNull();
-            expect(local().runs[0].shots.map((shot) => shot.attempts.length)).toEqual(firstOnly ? [1, 0, 0, 0, 0, 0] : [1, 1, 1, 1, 1, 1]);
+            expect(shots.map((shot) => shot.attempts.length)).toEqual(firstOnly ? [1, 0, 0, 0, 0, 0] : [1, 1, 1, 1, 1, 1]);
+            const previousOutputs = shots.slice(0, count - 1).map((shot) => shot.attempts[0].outputs[0].resourceId);
+            expect(edgeReads.slice(readsBefore)).toEqual(previousOutputs);
+            expect(edgeUploads.slice(uploadsBefore)).toEqual(previousOutputs);
+            expect(edgeDraws.slice(readsBefore)).toEqual(previousOutputs.map((source) => ({ source, args: [0, 512, 768, 512, 0, 0, 768, 512] })));
             images.forEach((image, index) => {
-                expect(image).toMatchObject({ operation: "image", input: { prompt: image.prompt, referenceImages: [{ storageKey: "resource:cup-resource" }] } });
+                const expectedReferences = ["resource:cup-resource", ...(index > 0 ? [`resource:context-${previousOutputs[index - 1]}`] : [])];
+                expect(image.operation).toBe("image");
+                expect(image.input?.prompt).toBe(image.prompt);
+                expect(image.input?.referenceImages?.map((reference: { storageKey: string }) => reference.storageKey)).toEqual(expectedReferences);
                 expect(image.input?.metadata).toMatchObject({ studioDetailContract: 3, studioUseDesignKnowledge: true });
                 expect(image.prompt).toContain("淘宝 / 天猫");
                 expect(image.prompt).toContain("详情页连续长图");
@@ -488,12 +676,263 @@ for (const firstOnly of [false, true]) {
                 expect(image.prompt).toMatch(/必须.*(?:短文案|短标题)/);
                 expect(image.prompt).toMatch(/所有新增文字[^。]*尺寸标注[^。]*只用简体中文/);
                 expect(image.prompt).not.toContain(displayContents[(index + 1) % 6]);
+                if (index > 0) expect(image.prompt).toContain("图2是上一屏已生成的下半幅");
+                expect(image.prompt.includes(transitionOut)).toBe(index < 2);
             });
             expect(unexpected).toEqual([]);
         },
         15000,
     );
 }
+
+test("上一屏失败时后续等待，补齐后续画，刷新沿用已保存的衔接图与原请求号", async () => {
+    replyCount = 3;
+    await edit((product) => ({ ...product, brief: { ...product.brief, detailScreens: 3, shotOrder: [], shotSkip: [], detailPlan: undefined } }));
+    await click("策划 3 屏");
+    await settle(() => Boolean(button("确认生成 · 3 屏")));
+    const before = requests.length;
+    const beforeUploads = edgeUploads.length;
+    const beforeRead = edgeReads.length;
+    await click("确认生成 · 3 屏");
+    const shots = () => local().runs[0].shots;
+    await settle(() => shots()[0].attempts[0]?.status === "failed");
+    expect(requests.slice(before)).toHaveLength(1);
+    expect(studioGroupProgress(shots(), {}).screens.map(({ label }) => label)).toEqual(["生成失败", "等第 1 屏", "等第 2 屏"]);
+    expect(edgeUploads).toHaveLength(beforeUploads);
+    const waitingIds = shots()
+        .slice(1)
+        .map((shot) => shot.attempts[0].id);
+
+    finishImages = true;
+    loseImageReplyForScreen = 2;
+    try {
+        await act(async () => {
+            await liveRunner!.rerun(saved.id, { runId: local().runs[0].id }, [shots()[0].id, shots()[1].id, shots()[2].id], imageModel);
+        });
+        await settle(() => shots()[1].attempts[0]?.error?.includes("待核对") === true);
+        await act(async () => store().flush(saved.id));
+        expect(requests.slice(before).map((request) => request.input?.metadata?.studioScreenIndex)).toEqual([1, 1, 2]);
+        const priorRequest = requests.at(-1)!;
+        const uploaded = edgeUploads.slice(beforeUploads);
+        expect(uploaded).toEqual([shots()[0].attempts[1].outputs[0].resourceId]);
+
+        await act(async () => root.unmount());
+        root = createRoot(host);
+        await mountPanel();
+        expect(shots()[1].attempts[0].input?.compiled.continuity?.reference?.resourceId).toBe(`context-${uploaded[0]}`);
+        expect(shots()[1].attempts[0].input?.compiled.continuity).toMatchObject({ guide: "context", anchor: { sourceResourceId: uploaded[0] } });
+        expect(shots()[1].attempts[0].input?.compiled.continuity?.anchor).not.toHaveProperty("height");
+        expect(studioGroupProgress(shots(), {}).screens[2].label).toBe("等第 2 屏");
+        await act(async () => liveRunner!.resume(local()));
+        await settle(() => shots()[2].attempts[0]?.status === "succeeded");
+        expect(requests.slice(before).map((request) => request.input?.metadata?.studioScreenIndex)).toEqual([1, 1, 2, 2, 3]);
+        expect(requests.at(-2)).toEqual(priorRequest);
+        expect(
+            shots()
+                .slice(1)
+                .map((shot) => shot.attempts[0].id),
+        ).toEqual(waitingIds);
+        expect(edgeReads.slice(beforeRead)).toEqual([uploaded[0], shots()[1].attempts[0].outputs[0].resourceId]);
+        expect(edgeUploads.slice(beforeUploads)).toEqual(edgeReads.slice(beforeRead));
+        expect(unexpected).toEqual([]);
+    } finally {
+        finishImages = false;
+        loseImageReplyForScreen = undefined;
+    }
+}, 15000);
+
+test("退出时旧轮询还没有结束，返回仍接回原任务并继续下一屏，不重复提交", async () => {
+    replyCount = 3;
+    await edit((product) => ({ ...product, brief: { ...product.brief, detailScreens: 3, detailPlan: undefined, shotOrder: [], shotSkip: [] } }));
+    await click("策划 3 屏");
+    await settle(() => Boolean(button("确认生成 · 3 屏")));
+    const before = requests.length;
+    const pending = Promise.withResolvers<void>();
+    const read: NonNullable<typeof heldImageRead> = { screen: 2, pending: pending.promise };
+    const shots = () => local().runs[0].shots;
+    finishImages = true;
+    heldImageRead = read;
+    try {
+        await click("确认生成 · 3 屏");
+        await settle(() => Boolean(read.signal) && shots()[1].attempts[0]?.taskId === read.taskId);
+        await act(async () => store().flush(saved.id));
+        const second = shots()[1].attempts[0];
+        expect(second.outputs).toHaveLength(0);
+        expect(requests.slice(before).map((request) => request.input?.metadata?.studioScreenIndex)).toEqual([1, 2]);
+
+        await act(async () => root.unmount());
+        expect(read.signal?.aborted).toBe(true);
+        root = createRoot(host);
+        await mountPanel();
+        await act(async () => liveRunner!.resume(local()));
+        await settle(() => shots()[2].attempts[0]?.status === "succeeded");
+        await act(async () => store().flush(saved.id));
+        expect(saved.runs[0].shots[1].attempts).toEqual([expect.objectContaining({ id: second.id, taskId: second.taskId, status: "succeeded" })]);
+        expect(requests.slice(before).map((request) => request.input?.metadata?.studioScreenIndex)).toEqual([1, 2, 3]);
+        expect(reads.filter((path) => path === `/tasks/${second.taskId}`)).toHaveLength(2);
+    } finally {
+        await act(async () => pending.resolve());
+        heldImageRead = undefined;
+        finishImages = false;
+    }
+}, 10000);
+
+test("确认后实际提交长参考局部，报价计入局部和接边；丢回执刷新不重新裁切", async () => {
+    replyCount = 3;
+    const originalConfig = useConfigStore.getState().config;
+    const metered = createModelChannel({ ...channel, modelCosts: channel.modelCosts?.map((cost) => (cost.capability === "image" ? { ...cost, billingMode: "image_usage" } : cost)) });
+    await act(async () => useConfigStore.setState({ config: { ...originalConfig, channels: [metered] } }));
+    const uploadsBefore = styleUploads.length;
+    const quotesBefore = imageQuoteCounts.length;
+    const requestsBefore = requests.length;
+    await edit((product) => ({
+        ...product,
+        references: [{ id: styleSource, resourceId: styleSource, name: "卖家长参考", width: 750, height: 9000, view: "other", truth: false, url: "", addedAt: base.createdAt }],
+        brief: { ...product.brief, sameLayout: false, detailScreens: 3, detailPlan: undefined, shotOrder: [], shotSkip: [] },
+    }));
+    finishImages = true;
+    loseImageReplyForScreen = 2;
+    try {
+        await click("策划 3 屏");
+        await settle(() => Boolean(button("确认生成 · 3 屏")));
+        expect(imageQuoteCounts.slice(quotesBefore)).toEqual(expect.arrayContaining([3, 4]));
+        expect(requests.slice(requestsBefore).map((request) => request.operation)).toEqual(["text"]);
+        expect(styleUploads.slice(uploadsBefore)).toEqual([]);
+        await click("确认生成 · 3 屏");
+        const shots = () => local().runs[0].shots;
+        await settle(() => shots()[1].attempts[0]?.error?.includes("待核对") === true);
+        await act(async () => store().flush(saved.id));
+        const secondRequest = requests.at(-1)!;
+        const submitted = saved.runs[0].shots[1].attempts[0];
+        const expected = (index: number) => ["resource:cup-resource", `resource:${styleSource}`, ...(index > 0 ? [`resource:context-${shots()[index - 1].attempts[0].outputs[0].resourceId}`] : []), `resource:${styleUploads[uploadsBefore + index]}`];
+        const keys = (request: CreateTaskInput) => request.input?.referenceImages?.map(({ storageKey }: { storageKey: string }) => storageKey);
+        expect(styleUploads.slice(uploadsBefore)).toHaveLength(2);
+        expect(keys(requests.at(-2)!)).toEqual(expected(0));
+        expect(keys(secondRequest)).toEqual(expected(1));
+        expect(secondRequest.prompt).toContain("图4是图2的设计局部");
+        expect(submitted.input?.styleWindow?.resourceId).toBe(styleUploads.at(-1));
+        await act(async () => root.unmount());
+        root = createRoot(host);
+        await mountPanel();
+        await act(async () => liveRunner!.resume(local()));
+        await settle(() => shots()[2].attempts[0]?.status === "succeeded");
+        expect(requests.at(-2)).toEqual(secondRequest);
+        expect(keys(requests.at(-1)!)).toEqual(expected(2));
+        const uploads = styleUploads.slice(uploadsBefore);
+        expect(uploads).toHaveLength(3);
+        expect(new Set(uploads).size).toBe(3);
+        expect(shots()[2].attempts[0].input?.styleWindow?.bottom).toBe(1);
+        expect(unexpected).toEqual([]);
+    } finally {
+        finishImages = false;
+        loseImageReplyForScreen = undefined;
+        await act(async () => useConfigStore.setState({ config: originalConfig }));
+        await edit((product) => ({ ...product, references: [] }));
+    }
+}, 10000);
+
+test("接边精修丢回执时刷新重放同一请求；保留原图，查看两侧后才采用候选", async () => {
+    replyCount = 3;
+    await edit((product) => ({ ...product, brief: { ...product.brief, detailScreens: 3, detailPlan: undefined, shotOrder: [], shotSkip: [] } }));
+    await click("策划 3 屏");
+    await settle(() => Boolean(button("确认生成 · 3 屏")));
+    const shots = () => local().runs[0].shots;
+    finishImages = true;
+    try {
+        await click("确认生成 · 3 屏");
+        await settle(() => shots().every((shot) => studioShotPreview(shot)));
+        await edit((product) => ({ ...product, runs: product.runs.slice(0, 1) }));
+        const original = shots().map((shot) => studioShotPreview(shot)!.resourceId);
+        colors.set(original[0], { top: 155, bottom: 155 });
+        colors.set(original[1], { top: 225, bottom: 225 });
+        colors.set(original[2], { top: 225, bottom: 225 });
+        const reopen = async () => {
+            await act(async () => root.unmount());
+            root = createRoot(host);
+            await mountPanel();
+            await click("预览整页");
+        };
+        showResults = true;
+        const before = requests.length;
+        await reopen();
+        await settle(() => Boolean(button("精修第 2 屏")));
+        expect(button("精修第 3 屏")).toBeUndefined();
+        const selector = () => dom.document.querySelector<HTMLSelectElement>('.es-delivery-reading select[aria-label="选择接边"]')!;
+        expect([...selector().options].map((option) => option.textContent)).toEqual(["1→2 屏 · 未检出像素衔接", "2→3 屏 · 仅背景色接近"]);
+        const locate = () => dom.document.querySelector<HTMLButtonElement>(".es-delivery-join button[aria-controls]")!;
+        const marker = () => dom.document.getElementById(locate().getAttribute("aria-controls")!)!;
+        const select = async (index: number) =>
+            act(async () => {
+                selector().value = String(index);
+                selector().dispatchEvent(new dom.Event("change", { bubbles: true }));
+            });
+        const firstMarker = marker();
+        const secondMarker = dom.document.querySelectorAll<HTMLElement>(".es-delivery-boundary")[1];
+        const firstScroll = spyOn(firstMarker, "scrollIntoView");
+        const secondScroll = spyOn(secondMarker, "scrollIntoView");
+        await act(async () => locate().click());
+        expect(firstScroll).toHaveBeenCalledWith({ block: "center", inline: "nearest", behavior: "instant" });
+        await select(2);
+        expect(marker()).toBe(secondMarker);
+        expect(secondMarker.previousElementSibling?.tagName).toBe("IMG");
+        expect(secondMarker.nextElementSibling?.tagName).toBe("IMG");
+        expect(secondScroll).toHaveBeenCalledTimes(1);
+        expect(button("精修第 2 屏")).toBeUndefined();
+        expect(button("精修第 3 屏")).toBeUndefined();
+        await select(1);
+        expect(marker()).toBe(firstMarker);
+        expect(firstScroll).toHaveBeenCalledTimes(2);
+        expect(button("精修第 2 屏")).toBeDefined();
+        firstScroll.mockRestore();
+        secondScroll.mockRestore();
+        expect(requests).toHaveLength(before);
+        const beforeUploads = edgeUploads.length;
+        loseImageReplyForScreen = 2;
+        await click("精修第 2 屏");
+        await settle(() => shots()[1].attempts.at(-1)?.error?.includes("待核对") === true);
+        const submitted = shots()[1].attempts.at(-1)!;
+        expect(submitted.taskId).toBeUndefined();
+        expect(submitted.input?.compiled.continuity?.reference?.resourceId).toBe(`edge-${original[0]}`);
+        const request = requests.at(-1)!;
+        expect(requests).toHaveLength(before + 1);
+        expect(request.input?.metadata?.studioScreenIndex).toBe(2);
+        expect(request.input?.referenceImages?.map(({ storageKey }: { storageKey: string }) => storageKey)).toEqual(["resource:cup-resource", `resource:${original[1]}`, `resource:edge-${original[0]}`]);
+        expect(shots().map((shot) => studioShotPreview(shot)!.resourceId)).toEqual(original);
+
+        await act(async () => store().flush(saved.id));
+        await reopen();
+        await act(async () => liveRunner!.resume(local()));
+        await settle(() => Boolean(button("预览候选")));
+        const repair = shots()[1].attempts.at(-1)!;
+        const candidate = repair.outputs[0].resourceId;
+        colors.set(candidate, { top: 155, bottom: 225 });
+        expect(requests.slice(before)).toEqual([request, request]);
+        expect(repair.id).toBe(submitted.id);
+        expect(repair.taskId).toBe(imageOperations.get(request.idempotencyKey!)?.id);
+        expect(repair.input?.compiled.continuity).toMatchObject({ repair: true, anchor: { sourceResourceId: original[0] } });
+        expect(edgeUploads.slice(beforeUploads)).toEqual([original[0]]);
+        await click("预览候选");
+        await settle(() => button("采用第 2 屏候选")?.disabled === false);
+        const comparisonStatus = dom.document.querySelector('.es-delivery-reading [role="status"]')?.textContent;
+        expect(comparisonStatus).toContain("1→2 屏");
+        expect(comparisonStatus).toContain("2→3 屏");
+        expect(comparisonStatus).not.toContain("未检出像素衔接");
+        expect(studioShotPreview(shots()[1])?.resourceId).toBe(original[1]);
+        await click("采用第 2 屏候选");
+        await settle(() => studioShotPreview(shots()[1])?.resourceId === candidate);
+        expect(shots().map((shot) => studioShotPreview(shot)!.resourceId)).toEqual([original[0], candidate, original[2]]);
+        expect(requests).toHaveLength(before + 2);
+        expect(unexpected).toEqual([]);
+    } finally {
+        colors.clear();
+        finishImages = false;
+        loseImageReplyForScreen = undefined;
+        showResults = false;
+        await act(async () => root.unmount());
+        root = createRoot(host);
+        await mountPanel();
+    }
+}, 15000);
 
 test("旧版详情策划保留但不可直接出图，有补充要求也从新版策划开始", async () => {
     replyCount = 6;

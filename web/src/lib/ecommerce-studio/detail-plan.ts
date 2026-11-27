@@ -3,8 +3,9 @@ import { studioScreenCopyBudget } from "./copy-budget";
 export { studioScreenCopyBudget } from "./copy-budget";
 import { STUDIO_STYLES } from "./shot-specs";
 import { studioCompositionOf } from "./art-direction";
+import { studioDetailSourceOf } from "./reference-selection";
 import { studioEvidenceLayouts } from "./design-knowledge";
-import { studioFactSupportsArtwork } from "./claim-evidence";
+import { studioArtworkFacts } from "./claim-evidence";
 import { STUDIO_SUITE_LIMITS, studioSuiteShotRole } from "./suites";
 import {
     STUDIO_SINGLE_PLAN_MAX_SHOTS,
@@ -63,6 +64,7 @@ export const STUDIO_DETAIL_PLAN_LIMITS = {
     purpose: 80,
     visual: 1200,
     visualBeat: 120,
+    transitionOut: 100,
     /** 图片模型可选的状态/场景补充，不承载成品文案或排版。 */
     imagePrompt: 600,
     /** 图片模型可选的事实禁区或误读提醒。 */
@@ -217,23 +219,23 @@ export const STUDIO_DETAIL_SCREEN_GUIDE: Record<StudioShotRole, { label: string;
     "main-detail": { label: "细节主图", use: "放大一个证明品质的细节" },
     "main-angle": { label: "多角度主图", use: "补一个侧面或背面，只用商品图里有的角度" },
     "main-flatlay": { label: "平铺主图", use: "垂直俯拍看全貌" },
-    "detail-hero": { label: "头图", use: "第一屏，建立第一印象：这是什么、凭什么值得看下去" },
+    "detail-hero": { label: "头图", use: "第一屏，先让买家认出完整商品，并用一个有依据的外观或使用入口继续阅读" },
     "detail-selling": { label: "卖点", use: "讲清一个核心购买理由，并用商品可见细节、真实用法或已确认资料支持" },
-    "detail-model": { label: "上身 / 佩戴 / 使用效果", use: "画面里有人穿戴或使用商品的屏都用它" },
-    "detail-scene": { label: "使用场景", use: "一个具体的使用时刻或生活场景，没有人物或人物只露局部" },
+    "detail-model": { label: "上身 / 佩戴 / 使用效果", use: "用真实的人与商品接触关系回答一个使用问题；只在动作能说明问题时出现人物" },
+    "detail-scene": { label: "使用场景", use: "用一个具体的使用时刻或接触关系回答本屏问题，不为填画面添加人物" },
     "detail-material": { label: "材质工艺", use: "用料和做工，只写已确认的材质" },
-    "detail-closeup": { label: "细节特写", use: "放大商品图里看得到的一个部位" },
+    "detail-closeup": { label: "细节特写", use: "放大一个商品图里看得到、且能回答本屏购买问题的部位" },
     "detail-angles": { label: "多角度", use: "同一画面展示几个角度，只用商品图里有的角度" },
-    "detail-spec": { label: "规格参数", use: "参数表，只列已确认的参数" },
+    "detail-spec": { label: "规格参数", use: "用已经确认的规格回答选购问题" },
     "detail-size": { label: "尺寸参考", use: "尺寸或尺码，只写已确认的数值" },
     "detail-package": { label: "包装与配件", use: "到手有什么，只放已确认的包装和配件" },
     "detail-seeding": { label: "种草", use: "像小红书分享一样的生活瞬间，让人觉得「我也想要」" },
     "detail-compare": { label: "对比", use: "同一件商品的两种状态、两个角度或使用前后" },
-    "detail-steps": { label: "使用步骤", use: "三四步讲清怎么用" },
+    "detail-steps": { label: "使用步骤", use: "讲清本屏相关的真实操作及其作用对象" },
     "detail-collocation": { label: "搭配", use: "和什么一起用、怎么搭" },
     "detail-campaign": { label: "活动海报", use: "节日、上新或大促的主视觉，不写价格" },
     "detail-ugc": { label: "随手拍", use: "手机随手拍质感的生活照" },
-    "detail-closing": { label: "收尾", use: "最后一屏，收束已确认的选购依据，不加口号或促销承诺" },
+    "detail-closing": { label: "收尾", use: "最后一屏只解决尚未回答且有依据的下单疑虑，不复刻首屏、不加口号或促销承诺" },
 };
 const SCREEN_ROLES = Object.keys(STUDIO_DETAIL_SCREEN_GUIDE) as StudioShotRole[];
 /** 各策划范围能排的屏型：详情页用详情页屏型（不含活动海报和随手拍）；主图用主图屏型加几种适合做主图的。 */
@@ -252,7 +254,7 @@ const SIZE_LABEL = /尺寸|尺码|长|宽|高|厚|直径|口径|容量|重量|�
 
 /** 可以写进策划和文案的事实：图片可见或卖家已确认。 */
 export function studioDetailPlanFacts(product: StudioProduct, predicate: (fact: StudioFact) => boolean = () => true) {
-    return (product.dossier?.facts || []).filter((fact) => studioFactSupportsArtwork(fact) && predicate(fact));
+    return studioArtworkFacts(product).filter(predicate);
 }
 
 export function studioDetailSelectionFacts(product: StudioProduct, role: StudioShotRole) {
@@ -424,6 +426,8 @@ export function studioPlannedScreenOf(value: unknown, requireVisual = true): Stu
     const purchaseQuestion = text(record.purchaseQuestion, limits.purpose);
     const displayContent = text(record.displayContent, limits.visual);
     const visualBeat = text(record.visualBeat, limits.visualBeat);
+    const transitionOut = text(record.transitionOut, limits.transitionOut);
+    const detailSource = studioDetailSourceOf(record.detailSource);
     const visualFocus = text(record.visualFocus, limits.elements);
     const imagePrompt = text(record.imagePrompt, limits.imagePrompt);
     const negativePrompt = text(record.negativePrompt, limits.negativePrompt);
@@ -436,6 +440,9 @@ export function studioPlannedScreenOf(value: unknown, requireVisual = true): Stu
         ...(purchaseQuestion ? { purchaseQuestion } : {}),
         ...(displayContent ? { displayContent } : {}),
         ...(visualBeat ? { visualBeat } : {}),
+        ...(transitionOut ? { transitionOut } : {}),
+        ...(detailSource ? { detailSource } : {}),
+        ...(typeof record.styleReferenceResourceId === "string" && record.styleReferenceResourceId.trim() ? { styleReferenceResourceId: record.styleReferenceResourceId.trim() } : {}),
         ...(visualFocus ? { visualFocus } : {}),
         ...(imagePrompt ? { imagePrompt } : {}),
         ...(negativePrompt ? { negativePrompt } : {}),
@@ -556,9 +563,16 @@ export function patchStudioDetailPlanScreen(
     const limits = STUDIO_DETAIL_PLAN_LIMITS;
     if ((patch.visual?.length || 0) > limits.visual || (patch.elements?.length || 0) > limits.elements) throw new Error("画面或信息元素超过上限，请精简后保存");
     const purchaseQuestion = patch.purchaseQuestion?.slice(0, limits.purpose);
+    const changesSubject =
+        (purchaseQuestion !== undefined && purchaseQuestion !== current.purchaseQuestion) ||
+        (patch.visual !== undefined && patch.visual !== current.displayContent) ||
+        (patch.elements !== undefined && patch.elements !== current.visualFocus) ||
+        (patch.visualBeat !== undefined && patch.visualBeat !== current.visualBeat);
     const copyChanged = patch.headline !== undefined || patch.subline !== undefined || patch.lines !== undefined;
     const next: StudioPlannedScreen = {
         ...current,
+        ...(changesSubject && current.detailSource ? { detailSource: undefined } : {}),
+        ...(changesSubject && current.styleReferenceResourceId ? { styleReferenceResourceId: undefined } : {}),
         ...(patch.title !== undefined ? { title: patch.title.slice(0, limits.title) } : {}),
         ...(purchaseQuestion !== undefined ? { purchaseQuestion, purpose: purchaseQuestion } : {}),
         ...(patch.visual !== undefined ? { visual: patch.visual, displayContent: patch.visual } : {}),

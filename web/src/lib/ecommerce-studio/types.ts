@@ -163,6 +163,10 @@ export type StudioVisualReview = {
     checkedAt?: string;
 };
 
+export type StudioStyleWindow = { sourceResourceId: string; top: number; bottom: number; resourceId?: string };
+export type StudioDetailSource = { photo: string; box: [number, number, number, number]; framing?: "locate" };
+export type StudioDetailSourceInput = StudioDetailSource & { sourceResourceId: string; resourceId?: string };
+
 export type StudioAttempt = {
     id: string;
     taskId?: string;
@@ -170,7 +174,7 @@ export type StudioAttempt = {
     /** 单张修正所基于的成品；恢复提交时仍使用同一张图。 */
     revisionResourceId?: string;
     /** 排队前持久化的请求输入；不包含渠道配置或凭据。 */
-    input?: { compiled: StudioCompiledPrompt; request: StudioImageRequest };
+    input?: { compiled: StudioCompiledPrompt; request: StudioImageRequest; styleWindow?: StudioStyleWindow; detailSource?: StudioDetailSourceInput };
     status: StudioAttemptStatus;
     model: string;
     tweaks: string[];
@@ -213,6 +217,8 @@ export type StudioShot = {
     displayContent?: string;
     /** 普通详情：不看文案也能与其他屏区分的画面主体、状态或实物关系。 */
     visualBeat?: string;
+    /** 本屏与下一屏之间的衔接方向，不是成品文案或画面模板。 */
+    transitionOut?: string;
     /** 新版内容 brief：图片模型的停留入口和主次关系。 */
     visualFocus?: string;
     /** 仅补充必要的商品状态、场景或证据，不是成品文案或排版指令。 */
@@ -223,6 +229,8 @@ export type StudioShot = {
     aspectRatio?: string;
     /** 本屏引用的商品依据编号，出图时在当前生成快照里取原文；空数组表示只画形态或场景。 */
     evidenceRefs?: StudioPlannedScreen["evidenceRefs"];
+    detailSource?: StudioDetailSource;
+    styleReferenceResourceId?: string;
     /** 详情页策划给这一屏选的版式，作为内容组织建议；默认不锁定图片模型的具体排版。 */
     layout?: StudioDetailLayoutId;
     composition?: StudioCompositionId;
@@ -251,6 +259,8 @@ export type StudioSuiteShot = { title: string; duty: string; layout?: StudioSuit
  */
 export type StudioPlannedScreen = {
     role: StudioShotRole;
+    detailSource?: StudioDetailSource;
+    styleReferenceResourceId?: string;
     title: string;
     /** 这一屏要让买家明白什么。 */
     purpose: string;
@@ -260,6 +270,7 @@ export type StudioPlannedScreen = {
     purchaseQuestion?: string;
     displayContent?: string;
     visualBeat?: string;
+    transitionOut?: string;
     visualFocus?: string;
     /** 可选的图片模型补充提示，不承载成品文案或固定排版。 */
     imagePrompt?: string;
@@ -515,6 +526,8 @@ export type StudioPlanReviewedScreen = { index: number; title: string; purpose: 
 
 export type StudioPlanReceipt = {
     scope: StudioPlanScope;
+    photoEvidence?: { index: number; id: string }[];
+    designReferences?: { index: number; resourceId: string }[];
     inputSignature: string;
     model: string;
     createdAt: string;

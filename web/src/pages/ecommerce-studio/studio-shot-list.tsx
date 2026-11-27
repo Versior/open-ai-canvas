@@ -131,12 +131,12 @@ export function StudioShotList({
                 const screen = entry.planIndex === undefined ? undefined : plan.screens[entry.planIndex];
                 return screen ? [{ screen, key: entry.key, position: index + 1 }] : [];
             });
-        for (const { index, previousIndex, reason } of studioDetailRepeats(
+        for (const { index, previousIndex, replaceIndex, reason } of studioDetailRepeats(
             selected.map(({ screen }) => screen),
             sameLayout,
         )) {
-            const key = selected[index].key;
-            notes.set(key, [...(notes.get(key) || []), `与第 ${selected[previousIndex].position} 屏${reason}`]);
+            const key = selected[replaceIndex ?? index].key;
+            notes.set(key, [...(notes.get(key) || []), `与第 ${selected[replaceIndex === undefined ? previousIndex : index].position} 屏${reason}`]);
         }
         return notes;
     }, [detail, entries, plan, sameLayout]);

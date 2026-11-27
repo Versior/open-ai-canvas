@@ -1,4 +1,4 @@
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, mock, spyOn, test } from "bun:test";
 import { Window } from "happy-dom";
 import "fake-indexeddb/auto";
 import type { GenerationTask } from "@/services/api/task-center";
@@ -11,6 +11,8 @@ for (const key of [
     "document",
     "navigator",
     "HTMLElement",
+    "HTMLHtmlElement",
+    "HTMLBodyElement",
     "HTMLAnchorElement",
     "Element",
     "SVGElement",
@@ -43,6 +45,9 @@ const { useUserStore } = await import("@/stores/use-user-store");
 const { setActiveUserScope } = await import("@/lib/user-scope");
 const { createStudioProduct, studioGenerationSource } = await import("@/lib/ecommerce-studio/product");
 const { useStudioStore } = await import("@/pages/ecommerce-studio/use-studio-store");
+const saveDownload = mock((_zip: Blob, _name: string) => {});
+mock.module("file-saver", () => ({ saveAs: saveDownload }));
+const delivery = await import("@/pages/ecommerce-studio/studio-delivery");
 const { StudioResults, studioShotGroups } = await import("@/pages/ecommerce-studio/studio-results");
 const { StudioViewer } = await import("@/pages/ecommerce-studio/studio-viewer");
 const scope = "results-test";
@@ -124,7 +129,7 @@ afterAll(async () => {
     await dom.happyDOM.abort();
 });
 
-test("继续保存只 POST recover-media，整组操作不会提交待核对任务", async () => {
+beforeAll(async () => {
     await act(async () => {
         root.render(
             <ConfigProvider>
@@ -139,6 +144,9 @@ test("继续保存只 POST recover-media，整组操作不会提交待核对任�
         );
         await new Promise((resolve) => setTimeout(resolve, 40));
     });
+});
+
+test("继续保存只 POST recover-media，整组操作不会提交待核对任务", async () => {
     expect(dom.document.querySelector('[aria-label="逐屏生成进度"]')?.textContent).toContain("1 待保存");
     expect(dom.document.querySelector('[aria-label="逐屏生成进度"]')?.textContent).toContain("1 待核对");
     expect(dom.document.querySelector('[data-shot-id="uncertain-task"]')?.textContent).toContain("原任务可能已产生费用");
@@ -266,4 +274,90 @@ test("历史主图套图按出图时的平台、语言和图位编辑，不受�
     expect(copy?.querySelector("input")?.value).toBe("");
     const rerun = dom.document.querySelector<HTMLButtonElement>('[data-shot-id="supporting"] [aria-label="再出一张"]');
     expect(rerun?.disabled).toBe(false);
+});
+
+const nativeMenuLabel = "按详情长图导出";
+const singleOutput = { resourceId: "selected-single", url: "", width: 1296, height: 2304 };
+const readySingle: StudioShot = { ...saved, id: "native-single", ratio: "9:16", attempts: [{ ...saved.attempts[0], taskId: undefined, outputs: [singleOutput] }] };
+const singleRun: StudioRun = { id: "native-export", createdAt: product.createdAt, type: "poster", textMode: "model", quality: "", shots: [readySingle] };
+const alternate = { ...singleOutput, resourceId: "alternate" };
+const severalCandidates = { ...readySingle, attempts: [{ ...readySingle.attempts[0], outputs: [alternate, singleOutput] }] };
+
+async function openResultMenu(run: StudioRun) {
+    await act(async () => useStudioStore.setState({ products: [{ ...product, plans: [], runs: [run] }] }));
+    const more = dom.document.querySelector<HTMLButtonElement>('.es-group button[aria-label="更多操作"]')!;
+    await act(async () => more.click());
+    const get = (text: string) => [...dom.document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((element) => !element.closest(".ant-dropdown-hidden") && element.textContent.trim() === text);
+    expect(get("文件与文案诊断")).toBeDefined();
+    return get;
+}
+
+test("只有已完成的独立单图能从结果更多菜单按详情长图导出", async () => {
+    const single = await openResultMenu(singleRun);
+    expect(single(nativeMenuLabel)).toBeDefined();
+    for (const [id, patch] of [
+        ["multi", { shots: [readySingle, { ...readySingle, id: "second" }] }],
+        ["missing", { shots: [{ ...readySingle, attempts: [] }] }],
+        ["ambiguous", { shots: [severalCandidates] }],
+        ["overlay", { shots: [{ ...readySingle, attempts: [{ ...readySingle.attempts[0], textMode: "overlay" }] }] }],
+        ["same-layout", { source: studioGenerationSource({ ...product, brief: { ...product.brief, sameLayout: true } }) }],
+        ["main-set", { kind: "main", type: "main-set" }],
+        ["detail-set", { kind: "detail", type: "detail-set" }],
+        ["template-set", { kind: "detail", type: "template-set" }],
+    ] as const) {
+        const menu = await openResultMenu({ ...singleRun, ...patch, shots: [...("shots" in patch ? patch.shots : singleRun.shots)], id });
+        expect(menu(nativeMenuLabel)).toBeUndefined();
+        if ("kind" in patch && patch.kind === "detail") expect(menu("只下载完整原长图（不切片）")).toBeDefined();
+    }
+});
+
+test("回车导出已采用的候选与原生成平台，只下载一次，不改记录或重新生成", async () => {
+    const source = studioGenerationSource({ ...product, name: "眼镜", platform: "jd" });
+    const menu = await openResultMenu({ ...singleRun, id: "single-keyboard", source, shots: [{ ...severalCandidates, adopted: singleOutput }] });
+    const pending = Promise.withResolvers<Blob>();
+    const exportFile = spyOn(delivery, "exportStudioNativeDetail").mockImplementation(() => pending.promise);
+    const requests = [...writes];
+    const reruns = [...regenerations];
+    const snapshot = JSON.stringify(useStudioStore.getState().products);
+    try {
+        const item = menu(nativeMenuLabel)!;
+        await act(async () => {
+            item.focus();
+            item.dispatchEvent(new dom.KeyboardEvent("keydown", { key: "Enter", keyCode: 13, bubbles: true }));
+        });
+        expect(exportFile).toHaveBeenCalledTimes(1);
+        expect(exportFile.mock.calls[0].slice(0, 2)).toEqual([expect.objectContaining({ id: product.id, name: "眼镜", platform: "jd" }), singleOutput]);
+        expect(dom.document.querySelector('.es-group button[aria-label="更多操作"]')?.getAttribute("aria-busy")).toBe("true");
+        const archive = new Blob(["finished"], { type: "application/zip" });
+        await act(async () => pending.resolve(archive));
+        expect(saveDownload.mock.calls).toEqual([[archive, "眼镜-详情长图.zip"]]);
+        expect(JSON.stringify(useStudioStore.getState().products)).toBe(snapshot);
+        expect(writes).toEqual(requests);
+        expect(regenerations).toEqual(reruns);
+    } finally {
+        exportFile.mockRestore();
+        saveDownload.mockClear();
+    }
+});
+
+test("导出失败显示原因；导出过程中更换账号不下载旧账号的文件", async () => {
+    const exportFile = spyOn(delivery, "exportStudioNativeDetail").mockRejectedValueOnce(new Error("无法读取章节原图"));
+    try {
+        const failure = await openResultMenu({ ...singleRun, id: "single-error" });
+        await act(async () => failure(nativeMenuLabel)!.click());
+        expect(dom.document.querySelector(".ant-message-error")?.textContent).toContain("无法读取章节原图");
+        expect(saveDownload).not.toHaveBeenCalled();
+        const second = await openResultMenu({ ...singleRun, id: "single-switch" });
+        const pending = Promise.withResolvers<Blob>();
+        exportFile.mockImplementationOnce(() => pending.promise);
+        await act(async () => second(nativeMenuLabel)!.click());
+        expect(exportFile).toHaveBeenCalledTimes(2);
+        setActiveUserScope("switched-account");
+        await act(async () => pending.resolve(new Blob()));
+        expect(saveDownload).not.toHaveBeenCalled();
+    } finally {
+        setActiveUserScope(scope);
+        exportFile.mockRestore();
+        saveDownload.mockClear();
+    }
 });

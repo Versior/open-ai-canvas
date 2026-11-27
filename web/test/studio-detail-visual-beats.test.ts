@@ -51,13 +51,70 @@ test("同一商品原图按交付顺序传递本屏独有的画面主线，不�
         expect(visual).toContain(`画面主线：${current.visualBeat}`);
         expect(visual).toContain(`视觉入口：${current.visualFocus}`);
         expect(brief.layers.find(({ id }) => id === "truth")?.text).toMatch(/原图里的手[^。]+不是商品；只有本屏内容或卖家明确需要才沿用/);
-        expect(brief.layers.find(({ id }) => id === "art-direction")?.text).toContain("即使没有设计参考也自行完成");
+        expect(brief.layers.find(({ id }) => id === "art-direction")?.text).toContain("没有参考也自行设计");
         for (const other of delivered.filter((screen) => screen !== current)) {
             expect(brief.prompt).not.toContain(other.visualBeat);
             expect(brief.prompt).not.toContain(other.purchaseQuestion);
         }
         expect(brief.prompt).not.toContain(squid[3].visualBeat);
     }
+});
+
+test("识别与特写不用手托照片当构图，真实操作仍交给图片模型", () => {
+    const product = detailProduct("鲜小鱿鱼", "squid-in-hand", 3);
+    product.dossier = {
+        name: product.name,
+        category: "小鱿鱼",
+        family: "food",
+        summary: "",
+        facts: [{ id: "spots", group: "appearance", label: "体表纹理", value: "乳白半透明的体表有黑褐色斑点", evidence: "visible" }],
+        invariants: [],
+        questions: [],
+    };
+    product.brief.detailPlan = parseScreens(product, [
+        {
+            role: "detail-hero",
+            purchaseQuestion: "这款是否为整只小鱿鱼？",
+            displayContent: "头、外套膜与双鳍相连，整体被手托住展示。",
+            visualBeat: "两只并排被手托住，头端朝上。",
+        },
+        {
+            role: "detail-closeup",
+            purchaseQuestion: "体表的斑点是什么样的？",
+            displayContent: "乳白半透明的体表有黑褐色斑点。",
+            visualFocus: "斑点的大小和疏密",
+            visualBeat: "近看手托住的小鱿鱼，乳白体表上分布深色斑点。",
+            evidence: ["fact:spots"],
+        },
+        {
+            role: "detail-scene",
+            purchaseQuestion: "整只鱿鱼如何移入备料碗？",
+            displayContent: "手托着鱿鱼放入备料碗，碗接住完整食材。",
+            visualBeat: "手与备料碗之间的承接动作",
+        },
+    ]).plan;
+    const [hero, closeup, operation] = restoredImageBriefs(product);
+    const visual = (brief: typeof hero) => brief.layers.find(({ id }) => id === "visual")!.text;
+    expect(visual(hero)).toContain("头、外套膜与双鳍相连");
+    expect(visual(hero)).not.toMatch(/被手托|被托起|头端朝上/);
+    expect(hero.prompt).not.toMatch(/刻度|推定档位/);
+    expect(visual(closeup)).toContain("斑点的大小和疏密");
+    expect(visual(closeup)).not.toMatch(/手托|体表纹理\s+乳白半透明/);
+    expect(visual(operation)).toContain("手托着鱿鱼放入备料碗");
+    expect(visual(operation)).toContain("手与备料碗之间的承接动作");
+    expect([hero, closeup, operation].every((brief) => brief.references[0].resourceId === "squid-in-hand" && !brief.layoutGuide)).toBe(true);
+});
+
+test("操控零件的特写不丢动作，也不把实拍里抓握的姿势强加给静物", () => {
+    const product = detailProduct("手持器具", "tool-in-hand", 2);
+    product.brief.detailPlan = parseScreens(product, [
+        { role: "detail-hero", purchaseQuestion: "机身长什么样？", displayContent: "圆筒机身和深浅两段外壳。", visualBeat: "手掌托着整件器具立在台面上" },
+        { role: "detail-closeup", purchaseQuestion: "怎样拨动开关？", displayContent: "拇指拨动手柄上的开关。", visualBeat: "拇指接触滑钮的位置和拨动方向" },
+    ]).plan;
+    const [hero, control] = restoredImageBriefs(product);
+    expect(hero.prompt).not.toContain("手掌托着整件器具立在台面上");
+    expect(control.prompt).toContain("拇指拨动手柄上的开关");
+    expect(control.prompt).toContain("拇指接触滑钮的位置和拨动方向");
 });
 
 const tissues = [

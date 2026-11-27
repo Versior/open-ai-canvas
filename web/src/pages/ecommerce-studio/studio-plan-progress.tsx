@@ -75,7 +75,7 @@ export function StudioPlanProgressPanel({ productId, inputSignature, claimSource
                         const lead = screen.visualBeat || screen.visual;
                         const more = screen.visualBeat && screen.visual !== lead ? screen.visual : undefined;
                         const focus = detail && (screen.elements === screen.visual || screen.elements === lead) ? undefined : screen.elements;
-                        const evidence = detail ? !inputChanged && [...new Set(screen.evidence?.map((reference) => studioPlanEvidenceMatch(claimSources, reference)?.text).filter(Boolean))].join("、") : screen.evidence?.join("、");
+                        const evidence = detail ? !inputChanged && [...new Set(screen.evidence?.map((reference) => studioPlanEvidenceMatch(claimSources, reference, { numbered: true })?.text).filter(Boolean))].join("、") : screen.evidence?.join("、");
                         return (
                             <li key={screen.index} value={screen.index + 1}>
                                 <div className="es-plan-draft-number" aria-hidden="true">

@@ -13,6 +13,7 @@ import { studioDisplayName } from "@/lib/ecommerce-studio/brief";
 import { studioImageSetupBlock } from "@/lib/ecommerce-studio/generation-input";
 import { studioPlanInputSignature } from "@/lib/ecommerce-studio/plan-input";
 import { studioPlanScopeOf } from "@/lib/ecommerce-studio/runs";
+import { getActiveUserScope } from "@/lib/user-scope";
 import { loadStudioPromptConfig } from "./studio-prompt-config";
 import { createStudioProduct } from "@/lib/ecommerce-studio/product";
 import type { StudioOutput, StudioProduct, StudioShot } from "@/lib/ecommerce-studio/types";
@@ -84,12 +85,10 @@ export default function EcommerceStudioPage() {
     const runner = useStudioRunner();
     const { resume } = runner;
     const image = useStudioModel("image");
-    const resumed = useRef("");
 
     useEffect(() => {
         if (!userId) return;
         void load();
-        resumed.current = "";
         setViewer(undefined);
     }, [load, userId]);
 
@@ -107,6 +106,7 @@ export default function EcommerceStudioPage() {
 
     const ready = !userId || status === "ready";
     const stored = userId ? products.find((item) => item.id === requested) || (!requested ? products[0] : undefined) : undefined;
+    const storedProductId = stored?.id;
     const product = stored || (!requested || requested === draft.id ? draft : undefined);
     const productId = product?.id;
     const view = explicitView ?? studioPendingPlanView(stored);
@@ -138,10 +138,12 @@ export default function EcommerceStudioPage() {
     }, [draft.id, explicitView, message, params, products, ready, requested, setParams, stored, userId, view]);
 
     useEffect(() => {
-        if (!stored || resumed.current === stored.id) return;
-        resumed.current = stored.id;
-        resume(stored);
-    }, [resume, stored]);
+        if (!ready || !userId || !storedProductId) return;
+        const state = useStudioStore.getState();
+        if (state.status !== "ready" || state.scope !== getActiveUserScope()) return;
+        const latest = state.products.find((item) => item.id === storedProductId);
+        if (latest) resume(latest);
+    }, [ready, resume, storedProductId, userId]);
 
     useStudioAgentBridge(stored ? stored.id : "", product ? studioDisplayName(product) : "");
 

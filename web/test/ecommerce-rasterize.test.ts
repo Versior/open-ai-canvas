@@ -1,6 +1,19 @@
 import { expect, test } from "bun:test";
 import { createEcommerceLayoutFromPreset, ecommerceLayoutBlockStyle } from "../src/lib/ecommerce/ecommerce-layout";
-import { rasterizeEcommerceComposition, rasterizeEcommerceDetailPage, rasterizeEcommerceLayout, rasterizeEcommerceLongImage } from "../src/lib/ecommerce/ecommerce-rasterize";
+import { ecommerceNativeDetailGeometry, ecommerceDetailSlices, rasterizeEcommerceComposition, rasterizeEcommerceDetailPage, rasterizeEcommerceLayout, rasterizeEcommerceLongImage } from "../src/lib/ecommerce/ecommerce-rasterize";
+
+test("一张连续原画按平台切文件，不解除常规详情屏保护", () => {
+    const geometry = ecommerceNativeDetailGeometry({ width: 1080, height: 1920 }, "taobao");
+    expect([geometry.width, geometry.height]).toEqual([750, 1333]);
+    expect(geometry.pieces).toEqual([
+        { index: 1, top: 0, height: 667 },
+        { index: 2, top: 667, height: 666 },
+    ]);
+    expect(ecommerceDetailSlices("taobao", { height: geometry.height, screens: [{ top: 0, height: geometry.height }] }).issues.join("；")).toContain("安全切点");
+    expect(ecommerceNativeDetailGeometry({ width: 790, height: 1200 }, "jd").pieces).toHaveLength(1);
+    expect(() => ecommerceNativeDetailGeometry({ width: 100, height: 2300 }, "douyin")).toThrow("累计");
+    expect(() => ecommerceNativeDetailGeometry({ width: 100, height: 4000 }, "taobao")).toThrow("安全");
+});
 
 test("bottom bar rasterization matches the DOM offsets without overlapping headline and subhead", async () => {
     const originalDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
@@ -235,12 +248,14 @@ test("long image rasterization decodes and draws one source image at a time", as
                     },
                     fillStyle: "",
                 }),
-                toDataURL: () => "data:image/png,sequential",
+                toBlob: (callback: BlobCallback) => callback(new Blob(["sequential"], { type: "image/png" })),
             }),
         },
     });
     try {
-        await rasterizeEcommerceLongImage({ imageUrls: ["first", "second", "third"] });
+        const result = await rasterizeEcommerceLongImage({ imageUrls: ["first", "second", "third"] });
+        expect(result.blob.type).toBe("image/png");
+        expect(await result.blob.text()).toBe("sequential");
         expect(peakDecodes).toBe(1);
         expect(loads).toBe(6);
         expect(draws).toBe(3);
@@ -359,15 +374,22 @@ test("detail rasterization uses platform width, contiguous safe slices and match
         configurable: true,
         value: {
             createElement: () => {
-                const canvas = { width: 0, height: 0, getContext: () => ({ fillRect() {}, drawImage() {}, fillStyle: "" }), toDataURL: () => `data:image/png,${canvas.width},${canvas.height}` };
+                const canvas = {
+                    width: 0,
+                    height: 0,
+                    getContext: () => ({ fillRect() {}, drawImage() {}, fillStyle: "" }),
+                    toBlob: (callback: BlobCallback) => callback(new Blob([`${canvas.width}×${canvas.height}`], { type: "image/png" })),
+                };
                 canvases.push(canvas);
                 return canvas;
             },
         },
     });
     try {
-        const result = await rasterizeEcommerceDetailPage({ imageUrls: ["first", "second"], platform: "jd", code: "ITEM" });
+        const result = await rasterizeEcommerceDetailPage({ imageUrls: ["first", "second"], platform: "jd", code: "ITEM", gap: 0 });
         expect(result.longImage.width).toBe(790);
+        expect(await result.longImage.blob.text()).toBe("790×2106");
+        expect(await Promise.all(result.pieces.map((piece) => piece.blob.text()))).toEqual(["790×1053", "790×1053"]);
         expect(result.pieces).toHaveLength(2);
         expect(result.pieces.every((piece) => piece.height <= 1200)).toBe(true);
         expect(result.fileNames.every((name) => name.endsWith(".png"))).toBe(true);

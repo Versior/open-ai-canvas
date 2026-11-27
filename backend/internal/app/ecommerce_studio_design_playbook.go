@@ -18,11 +18,33 @@ import (
 const (
 	ecommerceStudioPlaybookCategories = 2
 	ecommerceStudioPlaybookLighting   = 2
+	kb20FoodLightingID                = "kb20-light-food"
 )
+
+var studioArtworkMethods = map[string]string{
+	kb20LayoutID:       "文字与摄影共同构图。处理轮廓和字形之间的空间关系；让主体的尺度、虚实和裁切随证据变化。整套只呼应少量视觉线索，不统一布景、标题带或居中摆位。局部证据自己撑起画面，不是整品照上再加一个小圆框。",
+	kb20CopyID:         "从可见结构、真实动作或已确认选购信息写短句。画面证明哪项事实，文字就讲那项事实；不从结构推断效果、体验或档位。省掉同义副标题，说明放在对应证据附近。",
+	kb20MainID:         "首图先让买家在搜索小图里也要辨认出商品，轮廓和关键信息不被道具或字遮住。副图让不同的部位、动作或选购证据成为入口，不沿用首图构成。平台无字规则优先。",
+	"kb20-single-hero": "让商品与主题共同建立视觉记忆。用这件商品独有的轮廓、材质或动作组织画面，让标题、摄影和图形成为同一个构成；不要将搜索缩略图放大再贴标题。不替卖家编活动。",
+	kb20FoodLightingID: "照出实拍里的色泽与肌理，用干净光面保留形体。生食、熟食和加工状态各按本屏证据呈现，不添加热气、冰块、酱汁或产地暗示来证明鲜度或口感。",
+}
+
+var studioLightingKeywords = map[string][]string{
+	"kb20-light-fabric": {"棉", "面料", "针织", "羊毛", "羊绒", "绒布", "植绒", "毛绒", "皮革", "织物", "帆布", "无纺布", "真丝", "蚕丝", "丝绸", "亚麻"},
+	kb20FoodLightingID:  {"食品", "食物", "零食", "牛肉", "猪肉", "鸡肉", "肉脯", "糕点", "饮料", "咖啡豆", "咖啡粉", "茶叶", "绿茶", "红茶", "浓汤", "汤羹", "面食", "面条", "拌面", "拉面", "挂面", "方便面", "鸡蛋面", "荞麦面", "意面", "面包"},
+}
+
+type studioDesignMethod struct {
+	title, guidance, artwork string
+}
 
 func kb20Matches(spec kb20DesignSpec, text string) int {
 	hits := 0
-	for _, keyword := range spec.keywords {
+	keywords := studioLightingKeywords[spec.id]
+	if len(keywords) == 0 {
+		keywords = spec.keywords
+	}
+	for _, keyword := range keywords {
 		if keyword != "" && strings.Contains(text, strings.ToLower(keyword)) {
 			hits++
 		}
@@ -114,14 +136,14 @@ func (s *Service) ecommerceStudioDesignGuidance(category, name, family, material
 	return strings.Join(lines, "\n"), applied
 }
 
-func (s *Service) ecommerceStudioDesignEntries(ids []string) map[string]kb20DesignSpec {
-	entries := make(map[string]kb20DesignSpec, len(ids))
+func (s *Service) ecommerceStudioDesignEntries(ids []string) map[string]studioDesignMethod {
+	entries := make(map[string]studioDesignMethod, len(ids))
 	source, err := s.repo.EcommerceKnowledgeSource(ecommerceBuiltinSourceID(ecommerceKB20Domain))
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		// 还没写入数据库（新库首次启动前）：用内置原文。
 		for _, spec := range kb20DesignSpecs {
-			entries[spec.id] = spec
+			entries[spec.id] = studioDesignMethod{title: spec.title, guidance: spec.guidance, artwork: studioArtworkMethods[spec.id]}
 		}
 	case err != nil:
 		slog.Warn("ecommerce studio design playbook skipped", "error", err)
@@ -138,14 +160,36 @@ func (s *Service) ecommerceStudioDesignEntries(ids []string) map[string]kb20Desi
 				continue
 			}
 			var content struct {
-				Guidance string `json:"guidance"`
+				Guidance        string `json:"guidance"`
+				ArtworkGuidance string `json:"artworkGuidance"`
 			}
 			if json.Unmarshal([]byte(entry.ContentJSON), &content) == nil && strings.TrimSpace(content.Guidance) != "" {
-				entries[entry.ID] = kb20DesignSpec{title: entry.Title, guidance: strings.TrimSpace(content.Guidance)}
+				method := studioDesignMethod{title: entry.Title, guidance: strings.TrimSpace(content.Guidance)}
+				method.artwork = studioReviewedArtworkGuidance(entry, method.guidance, strings.TrimSpace(content.ArtworkGuidance))
+				entries[entry.ID] = method
 			}
 		}
 	}
 	return entries
+}
+
+func studioReviewedArtworkGuidance(entry model.EcommerceKnowledgeEntry, guidance, savedArtwork string) string {
+	builtin, exists := studioArtworkMethods[entry.ID]
+	if !exists {
+		return ""
+	}
+	for _, spec := range kb20DesignSpecs {
+		if spec.id != entry.ID || spec.guidance != guidance {
+			continue
+		}
+		if entry.DedupHash == ecommerceKnowledgeContentHash(entry) {
+			return builtin
+		}
+		if savedArtwork != "" {
+			return savedArtwork
+		}
+	}
+	return guidance
 }
 
 func ecommerceStudioImageDesignRequested(metadata map[string]any) bool {
@@ -182,23 +226,46 @@ func (s *Service) applyEcommerceStudioImageDesign(input *canvasGenerationInput) 
 	name := ecommerceStudioMetadataText(metadata["studioProductName"], ecommerceStudioKnowledgeNameRunes)
 	family := ecommerceStudioMetadataText(metadata["studioFamily"], 24)
 	materials := ecommerceStudioMetadataText(metadata["studioMaterials"], ecommerceStudioKnowledgeMaterialRunes)
+	var placementID string
+	role, _ := metadata["studioRole"].(string)
+	if metadata["studioPlanKind"] == "main" || (metadata["studioPlanKind"] == "single" && role == "main-selling") {
+		placementID = kb20MainID
+	} else if metadata["studioPlanKind"] == "single" && (role == "detail-hero" || role == "detail-campaign") {
+		placementID = kb20SingleTypeIDs["poster"]
+	}
 	var lightingIDs []string
-	for _, id := range ecommerceStudioPlaybookIDs(category, name, family, materials, "detail", nil) {
-		if strings.HasPrefix(id, "kb20-light-") {
-			lightingIDs = append(lightingIDs, id)
+	if family == "food" {
+		lightingIDs = []string{kb20FoodLightingID}
+	} else {
+		for _, id := range ecommerceStudioPlaybookIDs(category, name, family, materials, "detail", nil) {
+			if strings.HasPrefix(id, "kb20-light-") {
+				lightingIDs = append(lightingIDs, id)
+			}
 		}
 	}
-	ids := append([]string{kb20LayoutID, kb20MethodID}, lightingIDs...)
+	ids := append([]string{kb20LayoutID, kb20CopyID}, lightingIDs...)
+	var placementIDs []string
+	if placementID != "" {
+		placementIDs = []string{placementID}
+		ids = append(ids, placementID)
+	}
 	entries := s.ecommerceStudioDesignEntries(ids)
 	var lines, applied []string
-	for _, group := range [][]string{{kb20LayoutID}, lightingIDs, {kb20MethodID}} {
-		for _, id := range group {
+	for _, group := range []struct {
+		ids   []string
+		limit int
+	}{{placementIDs, 140}, {[]string{kb20LayoutID}, 160}, {[]string{kb20CopyID}, 130}, {lightingIDs, 140}} {
+		for _, id := range group.ids {
 			entry, ok := entries[id]
 			if !ok {
 				continue
 			}
 			label := "\n" + entry.title + "："
-			text := ecommerceStudioDesignExcerpt(entry.guidance, min(235, budget-utf8.RuneCountInString(label)))
+			guidance := entry.artwork
+			if guidance == "" && strings.HasPrefix(id, "kb20-light-") && id != kb20FoodLightingID {
+				guidance = entry.guidance
+			}
+			text := ecommerceStudioDesignExcerpt(guidance, min(group.limit, budget-utf8.RuneCountInString(label)))
 			if text == "" {
 				continue
 			}

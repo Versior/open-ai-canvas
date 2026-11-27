@@ -9,6 +9,7 @@
 }
 
 .es-delivery-reading .es-result-artwork,
+.es-delivery-reading > img,
 .es-delivery-reading .es-result-artwork img {
     display: block;
     position: static;
@@ -27,4 +28,65 @@
 .es-delivery-note {
     margin: 8px 0;
     font-size: 13px;
+}
+
+.es-delivery-joins {
+    position: sticky;
+    top: 0;
+    z-index: var(--z-sticky);
+    display: grid;
+    gap: var(--space-1);
+    margin-bottom: var(--space-2);
+    padding: var(--space-2);
+    border: 1px solid var(--es-line);
+    border-radius: var(--es-radius-control);
+    background: var(--es-panel);
+    font-size: var(--fs-caption);
+}
+
+.es-delivery-join {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1);
+}
+
+.es-delivery-join select {
+    flex: 1 1 9rem;
+    min-width: 0;
+    max-width: 100%;
+    border-radius: var(--es-radius-control);
+    background: var(--es-muted);
+    color: var(--es-ink);
+    font: inherit;
+    padding: var(--space-1);
+}
+
+.es-delivery-boundary {
+    display: block;
+    height: 0;
+}
+
+.es-delivery-duplicates {
+    max-height: 30vh;
+    overflow: auto;
+}
+
+.es-delivery-duplicates summary {
+    cursor: pointer;
+}
+
+.es-delivery-duplicates > div {
+    display: flex;
+    gap: var(--space-1);
+    align-items: center;
+}
+
+.es-delivery-join-error {
+    flex-basis: 100%;
+    overflow-wrap: anywhere;
+}
+
+.es-delivery-joins p {
+    margin: 0;
 }

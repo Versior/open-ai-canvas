@@ -78,7 +78,7 @@ test("普通详情页按所选屏数合并或拆分购买任务，模板不继�
     for (const [count, expected] of [
         [4, "短页合并相关职责"],
         [6, "不用把六屏分配给六种角色"],
-        [13, "长页只拆有独立依据的购买问题"],
+        [13, "屏数不等于卖点数"],
     ] as const) {
         product.brief.detailScreens = count;
         const prompt = buildDetailPlanPrompt(product, studioDetailPlanRoles(product));
@@ -95,8 +95,35 @@ test("普通详情页按所选屏数合并或拆分购买任务，模板不继�
     expect(templatePrompt).not.toContain("认货、给理由、看证据");
 });
 
+test("单图十屏按买家问题串联不同证据，不向模型索要十个独立卖点", () => {
+    const product = sample();
+    product.brief = { ...product.brief, outputType: "detail-set", detailScreens: 10 };
+    product.dossier!.facts = [];
+    const roles = studioDetailPlanRoles(product);
+    const prompt = buildDetailPlanPrompt(product, roles, { scope: "detail" });
+    expect(prompt).toContain("同一购买问题可以跨相邻屏");
+    expect(prompt).toContain("本屏补上的子问题");
+    expect(prompt).toContain("后一屏必须带来前面没有的可见信息");
+    expect(prompt).not.toMatch(/唯一的购买问题|长页只拆有独立依据的购买问题/);
+    const grouped = parseDetailPlan(
+        JSON.stringify({
+            screens: [
+                { role: "detail-hero", purchaseQuestion: "用它饮水时嘴唇接触哪里？", displayContent: "杯口贴近嘴唇，手拿着杯身。", evidence: ["photo:front"] },
+                { role: "detail-closeup", purchaseQuestion: "杯口边缘是什么形状？", displayContent: "杯沿是连贯的圆形，能看到弧面的边缘。", evidence: ["photo:front"] },
+            ],
+        }),
+        { ...product, brief: { ...product.brief, detailScreens: 2 } },
+        roles,
+        { id: "grouped", model: "fixture", createdAt: "" },
+        { scope: "detail" },
+    );
+    expect(grouped.plan.screens.map((screen) => screen.evidenceRefs)).toEqual([["photo:front"], ["photo:front"]]);
+    expect(grouped.warnings.filter(({ field }) => field === "purpose" || field === "visual")).toEqual([]);
+});
+
 test("普通详情页识别重复购买问题，不因换构图或无字而跳过", () => {
     const product = sample();
+    product.dossier = undefined;
     product.brief = { ...product.brief, outputType: "detail-set", detailScreens: 2, language: "none" };
     const result = parseDetailPlan(
         JSON.stringify({
@@ -181,6 +208,41 @@ test("数字、单位、指标、来源与使用条件不能拆借；摄影尺�
     unanswered.brief.prep = { asks: [{ id: "q1", question: "是否抗菌、防漏、耐摔？", options: ["耐摔", "防漏"], multi: true, picked: ["耐摔"], note: "" }], directions: [] };
     expect(checkStudioClaim("耐摔", studioClaimSources(unanswered)).refs).toContain("answer:q1");
     expect(checkStudioClaim("防漏", studioClaimSources(unanswered)).issue).toBeDefined();
+});
+
+test("没拍到铰链不能推导不折叠，但卖家确认的规格仍可用", () => {
+    const observation = { id: "appearance:1", label: "连接处", text: "手柄与风筒近直角连接，未见可折叠关节", appearanceOnly: true };
+    expect(checkStudioClaim("手柄不折叠", [observation], true).issue).toBeDefined();
+    expect(checkStudioClaim("是否能折叠收纳？", [observation], true).issue).toBeDefined();
+    expect(checkStudioClaim("它不是折叠款吧，收纳时能不能折小？", [observation], true).issue).toBeDefined();
+    expect(checkStudioClaim("手柄与风筒连接处，没有铰链或折合结构", [observation], true).issue).toBeDefined();
+    expect(checkStudioClaim("手柄与风筒近直角连接", [observation], true).issue).toBeUndefined();
+    const known = { id: "seller:1", label: "手柄", text: "手柄不折叠", sellerConfirmed: true };
+    expect(checkStudioClaim("手柄不折叠", [known]).refs).toEqual(["seller:1"]);
+    expect(checkStudioClaim("手柄可折叠", [known]).issue).toBeDefined();
+});
+
+test("吹风机实测：没有拍到的关节与推断的固定结构不作事实，保留可见连接角度", () => {
+    const product = createStudioProduct("dryer-observed");
+    product.brief.detailScreens = 2;
+    const hand = { id: "handle", group: "structure", label: "手柄形态", value: "细长直筒手柄，与风筒成近似直角连接，不可见折叠关节", evidence: "visible" } as const;
+    product.dossier = { name: "吹风机", category: "吹风机", family: "electronics", summary: "", facts: [hand], invariants: [], questions: [] };
+    const result = parseDetailPlan(
+        JSON.stringify({
+            screens: [
+                { role: "detail-hero", purchaseQuestion: "整机长什么样？", displayContent: "展示整个吹风机。" },
+                { role: "detail-closing", purchaseQuestion: "手柄能不能折叠，收纳时是固定直角形态吗？", displayContent: "手柄与风筒保持近似直角连接，连接处不可见折叠关节，整机以固定L形状态呈现。", evidence: ["fact:handle"] },
+            ],
+        }),
+        product,
+        studioDetailPlanRoles(product),
+        { id: "plan", model: "fixture", createdAt: "" },
+        { scope: "detail" },
+    );
+    expect(studioClaimSources(product).find(({ id }) => id === "fact:handle")?.text).not.toContain("不可见折叠");
+    expect(result.plan.screens[1].displayContent).toContain("近似直角连接");
+    expect(result.plan.screens[1].displayContent).not.toMatch(/不可见|固定L形/);
+    expect(result.plan.screens[1].purchaseQuestion).not.toMatch(/折叠|固定直角/);
 });
 
 test("有依据的屏可追溯，旧策划不能设成无字，同一利益不能只换构图", () => {
@@ -282,6 +344,58 @@ test("新详情页不把家具同一蓝图换标题当新证据；允许首尾�
     expect(independent.plan.screens).toHaveLength(2);
 });
 
+test("十屏策划从同一次回复采用有依据的备选，不把几个吹发部位当成独立问题", () => {
+    const product = createStudioProduct("dryer");
+    product.name = "手持吹风机";
+    product.brief.outputType = "detail-set";
+    product.brief.detailScreens = 10;
+    product.sellerNotes = "机身长度：20 cm\n风筒前端是出风口";
+    const screens = [
+        { role: "detail-hero", purchaseQuestion: "这一款是什么外形？", displayContent: "从正面辨认完整商品的轮廓。" },
+        { role: "detail-scene", purchaseQuestion: "常用时手指怎样拨动开关？", displayContent: "拇指接触手柄前面的滑块。" },
+        { role: "detail-closeup", purchaseQuestion: "风口正面是什么结构？", displayContent: "展示圆形格栅的边缘及中心。" },
+        { role: "detail-scene", purchaseQuestion: "吹侧边长发时，风口和发束怎么对位？", displayContent: "出风口朝向长发，发束离开脸颊。", transitionOut: "从侧边发束进入头顶发根。" },
+        { role: "detail-scene", purchaseQuestion: "头顶发根位置，另一只手和风口怎么配合？", displayContent: "手托起头顶发束，风口朝发根。" },
+        { role: "detail-scene", purchaseQuestion: "吹后颈时，头部和手臂怎么摆才能把风口对到后颈发根？", displayContent: "低头侧举吹风机，风口朝后颈。" },
+        { role: "detail-scene", purchaseQuestion: "吹刘海和分缝时，风口从哪个方向对头发？", displayContent: "吹风机位于额头前方，风口朝下。" },
+        { role: "detail-scene", purchaseQuestion: "耳侧短发怎么让风口对准耳上发区？", displayContent: "手拢起耳边短发，风口从外侧对准。" },
+        { role: "detail-closeup", purchaseQuestion: "机身配色怎样分布？", displayContent: "手柄和风筒的颜色对照。" },
+        { role: "detail-closing", purchaseQuestion: "它不是折叠款吧，收纳时能不能折小？", displayContent: "完整机身以使用完毕的状态摆放。", visualFocus: "手柄与风筒连接处，没有铰链或折合结构" },
+    ];
+    const alternatives = [
+        { role: "detail-closeup", purchaseQuestion: "风口能不能快速吹干？", displayContent: "能快速吹干发丝。" },
+        { role: "detail-closeup", purchaseQuestion: "如何辨认机器的色块？", displayContent: "手柄和风筒的颜色对照。" },
+        { role: "detail-closeup", purchaseQuestion: "机身长度是多少？", displayContent: "用已确认的 20 cm 机身长度说明尺寸。", evidence: ["seller:1"], headline: "策划拟的标题", layout: "grid" },
+        { role: "detail-closeup", purchaseQuestion: "插线端从哪引出？", displayContent: "局部展示手柄下方的电源线根部。" },
+        { role: "detail-scene", purchaseQuestion: "摆在梳妆台的什么位置方便拿取？", displayContent: "展示使用完毕的吹风机和梳妆台的空间关系。" },
+    ];
+    const roles = studioDetailPlanRoles(product);
+    const prompt = buildDetailPlanPrompt(product, roles, { scope: "detail" });
+    expect(prompt).toContain('"alternatives":[');
+    expect(prompt).toContain("没有可证实的备选则返回空数组");
+    expect(prompt).toContain("先找能替换重复屏的候补，再定正式屏");
+    const run = (withAlternatives: boolean) =>
+        parseDetailPlan(JSON.stringify({ summary: "沿头发不同位置讲使用", screens, ...(withAlternatives ? { alternatives } : {}) }), product, roles, { id: "plan", model: "fixture", createdAt: "" }, { scope: "detail" });
+    const initial = run(false);
+    expect(initial.warnings.filter(({ field }) => field === "purpose").map(({ index }) => index)).toEqual([4, 5, 6, 7]);
+    expect(initial.plan.screens[9].purchaseQuestion).not.toMatch(/折叠|折小/);
+    expect(initial.plan.screens[9].visualFocus).toBe("手柄与风筒连接处");
+    const result = run(true);
+    expect(result.plan.screens).toHaveLength(10);
+    expect(result.plan.screens[9]).toMatchObject({ purchaseQuestion: alternatives[2].purchaseQuestion, evidenceRefs: ["seller:1"], headline: "", copySource: "assistant" });
+    expect(result.plan.screens[4].purchaseQuestion).toBe(alternatives[3].purchaseQuestion);
+    expect(result.plan.screens[5].purchaseQuestion).toBe(alternatives[4].purchaseQuestion);
+    expect(result.plan.screens[3].purchaseQuestion).toBe(screens[3].purchaseQuestion);
+    expect(result.plan.screens[3].transitionOut).toBeUndefined();
+    expect(result.warnings.filter(({ field }) => field === "purpose").map(({ index }) => index)).toEqual([6, 7]);
+    expect(result.plan.summary).toBe("");
+    expect(result.dropped).toBe(0);
+    product.brief.planNote = "按我指定的方式分开说明不同位置";
+    expect(run(true).plan.screens[4].purchaseQuestion).toBe(screens[4].purchaseQuestion);
+    expect(run(true).plan.screens[9].purchaseQuestion).toBe(initial.plan.screens[9].purchaseQuestion);
+    expect(buildDetailPlanPrompt(product, roles, { scope: "detail" })).not.toContain('"alternatives":[');
+});
+
 test("模型把来源编号包在方括号里时仍能采用整组策划", () => {
     const product = sample();
     product.brief.outputType = "detail-set";
@@ -289,8 +403,8 @@ test("模型把来源编号包在方括号里时仍能采用整组策划", () =>
     const result = parseDetailPlan(
         JSON.stringify({
             screens: [
-                { ...screen, role: "detail-hero", headline: "杯高24厘米", evidenceRefs: ["[fact:h]"] },
-                { ...screen, role: "detail-closeup", noText: true, evidence: ["[appearance:1]"] },
+                { role: "detail-hero", purchaseQuestion: "杯身有多高？", displayContent: "展示杯身全貌和已确认的 24 厘米杯高", evidenceRefs: ["[fact:h]"] },
+                { role: "detail-closeup", purchaseQuestion: "杯盖上的细线是什么样的？", displayContent: "展示杯盖上真实可见的细线", noText: true, evidence: ["[appearance:1]"] },
             ],
         }),
         product,
@@ -300,6 +414,80 @@ test("模型把来源编号包在方括号里时仍能采用整组策划", () =>
     expect(result.plan.screens).toHaveLength(2);
     expect(result.plan.screens[0].evidenceRefs).toEqual(["fact:h"]);
     expect(result.plan.screens[1].evidenceRefs).toEqual(["appearance:1"]);
+});
+
+test("普通策划使用短引用号且跳过无包装印字的拍摄备注，读回保留原资料 ID", () => {
+    const product = sample();
+    product.brief.outputType = "detail-set";
+    product.brief.detailScreens = 2;
+    product.dossier!.facts.push({ id: "qZt9_p", group: "text", label: "包装或标签文字", value: "画面未出现包装、标签与任何文字", evidence: "visible" });
+    const roles = studioDetailPlanRoles(product);
+    const prompt = buildDetailPlanPrompt(product, roles);
+    const height = prompt.match(/\[(E\d+)\] 杯高 24 厘米/)?.[1];
+    expect(height).toBeDefined();
+    expect(prompt).not.toContain("画面未出现包装");
+    expect(prompt).not.toContain("fact:h");
+    const result = parseDetailPlan(
+        JSON.stringify({
+            screens: [
+                { role: "detail-hero", purchaseQuestion: "这是什么样的杯子？", displayContent: "展示透明杯的全貌。" },
+                { role: "detail-size", purchaseQuestion: "杯子有多高？", displayContent: "展示杯高 24 厘米。", evidence: [`[${height}]`, "E999"] },
+            ],
+        }),
+        product,
+        roles,
+        { id: "short-citations", model: "fixture", createdAt: "" },
+        { scope: "detail" },
+    );
+    expect(result.plan.screens[1].evidenceRefs).toEqual(["fact:h"]);
+    expect(result.plan.screens[1].facts).toEqual(["fact:h"]);
+    expect(result.warnings).toEqual([expect.objectContaining({ index: 1, field: "facts", message: expect.stringContaining("E999") })]);
+});
+
+test("实际操作优先于空握，回顾已知外观的末屏先采用不重复的候补", () => {
+    const product = createStudioProduct("dryer-answers");
+    product.name = "吹风机";
+    product.brief = { ...product.brief, outputType: "detail-set", detailScreens: 4 };
+    product.sellerNotes = "机身长度：20 cm\n已确认圆形格栅是出风口";
+    const screens = [
+        { role: "detail-hero", purchaseQuestion: "这款吹风机什么样？", displayContent: "浅薄荷绿圆筒风筒横在手柄上方，带白色环圈。", transitionOut: "从整机外形接到空握方向。" },
+        { role: "detail-model", purchaseQuestion: "单手握持时，出风口朝哪个方向？", displayContent: "手掌握住手柄，让出风口向前。" },
+        { role: "detail-scene", purchaseQuestion: "吹头发时，风口怎么对着头发？", displayContent: "手握手柄，让圆形格栅的一端朝向湿发。", transitionOut: "回看已说过的颜色。" },
+        { role: "detail-closing", purchaseQuestion: "页面展示的外观细节，和实物能对得上吗？", displayContent: "浅薄荷绿圆筒风筒横在手柄上方，带白色环圈，与前述各屏为同一台机。" },
+    ];
+    const alternatives = [
+        { role: "detail-closeup", purchaseQuestion: "滑动开关位于哪里？", displayContent: "展示手柄正面的开关位置与滑块。" },
+        { role: "detail-closeup", purchaseQuestion: "这台机身多长？", displayContent: "用已确认资料展示 20 cm 的机身长度。", evidence: ["seller:1"] },
+    ];
+    const parseProduct = (alternatives: unknown[]) => parseDetailPlan(JSON.stringify({ screens, alternatives }), product, studioDetailPlanRoles(product), { id: "plan", model: "fixture", createdAt: "" }, { scope: "detail" });
+    const initial = parseProduct([]);
+    expect(initial.warnings.filter(({ field }) => field === "purpose").map(({ index }) => index)).toEqual([1]);
+    expect(initial.plan.screens[3].displayContent).toContain("20 cm");
+    const result = parseProduct(alternatives);
+    expect(result.plan.screens.map(({ purchaseQuestion }) => purchaseQuestion)).toEqual([screens[0].purchaseQuestion, alternatives[0].purchaseQuestion, screens[2].purchaseQuestion, alternatives[1].purchaseQuestion]);
+    expect(result.plan.screens.at(-1)?.evidenceRefs).toEqual(["seller:1"]);
+    expect(result.plan.screens.every(({ transitionOut }) => !transitionOut)).toBe(true);
+    expect(result.warnings).toEqual([]);
+});
+
+test("没有候补时用尚未使用的真实信息替换重复屏，不改首屏或编造参数", () => {
+    const product = sample();
+    product.brief.outputType = "detail-set";
+    product.brief.detailScreens = 4;
+    const rows = [
+        { role: "detail-hero", purchaseQuestion: "这款杯子是什么样的？", displayContent: "辨认商品整体轮廓。" },
+        { role: "detail-closeup", purchaseQuestion: "杯口是什么形状？", displayContent: "看清杯沿的轮廓。", visualBeat: "杯沿局部", transitionOut: "接着看杯沿" },
+        { role: "detail-closeup", purchaseQuestion: "杯口是什么形状？", displayContent: "看清杯沿的轮廓。", visualBeat: "杯沿局部" },
+        { role: "detail-size", purchaseQuestion: "杯子有多高？", displayContent: "核对杯高 24 厘米。", evidence: ["fact:h"] },
+    ];
+    const { plan, warnings } = parseDetailPlan(JSON.stringify({ screens: rows }), product, studioDetailPlanRoles(product), { id: "cup", model: "fixture", createdAt: "" }, { scope: "detail" });
+    expect(plan.screens).toHaveLength(4);
+    expect(plan.screens[0].purchaseQuestion).toBe(rows[0].purchaseQuestion);
+    expect(plan.screens[1].transitionOut).toBeUndefined();
+    expect(plan.screens[2]).toMatchObject({ evidenceRefs: ["fact:warm"], headline: "", copySource: "assistant" });
+    expect(plan.screens[2].displayContent).toContain("室温密闭条件下约 6 小时");
+    expect(plan.screens[3].evidenceRefs).toEqual(["fact:h"]);
+    expect(warnings.some(({ index, field }) => index === 2 && field === "purpose")).toBe(false);
 });
 
 test("手改可见文案、画面或调整指令后，实际图像输入仍拒绝无来源性能", () => {
