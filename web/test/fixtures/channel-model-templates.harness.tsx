@@ -3,7 +3,7 @@ import { Window } from "happy-dom";
 import type { FormInstance } from "antd";
 import type { ChannelModelFormValues } from "../../src/pages/admin/components/channel-model-editor-form";
 import type { ModelProtocolDefinition } from "../../src/lib/model-protocols";
-import type { ChannelModel } from "../../src/services/api/wallet";
+import type { AdminChannelModelListItem, ChannelModel } from "../../src/services/api/wallet";
 
 const dom = new Window({ url: "http://localhost/" });
 const originals = new Map<string, PropertyDescriptor | undefined>();
@@ -16,6 +16,7 @@ for (const [key, value] of Object.entries({
     document: dom.document,
     navigator: dom.navigator,
     HTMLElement: dom.HTMLElement,
+    HTMLAnchorElement: dom.HTMLAnchorElement,
     HTMLInputElement: dom.HTMLInputElement,
     Element: dom.Element,
     SVGElement: dom.SVGElement,
@@ -484,6 +485,8 @@ test("真实定价面板：新增空模板、取消与重新打开，未展开�
 });
 const { ChannelModelEditor } = await import("../../src/pages/admin/components/channel-model-editor");
 const { ChannelModelTransferDialog } = await import("../../src/pages/admin/components/channel-model-transfer-dialog");
+const { AllChannelModelsPanel } = await import("../../src/pages/admin/channels/all-channel-models-panel");
+const { MemoryRouter } = await import("react-router");
 const { AdminProvider } = await import("../../src/pages/admin/admin-context");
 const { apiClient } = await import("../../src/services/api/request");
 const { defaultTokenPriceRule } = await import("../../src/pages/admin/components/channel-model-price-tier-form");
@@ -694,6 +697,106 @@ function savedModel(values = draft()): ChannelModel {
         })),
     };
 }
+
+test("全部模型：筛选不影响同渠道的复制来源，不显示其他渠道的同名型号", async () => {
+    const channel = { id: "test-channel", name: "测试渠道", baseUrl: "https://example.com", apiKey: "", apiFormat: "openai" as const, models: [] };
+    const modelRow = (key: string, channelId = channel.id): AdminChannelModelListItem => ({ ...savedModel({ ...draft(), modelKey: key, providerModelKey: key }), id: `${channelId}-${key}`, channelId, channelName: channel.name, channelEnabled: true });
+    const target = modelRow("filter-target");
+    const source = modelRow("hidden-source");
+    const models = [target, source, { ...modelRow("hidden-source", "other-channel"), channelLabel: "其他渠道来源" }];
+    const originalRequest = apiClient.request;
+    const requests: string[] = [];
+    apiClient.request = (async (config: { url: string; method: string }) => {
+        requests.push(`${config.method.toUpperCase()} ${config.url}`);
+        if (config.url === "/admin/channel-models") return { status: 200, data: { code: 0, data: { models } } };
+        if (config.url === "/admin/references") return { status: 200, data: { code: 0, data: { users: [], channels: [] } } };
+        if (config.url === "/plugins/catalog") return { status: 200, data: { code: 0, data: { providers: [{ ...protocols[0], id: protocols[0].value, name: protocols[0].label, enabled: true, categories: ["image"] }] } } };
+        throw new Error(`Unexpected ${config.method} ${config.url}`);
+    }) as typeof apiClient.request;
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    try {
+        await act(async () =>
+            root.render(
+                <MemoryRouter initialEntries={[`/admin/channels?q=${target.modelKey}`]}>
+                    <ConfigProvider theme={{ token: { motion: false } }}>
+                        <App>
+                            <AdminProvider>
+                                <AllChannelModelsPanel channels={[channel]} health={new Map()} healthLoading={false} onChanged={async () => {}} onOpenChannel={() => {}} />
+                            </AdminProvider>
+                        </App>
+                    </ConfigProvider>
+                </MemoryRouter>,
+            ),
+        );
+        expect(host.querySelector(`tr[data-row-key="${target.id}"]`)).not.toBeNull();
+        expect(host.querySelector(`tr[data-row-key="${source.id}"]`)).toBeNull();
+        await click("编辑参数");
+        await tab("基本信息");
+        await choose("配置来源模型", `${source.modelKey} · openai-image · 1 个价格档`);
+        expect(document.querySelector('[aria-label="复制预览"]')?.textContent).toContain(source.modelKey);
+        expect([...document.querySelectorAll(".ant-select-item-option")].some((option) => option.textContent?.includes("其他渠道来源"))).toBe(false);
+        expect(button("复制完整配置到表单").disabled).toBe(false);
+        expect(requests.sort()).toEqual(["GET /admin/channel-models", "GET /admin/references", "GET /plugins/catalog"]);
+    } finally {
+        await act(async () => root.unmount());
+        host.remove();
+        apiClient.request = originalRequest;
+    }
+});
+
+test("价格复制：选择仅预览，应用才改币种和参考视频计费，保存不换目标", async () => {
+    const protocol = "video-test";
+    const values = { ...draft(), capability: "video" as const, protocol, providerModelKey: "target-upstream", channelLabel: "目标视频", capabilityConfig: defaultModelCapabilityConfig(protocol) };
+    const target = savedModel(values);
+    const source = {
+        ...savedModel({
+            ...values,
+            modelKey: "video-source",
+            providerModelKey: "source-upstream",
+            channelLabel: "来源视频",
+            priceCurrency: "CNY",
+            referenceVideoBilling: true,
+            priceTiers: [{ ...defaultPriceTier(), billingMode: "per_second", unitPrice: 3, referenceVideoUnitPrice: 4, costConfigured: true, costUnitPrice: 1, costReferenceVideoUnitPrice: 2, providerModelKey: "source-sku" }],
+        }),
+        id: "video-source",
+    };
+    const fixture = await mountEditor(target, [{ ...protocols[0], value: protocol, capability: "video", imageParameters: undefined }], undefined, false, [source, target]);
+    try {
+        await tab("积分定价");
+        await choose("价格来源模型", `来源视频（video-source） · ${protocol} · 1 个价格档`);
+        const preview = document.querySelector('[aria-label="价格复制预览"]');
+        expect(preview?.textContent).toContain("USD → CNY");
+        expect(preview?.textContent).toContain("参考视频单独计费");
+        const billing = () => document.querySelector('[role="switch"][aria-label="参考视频计费"]')?.getAttribute("aria-checked");
+        expect(billing()).toBe("false");
+        await click("复制价格到表单");
+        expect(billing()).toBe("true");
+        expect(fixture.writes).toEqual([]);
+        await click("保存修改");
+        expect(fixture.writes).toEqual([`PATCH /admin/channels/${target.channelId}/models/${target.id}`]);
+        expect(fixture.saves[0]).toMatchObject({
+            modelKey: target.modelKey,
+            providerModelKey: target.providerModelKey,
+            channelLabel: target.channelLabel,
+            protocol,
+            priceCurrency: "CNY",
+            referenceVideoBilling: true,
+            priceTiers: [
+                {
+                    providerModelKey: target.providerModelKey,
+                    billingMode: "per_second",
+                    unitPriceMicrocredits: 3_000_000,
+                    referenceVideoUnitPriceMicrocredits: 4_000_000,
+                    costPricing: { unitPriceMicrocredits: 1_000_000, referenceVideoUnitPriceMicrocredits: 2_000_000 },
+                },
+            ],
+        });
+    } finally {
+        await fixture.close();
+    }
+});
 
 for (const configured of [false, true]) {
     test(`从目标 2.6 导入 2.5 的三项配置：${configured ? "已配置" : "无协议"}的停用目标，保存前零写入`, async () => {

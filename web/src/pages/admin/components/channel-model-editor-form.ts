@@ -37,12 +37,17 @@ export type ChannelModelFormValues = {
 
 export type EditorSection = "identity" | "capabilities" | "pricing";
 
-export function copyChannelModelPrices(values: ChannelModelFormValues, source: ChannelModel): ChannelModelFormValues {
+export function copyChannelModelPrices(values: ChannelModelFormValues, source: ChannelModel, protocols?: ModelProtocolDefinition[]): ChannelModelFormValues {
     if (source.capability !== values.capability) throw new Error("请选择相同能力的模型复制价格");
     const tiers = source.priceTiers?.length ? source.priceTiers.map((tier) => priceTierToForm(tier, source.capabilityConfig?.image, source.protocol)) : [legacyPriceTierToForm(source)];
     if (source.protocol !== values.protocol && tiers.some((tier) => tier.matchMode === "advanced")) throw new Error("规格价格需要相同调用协议，请选择同协议模型，或手动配置规格条件");
-    const next = { ...values, priceCurrency: source.priceCurrency || "credits", priceTiers: tiers.map((tier) => ({ ...structuredClone(tier), providerModelKey: "" })) };
-    validateChannelModelPrices(next);
+    const next = {
+        ...values,
+        priceCurrency: source.priceCurrency || "credits",
+        referenceVideoBilling: source.capability === "video" && source.referenceVideoBilling === true,
+        priceTiers: tiers.map((tier) => ({ ...structuredClone(tier), providerModelKey: "" })),
+    };
+    validateChannelModelPrices({ ...next, protocols });
     return next;
 }
 

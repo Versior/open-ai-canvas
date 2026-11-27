@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { defaultModelCapabilityConfig } from "../src/lib/model-capabilities";
 import type { ModelProtocolDefinition } from "../src/lib/model-protocols";
 import type { ChannelModel } from "../src/services/api/wallet";
-import { copyChannelModelConfiguration, initialChannelModelValues } from "../src/pages/admin/components/channel-model-editor-form";
+import { copyChannelModelConfiguration, copyChannelModelPrices, initialChannelModelValues } from "../src/pages/admin/components/channel-model-editor-form";
 import { identifyChannelModelConfiguration } from "../src/pages/admin/components/channel-model-identification";
 import { priceTierPayloadFromForm } from "../src/pages/admin/components/channel-model-price-tier-form";
 import { priceSelectorIssues } from "../src/pages/admin/components/channel-model-templates";
@@ -52,6 +52,10 @@ test("完整复制按来源固定发行版校验规格价，不用新版规则�
     const priced = { ...copied, protocols: catalog, priceTiers: [{ ...copied.priceTiers[0], matchMode: "advanced" as const, imageSelector: { style: "ink" } }] };
     expect(priceSelectorIssues(priced)).toEqual([]);
     expect(priceSelectorIssues({ ...priced, protocolRelease: catalog[0].releases[1].sha256 })).not.toEqual([]);
+    const tier = { ...priceTierPayloadFromForm("image", priced.priceTiers[0], source.providerModelKey!, config), id: "priced", channelModelId: source.id, selectorKey: "style:ink", createdAt: "", updatedAt: "", priceVersion: 1 };
+    const pricedSource = { ...item, priceTiers: [tier] };
+    expect(copyChannelModelPrices(copied, pricedSource, catalog).protocolRelease).toBe(release.sha256);
+    expect(() => copyChannelModelPrices({ ...copied, protocolRelease: catalog[0].releases[1].sha256 }, pricedSource, catalog)).toThrow("style=ink");
     expect(() => copyChannelModelConfiguration(target, { ...item, protocolRelease: "uninstalled" }, catalog)).toThrow("发行版");
 });
 
@@ -151,6 +155,13 @@ test("复制保留 Token 规则、成本、参考视频计费；同规格沿用�
             costPricing: { outputTokenPriceMicrocredits: 2_000_000, referenceVideoOutputTokenPriceMicrocredits: 3_000_000 },
         });
         expect(payload).not.toHaveProperty("id");
+    }
+    for (const referenceVideoBilling of [true, false]) {
+        const videoTarget = { ...target, capability: "video" as const, protocol: "video", referenceVideoBilling: !referenceVideoBilling };
+        const next = copyChannelModelPrices(videoTarget, { ...video, referenceVideoBilling }, protocols);
+        expect(next).toMatchObject({ protocol: videoTarget.protocol, referenceVideoBilling, providerModelKey: videoTarget.providerModelKey });
+        expect(next.priceTiers[0].providerModelKey).toBe("");
+        expect(videoTarget.referenceVideoBilling).toBe(!referenceVideoBilling);
     }
     const text = {
         ...source,

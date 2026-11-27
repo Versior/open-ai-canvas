@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Alert, Button, Select } from "antd";
+import { Alert, Button, Form, Select, type FormInstance } from "antd";
 import { ArrowRight, Copy } from "lucide-react";
 import type { ModelChannel } from "@/stores/use-config-store";
 import { listAdminChannelModels, type ChannelModel } from "@/services/api/wallet";
@@ -7,7 +7,7 @@ import type { ModelProtocolDefinition } from "@/lib/model-protocols";
 import { priceCurrencyUnit } from "@/services/api/user-groups";
 import { formatModelPrice } from "./channel-model-pricing";
 import { useAdminContext } from "../admin-context";
-import { modelCopyPriceCount, modelCopySourceInfo } from "./channel-model-editor-form";
+import { copyChannelModelPrices, modelCopyPriceCount, modelCopySourceInfo, type ChannelModelFormValues } from "./channel-model-editor-form";
 import "./channel-model-assist.css";
 
 function ModelCopyPreview({ source, targetKey, upstream, protocols, importing }: { source: ChannelModel; targetKey: string; upstream: string; protocols: ModelProtocolDefinition[]; importing: boolean }) {
@@ -62,20 +62,38 @@ function ModelCopyPreview({ source, targetKey, upstream, protocols, importing }:
     );
 }
 
-export function ChannelModelCopyPicker({
-    mode,
-    channel,
-    models,
-    target,
-    targetKey = target?.modelKey || "",
-    upstream = target?.providerModelKey || targetKey,
-    capability,
-    protocols,
-    disabled,
-    onCancel,
-    onApply,
-}: {
-    mode: "configuration" | "prices" | "import";
+type PriceCopyAction = { mode: "prices"; form: FormInstance<ChannelModelFormValues>; onApply: (next: ChannelModelFormValues) => void };
+
+function PriceCopyFooter({ action, source, protocols, disabled }: { action: PriceCopyAction; source?: ChannelModel; protocols: ModelProtocolDefinition[]; disabled: boolean }) {
+    Form.useWatch([], { form: action.form, preserve: true });
+    const current: ChannelModelFormValues = action.form.getFieldsValue(true);
+    let next: ChannelModelFormValues | undefined;
+    let issue = "";
+    if (source) {
+        try {
+            next = copyChannelModelPrices(current, source, protocols);
+        } catch (error) {
+            issue = error instanceof Error ? error.message : "无法复制价格";
+        }
+    }
+    return (
+        <footer className="admin-model-assist-footer">
+            {next && (
+                <p className="admin-model-assist-note" role="status" aria-label="价格复制预览">
+                    {next.priceTiers.length} 个价格档 · {current.priceCurrency !== next.priceCurrency && `${priceCurrencyUnit(current.priceCurrency)} → `}
+                    {priceCurrencyUnit(next.priceCurrency)}
+                    {next.capability === "video" && ` · 参考视频${next.referenceVideoBilling ? "单独计费" : "不计费"}`}
+                </p>
+            )}
+            {issue && <Alert type="warning" title={issue} />}
+            <Button icon={<Copy size={14} aria-hidden />} disabled={disabled || !next} onClick={() => next && action.onApply(next)}>
+                复制价格到表单
+            </Button>
+        </footer>
+    );
+}
+
+type CopyPickerProps = {
     channel: ModelChannel;
     models: ChannelModel[];
     target: ChannelModel | null;
@@ -84,9 +102,11 @@ export function ChannelModelCopyPicker({
     capability?: string;
     protocols: ModelProtocolDefinition[];
     disabled: boolean;
-    onApply: (source: ChannelModel) => void;
     onCancel?: () => void;
-}) {
+} & (PriceCopyAction | { mode: "configuration" | "import"; onApply: (source: ChannelModel) => void });
+
+export function ChannelModelCopyPicker(props: CopyPickerProps) {
+    const { mode, channel, models, target, targetKey = target?.modelKey || "", upstream = target?.providerModelKey || targetKey, capability, protocols, disabled, onCancel } = props;
     const { references } = useAdminContext();
     const full = mode !== "prices";
     const importing = mode === "import";
@@ -195,20 +215,24 @@ export function ChannelModelCopyPicker({
                     />
                 ) : null}
                 {source && full ? <ModelCopyPreview source={source} targetKey={targetKey} upstream={upstream} protocols={protocols} importing={importing} /> : null}
-                <footer className="admin-model-assist-footer">
-                    <p className="admin-model-assist-note">{importing ? "型号与启停不变，保存后生效。" : full ? "只填写草稿，保存后生效。" : "替换当前价格表，保存后生效。"}</p>
-                    {onCancel && <Button onClick={onCancel}>取消</Button>}
-                    <Button
-                        type={importing ? "primary" : "default"}
-                        icon={<Copy size={14} aria-hidden />}
-                        disabled={disabled || loading || !source || copyBlocked}
-                        onClick={() => {
-                            if (source) onApply(source);
-                        }}
-                    >
-                        {importing ? "填入目标模型" : full ? "复制完整配置到表单" : "复制价格到表单"}
-                    </Button>
-                </footer>
+                {props.mode === "prices" ? (
+                    <PriceCopyFooter action={props} source={source} protocols={protocols} disabled={disabled || loading} />
+                ) : (
+                    <footer className="admin-model-assist-footer">
+                        <p className="admin-model-assist-note">{importing ? "型号与启停不变，保存后生效。" : "只填写草稿，保存后生效。"}</p>
+                        {onCancel && <Button onClick={onCancel}>取消</Button>}
+                        <Button
+                            type={importing ? "primary" : "default"}
+                            icon={<Copy size={14} aria-hidden />}
+                            disabled={disabled || loading || !source || copyBlocked}
+                            onClick={() => {
+                                if (source) props.onApply(source);
+                            }}
+                        >
+                            {importing ? "填入目标模型" : "复制完整配置到表单"}
+                        </Button>
+                    </footer>
+                )}
             </div>
         </section>
     );

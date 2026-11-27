@@ -185,6 +185,7 @@ export function AllChannelModelsPanel({
     const openEditor = (item: AdminChannelModelListItem) => setEditing(item);
 
     const editingChannel = editing ? channels.find((channel) => channel.id === editing.channelId) : undefined;
+    const editingModels = useMemo(() => items.filter((item) => item.channelId === editing?.channelId), [items, editing?.channelId]);
 
     const columns: ColumnsType<AdminChannelModelListItem> = [
         {
@@ -357,6 +358,7 @@ export function AllChannelModelsPanel({
                 <ChannelModelEditor
                     channel={editingChannel}
                     editing={editing}
+                    existingModels={editingModels}
                     protocols={protocols}
                     protocolLoading={protocolLoading}
                     protocolError={protocolError}

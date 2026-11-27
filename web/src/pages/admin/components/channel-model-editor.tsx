@@ -23,7 +23,7 @@ import { ChannelModelTagsEditor } from "./channel-model-tags-editor";
 import { ChannelModelPresetPicker } from "./channel-model-preset-picker";
 import { applyModelMetadataPreset, loadModelMetadataPresets } from "@/lib/model-metadata-presets";
 import { modelGroupName } from "@/lib/model-group-name";
-import { autoConfigureChannelModel, copyChannelModelConfiguration, copyChannelModelPrices } from "./channel-model-editor-form";
+import { autoConfigureChannelModel, copyChannelModelConfiguration } from "./channel-model-editor-form";
 import { CapabilityTemplatePanel, PricingTemplatePanel } from "./channel-model-template-panels";
 import { priceSelectorIssues } from "./channel-model-templates";
 import { ChannelModelCopyPicker } from "./channel-model-copy-picker";
@@ -847,24 +847,22 @@ export function ChannelModelEditor({
                                     )}{" "}
                                     <ChannelModelCopyPicker
                                         mode="prices"
+                                        form={form}
                                         channel={channel}
                                         models={existingModels}
                                         target={editing}
                                         capability={modelCapability || initialValues.capability}
                                         protocols={protocols}
-                                        disabled={busy}
-                                        onApply={(source) => {
-                                            try {
-                                                const next = copyChannelModelPrices(form.getFieldsValue(true), source);
-                                                form.setFieldValue("priceTiers", next.priceTiers);
-                                                form.setFieldValue("priceCurrency", next.priceCurrency);
-                                                protectedFields.current.add("priceTiers");
-                                                protectedFields.current.add("priceCurrency");
-                                                dirtyRef.current = true;
-                                                message.success("价格已复制到表单，保存后生效");
-                                            } catch (error) {
-                                                message.warning(error instanceof Error ? error.message : "复制价格失败");
-                                            }
+                                        disabled={busy || protocolLoading || Boolean(protocolError)}
+                                        onApply={(next) => {
+                                            form.setFieldValue("priceTiers", next.priceTiers);
+                                            form.setFieldValue("priceCurrency", next.priceCurrency);
+                                            form.setFieldValue("referenceVideoBilling", next.referenceVideoBilling);
+                                            protectedFields.current.add("priceTiers");
+                                            protectedFields.current.add("priceCurrency");
+                                            protectedFields.current.add("referenceVideoBilling");
+                                            dirtyRef.current = true;
+                                            message.success("价格已复制到表单，保存后生效");
                                         }}
                                     />
                                     <section className="admin-model-editor-section">
