@@ -27,9 +27,10 @@ const readPosition = (size: { width: number; height: number }, inCanvasEditor: b
  * 入口的拖拽、点击与键盘移动。指针处理器（onPointer*）可以挂在入口按钮上，也可以挂在按钮内的身体热区上
  * （大形象外框不接收指针）；指针捕获落在挂处理器的元素上，因此该元素必须能被命中。
  */
-export function useAgentLauncherPosition(onOpen: () => void, width = 76, height = 76, allowDock = false, inCanvasEditor = true) {
+export function useAgentLauncherPosition(onOpen: () => void, width = 76, height = 76, { allowDock = false, inCanvasEditor = true, minRight = 0 } = {}) {
     const size = { width, height };
     const [position, setPosition] = useState(() => readPosition(size, inCanvasEditor, allowDock));
+    const shown = minRight > 0 && position.right < minRight ? clampAgentLauncherPosition({ right: minRight, bottom: position.bottom }, viewport(), size) : position;
     const [dragging, setDragging] = useState(false);
     const gestureRef = useRef<(AgentLauncherGesture & { pointerId: number }) | null>(null);
     const suppressClick = useRef(false);
@@ -53,8 +54,8 @@ export function useAgentLauncherPosition(onOpen: () => void, width = 76, height 
         event.stopPropagation();
         if (event.button !== 0 || !event.isPrimary || gestureRef.current) return;
         suppressClick.current = false;
-        const bounds = allowDock && position.dock ? (event.currentTarget.closest(".canvas-agent-launcher") ?? event.currentTarget).getBoundingClientRect() : undefined;
-        const start = bounds ? { ...position, right: window.innerWidth - bounds.right, bottom: window.innerHeight - bounds.bottom } : position;
+        const bounds = allowDock && shown.dock ? (event.currentTarget.closest(".canvas-agent-launcher") ?? event.currentTarget).getBoundingClientRect() : undefined;
+        const start = bounds ? { ...shown, right: window.innerWidth - bounds.right, bottom: window.innerHeight - bounds.bottom } : shown;
         gestureRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, start, dragged: false };
         event.currentTarget.setPointerCapture(event.pointerId);
     };
@@ -79,7 +80,7 @@ export function useAgentLauncherPosition(onOpen: () => void, width = 76, height 
         if (allowDock && next.dragged && !cancelled) next.position = dockAgentLauncherPosition(next.position, viewport(), size);
         suppressClick.current = cancelled || next.dragged;
         setDragging(false);
-        setPosition(next.position);
+        if (next.dragged || cancelled) setPosition(next.position);
         if (next.dragged) save(next.position);
         if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     };
@@ -99,15 +100,15 @@ export function useAgentLauncherPosition(onOpen: () => void, width = 76, height 
         const offset = offsets[event.key];
         if (!offset) return;
         event.preventDefault();
-        const raw = { right: position.right + offset[0], bottom: position.bottom + offset[1] };
-        if (allowDock && position.dock && offset[0]) raw.right = position.dock === "right" ? (offset[0] > 0 ? 20 : 0) : window.innerWidth - width - (offset[0] < 0 ? 20 : 0);
-        const next = allowDock ? clampAgentLauncherPosition(offset[0] ? dockAgentLauncherPosition(raw, viewport(), size) : { ...raw, dock: position.dock }, viewport(), size) : clampAgentLauncherPosition(raw, viewport(), size);
+        const raw = { right: shown.right + offset[0], bottom: shown.bottom + offset[1] };
+        if (allowDock && shown.dock && offset[0]) raw.right = shown.dock === "right" ? (offset[0] > 0 ? 20 : 0) : window.innerWidth - width - (offset[0] < 0 ? 20 : 0);
+        const next = allowDock ? clampAgentLauncherPosition(offset[0] ? dockAgentLauncherPosition(raw, viewport(), size) : { ...raw, dock: shown.dock }, viewport(), size) : clampAgentLauncherPosition(raw, viewport(), size);
         setPosition(next);
         save(next);
     };
 
     return {
-        position,
+        position: shown,
         dragging,
         handlers: {
             onPointerDown,

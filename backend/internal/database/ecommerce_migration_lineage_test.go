@@ -206,7 +206,7 @@ func requireMigration(t *testing.T, db *gorm.DB, want schemaMigration) {
 }
 
 func TestCanonicalEcommerceDramaMigrationLineage(t *testing.T) {
-	if CurrentSchemaVersion != 118 {
+	if CurrentSchemaVersion != 119 {
 		t.Fatalf("CurrentSchemaVersion = %d", CurrentSchemaVersion)
 	}
 	want := []schemaMigration{
@@ -407,7 +407,7 @@ func TestMigrateSchemaUpgradesFork97ReferenceControls(t *testing.T) {
 }
 
 func TestMigrateSchemaNormalizesUpstreamSchemas(t *testing.T) {
-	for _, version := range []int64{72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110} {
+	for version := int64(72); version <= 111; version++ {
 		t.Run(strconv.FormatInt(version, 10), func(t *testing.T) {
 			db, applied := upstreamSchemaDatabase(t, version)
 			project := model.EcommerceProject{ID: "upstream-shop", UserID: "upstream-owner", Name: "保温杯", Status: "completed", DraftJSON: "{}", PlanJSON: `{"images":[{"id":"kept"}]}`, Revision: 4}
@@ -463,6 +463,7 @@ func TestMigrateSchemaNormalizesUpstreamSchemas(t *testing.T) {
 				{Version: 116, Name: "shared_workspace_content", Checksum: "sha256:shared-workspace-content-v108", AppliedAt: applied[108]},
 				{Version: 117, Name: "model_protocol_releases", Checksum: "sha256:model-protocol-releases-v109", AppliedAt: applied[109]},
 				{Version: 118, Name: "cloud_agent_history_archives", Checksum: "sha256:cloud-agent-history-archives-v110-20261123", AppliedAt: applied[110]},
+				{Version: 119, Name: "redeem_batch_limits_and_capability_pools", Checksum: "sha256:redeem-batch-limits-and-capability-pools-v111-20261125", AppliedAt: applied[111]},
 			} {
 				requireMigration(t, db, want)
 			}
@@ -634,6 +635,9 @@ func TestMigrateSchemaRejectsUpstreamLedgerWithoutPhysicalSchema(t *testing.T) {
 		{"workspace submission hash", 108, func(db *gorm.DB) error { return db.Migrator().DropColumn(&model.Task{}, "SubmissionHash") }},
 		{"model release index", 109, func(db *gorm.DB) error { return db.Migrator().DropIndex(&model.ChannelModel{}, "ProtocolRelease") }},
 		{"Agent history archive table", 110, func(db *gorm.DB) error { return db.Migrator().DropTable(&model.CloudAgentHistoryArchive{}) }},
+		{"redeem limit index", 111, func(db *gorm.DB) error {
+			return db.Migrator().DropIndex(&model.RedeemCode{}, "idx_redeem_codes_batch_status_user")
+		}},
 		{"email log table", 91, func(db *gorm.DB) error { return db.Migrator().DropTable(&model.EmailLog{}) }},
 		{"notification setting table", 91, func(db *gorm.DB) error { return db.Migrator().DropTable(&model.UserNotificationSetting{}) }},
 	}
@@ -696,6 +700,9 @@ func TestMigrateSchemaRejectsCanonicalLedgerWithoutPhysicalSchema(t *testing.T) 
 		{"cast image prompt column", 98, func(db *gorm.DB) error { return db.Migrator().DropColumn(&model.DramaCast{}, "ImagePrompt") }},
 		{"segment reference images column", 98, func(db *gorm.DB) error { return db.Migrator().DropColumn(&model.DramaSegment{}, "ReferenceImagesJSON") }},
 		{"segment audio casts column", 98, func(db *gorm.DB) error { return db.Migrator().DropColumn(&model.DramaSegment{}, "AudioCastIDsJSON") }},
+		{"capability pool balance", 119, func(db *gorm.DB) error {
+			return db.Migrator().DropColumn(&model.CreditAccount{}, "VideoReservedMicrocredits")
+		}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

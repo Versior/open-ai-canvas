@@ -40,7 +40,8 @@ func (r *Repository) MySpaceCredits(userID string) (*SpaceCreditOverview, error)
 	err := r.db.Table("users AS current_account").Select(`s.team_id, s.name, s.parent_id, s.parent_name, s.role,
 		own.available_microcredits, own.reserved_microcredits, pool.available_microcredits AS pool_available_microcredits,
 		(own.id IS NOT NULL AND pool.id IS NOT NULL) AS accounts_ready,
-		COALESCE(p.available_microcredits, 0) AS personal_available, COALESCE(p.reserved_microcredits, 0) AS personal_reserved`).
+		COALESCE(p.available_microcredits, 0) + COALESCE(p.image_available_microcredits, 0) + COALESCE(p.video_available_microcredits, 0) AS personal_available,
+		COALESCE(p.reserved_microcredits, 0) + COALESCE(p.image_reserved_microcredits, 0) + COALESCE(p.video_reserved_microcredits, 0) AS personal_reserved`).
 		Joins("LEFT JOIN credit_accounts p ON p.id = ? AND p.kind = ?", model.PersonalCreditAccountID(userID), model.CreditAccountPersonal).
 		Joins("LEFT JOIN (?) s ON 1 = 1", spaces).
 		Joins("LEFT JOIN credit_accounts own ON own.id = (? || s.membership_id) AND own.team_id = s.team_id", model.TeamMemberCreditAccountID("")).

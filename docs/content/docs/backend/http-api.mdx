@@ -520,6 +520,10 @@ Agent 通过 `mcp_list_tools` 分三步读取连接目录、指定连接的工�
 
 `GET /api/wallet` 使用登录 Cookie，仅返回当前用户的账户、积分策略与历史，响应为 `data={account,entries,total,page,pageSize,policy}`。`page` 从 1 开始，`pageSize` 默认 30、最大 100。
 
+`account.availableMicrocredits` 与 `reservedMicrocredits` 只表示通用积分。个人钱包还分别返回图片、视频专享积分的可用与冻结额（`imageAvailableMicrocredits`、`imageReservedMicrocredits`、`videoAvailableMicrocredits`、`videoReservedMicrocredits`）。个人总览把三类可用额相加；合计不表示任意能力都能花这笔钱。团队额度与团队划转只使用通用积分。
+
+管理员调用 `POST /api/admin/redeem-batches` 时可传 `onePerUser: true` 限制每个账号在该批次只兑一次；`allowedCapability` 传 `image` 或 `video` 将积分充入对应专享池，省略或传空字符串仍充入通用余额。
+
 消费历史按计费订单合并，服务端在分页前将每个 `billing_orders` 订单投影为一条 `type="billing"` 记录；该订单对应的冻结、实收和释放流水不再单独占行。充值、兑换、赠送、推广返佣及其他没有关联计费订单的积分变动仍独立展示。`total` 为合并后的记录数，按订单创建时间或独立流水创建时间倒序排列，同一时间按 ID 倒序稳定分页。
 
 订单记录包含 `id`、`billingOrderId`、`billingStatus`、`model`、`scene`、`note`、`createdAt`，金额单位为微积分（1000000 = 1 积分）：
@@ -773,6 +777,7 @@ handle 放错端点、格式错误或行 ID 不存在时，工具错误回执提
 - `expiresAt` / `refreshAt` 只描述当前授权有效期。有效期来自后台「资源与请求策略」（`provider-input` 与其余签名访问分别配置，默认均为 4 小时）；公开 CDN 可没有 `expiresAt`。签名地址不写入画布或服务端持久化内容。
 - `display`、`copy`、`browser-process` 的源站签名把签名起始时间对齐到有效期 1/4 的时间窗（按 Unix 纪元对齐），过期时间为窗口起点加有效期：同一窗口内重复签发得到逐字节相同的 URL，刷新画布或多实例签发都能命中浏览器 HTTP 缓存；签名同时携带 `response-cache-control=private, max-age=<有效期>, immutable`，由对象存储回写缓存头。`download` 与 `provider-input` 仍按当前时间签发，不带缓存覆盖。
 - `GET /api/resources/:id/file` 仍是稳定平台入口，负责本地/平台代理字节流，可直连的云媒体返回 307 到 CDN 或对象存储，非媒体附件走平台流；`?access=1` 只返回访问描述，不打开正文。`Range` 只影响字节流路径。
+- 已签名的 `GET` / `HEAD /api/public/resources/:id/file`（可选文件名后缀）不需要登录 Cookie。可内联媒体允许共享缓存，时长取签名剩余时间与 6 天中的较短者；访问描述、下载和非内联附件不进入共享缓存。此规则不适用于私有资源入口。
 - 公共资源、画布分享、外观、公告、管理员资源和日志媒体复用同一个 HTTP 执行器。公共签名链接受自身到期时间和变体绑定限制，但已签发的外部 URL 不承诺立即撤销。
 
 当前自动签名能力：公开 CDN、七牛私有下载签名和对象存储源站签名。阿里云/腾讯云/火山引擎私有 CDN 签名尚未自动支持，不能仅填写 CDN 域名就宣称已命中 CDN。真实 CORS、Range、CDN 命中率及账单收益必须在实际云环境通过浏览器网络记录和服务端流量观测验收。

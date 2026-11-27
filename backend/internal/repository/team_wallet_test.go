@@ -48,6 +48,12 @@ func requireTeamBalance(t *testing.T, repo *Repository, id string, available, re
 
 func TestTeamCreditOverviewKeepsHoldsSeparateAndFailsOnMissingTeamAccount(t *testing.T) {
 	repo, db := newTeamWalletTestRepo(t)
+	if err := db.Model(&model.CreditAccount{}).Where("id = ?", model.PersonalCreditAccountID("member")).Updates(map[string]any{
+		"reserved_microcredits": 11, "image_available_microcredits": 40, "video_available_microcredits": 70,
+		"image_reserved_microcredits": 9, "video_reserved_microcredits": 5,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := db.Model(&model.CreditAccount{}).Where("id = ?", model.TeamMemberCreditAccountID("member-1")).Updates(map[string]any{"available_microcredits": 22, "reserved_microcredits": 31}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +65,7 @@ func TestTeamCreditOverviewKeepsHoldsSeparateAndFailsOnMissingTeamAccount(t *tes
 		t.Fatalf("overview: %+v, %v", result, err)
 	}
 	row := result.Spaces[0]
-	if result.Personal.AvailableMicrocredits != 500 || row.AvailableMicrocredits != 22 || row.ReservedMicrocredits != 31 || row.PoolAvailableMicrocredits != 85 {
+	if result.Personal.AvailableMicrocredits != 610 || result.Personal.ReservedMicrocredits != 25 || row.AvailableMicrocredits != 22 || row.ReservedMicrocredits != 31 || row.PoolAvailableMicrocredits != 85 {
 		t.Fatalf("mixed scopes: %+v", result)
 	}
 	if err := db.Delete(&model.CreditAccount{}, "id = ?", model.TeamPoolCreditAccountID("team")).Error; err != nil {

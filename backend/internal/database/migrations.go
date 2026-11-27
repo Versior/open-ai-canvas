@@ -15,7 +15,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-const CurrentSchemaVersion int64 = 118
+const CurrentSchemaVersion int64 = 119
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -482,6 +482,41 @@ var schemaMigrations = []migration{
 		}
 		return reconcileAgentStorageUsage(tx)
 	}},
+	{version: 119, name: "redeem_batch_limits_and_capability_pools", checksum: "sha256:redeem-batch-limits-and-capability-pools-v111-20261125", apply: migrateRedeemBatchLimitsAndCapabilityPools},
+}
+
+var redeemCapabilityPoolColumns = []struct {
+	entity  any
+	columns []string
+}{
+	{&model.RedeemBatch{}, []string{"one_per_user", "allowed_capability"}},
+	{&model.CreditAccount{}, []string{"image_available_microcredits", "image_reserved_microcredits", "video_available_microcredits", "video_reserved_microcredits"}},
+	{&model.BillingOrder{}, []string{"image_reserved_microcredits", "video_reserved_microcredits", "image_actual_microcredits", "video_actual_microcredits"}},
+}
+
+func migrateRedeemBatchLimitsAndCapabilityPools(tx *gorm.DB) error {
+	for _, change := range redeemCapabilityPoolColumns {
+		if !tx.Migrator().HasTable(change.entity) {
+			if err := tx.AutoMigrate(change.entity); err != nil {
+				return err
+			}
+			continue
+		}
+		for _, column := range change.columns {
+			if !tx.Migrator().HasColumn(change.entity, column) {
+				if err := tx.Migrator().AddColumn(change.entity, column); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	if !tx.Migrator().HasTable(&model.RedeemCode{}) {
+		return tx.AutoMigrate(&model.RedeemCode{})
+	}
+	if !tx.Migrator().HasIndex(&model.RedeemCode{}, "idx_redeem_codes_batch_status_user") {
+		return tx.Migrator().CreateIndex(&model.RedeemCode{}, "idx_redeem_codes_batch_status_user")
+	}
+	return nil
 }
 
 func migrateLUTLibrary(tx *gorm.DB) error {
@@ -1733,6 +1768,17 @@ func validateCanonicalMigrationPhysicalSchema(tx *gorm.DB, version int64) error 
 		if !tx.Migrator().HasTable(&model.CloudAgentHistoryArchive{}) || !tx.Migrator().HasColumn(&model.CloudAgentExecution{}, "HistoryCompacted") || !tx.Migrator().HasColumn(&model.CloudAgentExecution{}, "CompactedAt") {
 			return errors.New("Agent 历史归档迁移账本与物理结构不一致")
 		}
+	case 119:
+		for _, change := range redeemCapabilityPoolColumns {
+			for _, column := range change.columns {
+				if !tx.Migrator().HasColumn(change.entity, column) {
+					return fmt.Errorf("兑换码与能力池迁移账本与物理结构不一致：%T 缺少 %s", change.entity, column)
+				}
+			}
+		}
+		if !tx.Migrator().HasIndex(&model.RedeemCode{}, "idx_redeem_codes_batch_status_user") {
+			return errors.New("兑换码与能力池迁移账本与物理结构不一致：缺少索引 idx_redeem_codes_batch_status_user")
+		}
 	}
 	return nil
 }
@@ -1806,6 +1852,7 @@ func normalizeUpstreamMigrations(tx *gorm.DB) (bool, error) {
 		{migration{version: 108, name: "shared_workspace_content", checksum: "sha256:shared-workspace-content-v108"}, 116, "sha256:shared-workspace-content-v108"},
 		{migration{version: 109, name: "model_protocol_releases", checksum: "sha256:model-protocol-releases-v109"}, 117, "sha256:model-protocol-releases-v109"},
 		{migration{version: 110, name: "cloud_agent_history_archives", checksum: "sha256:cloud-agent-history-archives-v110-20261123"}, 118, "sha256:cloud-agent-history-archives-v110-20261123"},
+		{migration{version: 111, name: "redeem_batch_limits_and_capability_pools", checksum: "sha256:redeem-batch-limits-and-capability-pools-v111-20261125"}, 119, "sha256:redeem-batch-limits-and-capability-pools-v111-20261125"},
 	}
 	if len(records) > len(upstream) {
 		return false, fmt.Errorf("上游迁移账本在版本 %d 后仍有记录，拒绝自动重排", upstream[len(upstream)-1].version)
